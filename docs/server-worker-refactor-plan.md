@@ -71,6 +71,13 @@ It should return:
 }
 ```
 
+Current package status:
+
+- `src/dice_document_pipeline/workers/remediation_job.py` defines `RemediationJob` and `RemediationResult`.
+- `process_remediation_job(job)` now supports local paths and `file://` URIs as a first package boundary.
+- That first implementation assesses, scores, writes a log, and copies the source PDF to a local output directory when requested.
+- It does not yet poll pg-boss, call Adobe PDF Services, read/write object storage, or callback to Cloud Run. Those remain DIC-156 infrastructure tasks.
+
 ## Phase 3: Replace Local State
 
 Replace:
