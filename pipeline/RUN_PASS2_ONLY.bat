@@ -18,7 +18,7 @@ echo   Press any key to begin, or Ctrl+C to cancel.
 pause > nul
 
 echo.
-py -3 ada_remediate.py
+py -3.11 ada_remediate.py
 
 echo.
 echo ============================================================

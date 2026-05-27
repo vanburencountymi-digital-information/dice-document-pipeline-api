@@ -33,7 +33,7 @@ echo.
 echo   Performing full reset...
 echo.
 
-py -3 _reset_all.py
+py -3.11 _reset_all.py
 
 echo.
 echo ══════════════════════════════════════════════════════════════

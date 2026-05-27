@@ -1,0 +1,11 @@
+pikepdf
+pypdf
+pywin32; platform_system == "Windows"
+pdf2image
+Pillow
+pytesseract
+anthropic
+pdfplumber
+python-docx
+openpyxl
+requests

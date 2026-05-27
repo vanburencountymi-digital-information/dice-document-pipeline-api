@@ -51,4 +51,4 @@ with open(csv_file, "w", newline="", encoding="utf-8") as f:
 print(f"  Reset {reset_count} document(s) with font/form/bookmark/contrast issues.")
 print(f"  All other {len(rows) - reset_count} completed documents left untouched.")
 print()
-print("  Run:  py -3 ada_remediate.py")
+print("  Run:  py -3.11 ada_remediate.py")

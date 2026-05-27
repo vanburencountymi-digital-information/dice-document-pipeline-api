@@ -9,7 +9,7 @@ echo ═════════════════════════
 echo.
 echo   IMPORTANT BEFORE YOU START:
 echo   1. Adobe Acrobat Pro must be CLOSED (script needs COM control)
-echo   2. ANTHROPIC_API_KEY must be set in ada_remediate.py
+echo   2. ANTHROPIC_API_KEY must be set in your environment or .env
 echo   3. PDF files must be in:  remediation_work\downloads\
 echo.
 echo   Press any key to begin, or Ctrl+C to cancel.
@@ -22,7 +22,7 @@ echo   OCR, Autotag, Full Accessibility Check
 echo ══════════════════════════════════════════════════════════════
 echo.
 
-py -3 acrobat_pass.py
+py -3.11 acrobat_pass.py
 
 if %errorlevel% neq 0 (
     echo.
@@ -50,7 +50,7 @@ echo   Metadata, Alt Text, Compliance Scoring, Logs
 echo ══════════════════════════════════════════════════════════════
 echo.
 
-py -3 ada_remediate.py
+py -3.11 ada_remediate.py
 
 echo.
 echo ══════════════════════════════════════════════════════════════

@@ -17,10 +17,10 @@ echo   Press any key to begin, or Ctrl+C to cancel.
 pause > nul
 echo.
 
-:: Verify py launcher is available
-py -3 --version > nul 2>&1
+:: Verify Python 3.11+ is available through the py launcher
+py -3.11 --version > nul 2>&1
 if %errorlevel% neq 0 (
-    echo   ERROR: Python 3 not found via 'py' launcher.
+    echo   ERROR: Python 3.11 not found via 'py' launcher.
     echo.
     echo   Install Python from https://www.python.org/downloads/
     echo   During install, check "Add Python to PATH".
@@ -30,38 +30,38 @@ if %errorlevel% neq 0 (
 )
 
 echo   Python found:
-py -3 --version
+py -3.11 --version
 echo.
 
 :: ── Core PDF libraries ────────────────────────────────────────────────────
 echo   Installing core PDF libraries...
-py -3 -m pip install pikepdf pypdf --break-system-packages --upgrade --quiet
+py -3.11 -m pip install pikepdf pypdf --break-system-packages --upgrade --quiet
 if %errorlevel% neq 0 echo   WARNING: pikepdf/pypdf install had errors
 
 :: ── Acrobat COM automation ────────────────────────────────────────────────
 echo   Installing pywin32 (Acrobat COM automation)...
-py -3 -m pip install pywin32 --break-system-packages --upgrade --quiet
+py -3.11 -m pip install pywin32 --break-system-packages --upgrade --quiet
 if %errorlevel% neq 0 echo   WARNING: pywin32 install had errors
 
 :: ── Image processing and OCR ──────────────────────────────────────────────
-echo   Installing image processing libraries (pdf2image, Pillow, pytesseract)...
-py -3 -m pip install pdf2image Pillow pytesseract --break-system-packages --upgrade --quiet
+echo   Installing image processing libraries (pdf2image, Pillow, pytesseract, pdfplumber)...
+py -3.11 -m pip install pdf2image Pillow pytesseract pdfplumber --break-system-packages --upgrade --quiet
 if %errorlevel% neq 0 echo   WARNING: image library install had errors
 
 :: ── Anthropic (Claude alt text) ───────────────────────────────────────────
 echo   Installing Anthropic SDK (Claude Haiku alt text generation)...
-py -3 -m pip install anthropic --break-system-packages --upgrade --quiet
+py -3.11 -m pip install anthropic --break-system-packages --upgrade --quiet
 if %errorlevel% neq 0 echo   WARNING: anthropic install had errors
 
 :: ── Office document libraries (if needed later) ───────────────────────────
 echo   Installing Office document libraries (python-docx, openpyxl)...
-py -3 -m pip install python-docx openpyxl requests --break-system-packages --upgrade --quiet
+py -3.11 -m pip install python-docx openpyxl requests --break-system-packages --upgrade --quiet
 if %errorlevel% neq 0 echo   WARNING: office library install had errors
 
 :: ── Post-install: register pywin32 COM type library ──────────────────────
 echo.
 echo   Registering pywin32 COM support...
-py -3 -m win32com.client.makepy 2> nul
+py -3.11 -m win32com.client.makepy 2> nul
 if %errorlevel% neq 0 (
     echo   NOTE: win32com makepy returned a non-zero exit code.
     echo   This is usually harmless — the library still works.
@@ -71,7 +71,7 @@ echo.
 echo ══════════════════════════════════════════════════════════════
 echo   VERIFICATION
 echo ══════════════════════════════════════════════════════════════
-py -3 -c "import pikepdf; import pypdf; import win32com.client; import anthropic; print('  All core libraries verified OK')" 2>&1
+py -3.11 -c "import pikepdf; import pypdf; import win32com.client; import anthropic; print('  All core libraries verified OK')" 2>&1
 echo.
 
 echo ══════════════════════════════════════════════════════════════
@@ -82,7 +82,7 @@ echo   MANUAL STEPS STILL REQUIRED:
 echo.
 echo   1. SET YOUR API KEY:
 echo      Copy .env.example (in the repo root) to .env
-echo      Fill in:  ANTHROPIC_API_KEY=sk-ant-...your-key-here...
+echo      Fill in:  ANTHROPIC_API_KEY=your-anthropic-api-key-here
 echo      Then load it before running:
 echo        PowerShell: Get-Content ..\\.env ^| ForEach-Object { $k,$v = $_ -split '=',2; [System.Environment]::SetEnvironmentVariable($k,$v) }
 echo      Never edit the API key directly into ada_remediate.py.

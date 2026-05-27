@@ -7,7 +7,7 @@ Drives Adobe Acrobat Pro via Windows COM automation (pywin32).
 Must be run BEFORE ada_remediate.py.
 
 Usage:
-    py -3 acrobat_pass.py
+    py -3.11 acrobat_pass.py
 
 Prerequisites:
     - Adobe Acrobat Pro installed (not Adobe Reader)
@@ -640,9 +640,9 @@ def main():
         print("\nTroubleshooting steps:")
         print("  1. Confirm Adobe Acrobat Pro is installed (not Reader)")
         print("  2. Run: pip install pywin32 --break-system-packages")
-        print("  3. Try: py -3 -c \"import win32com.client; print('pywin32 OK')\"")
+        print("  3. Try: py -3.11 -c \"import win32com.client; print('pywin32 OK')\"")
         print("  4. Ensure Acrobat is not set to run as Administrator")
-        print("  5. On first-ever pywin32 install, run: py -3 -m win32com.client.makepy")
+        print("  5. On first-ever pywin32 install, run: py -3.11 -m win32com.client.makepy")
         sys.exit(1)
     print("  ✓ Acrobat COM initialized\n")
 

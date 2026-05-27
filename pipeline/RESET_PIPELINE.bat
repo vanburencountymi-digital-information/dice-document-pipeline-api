@@ -30,7 +30,7 @@ echo.
 echo   Resetting...
 echo.
 
-py -3 _reset_pipeline.py
+py -3.11 _reset_pipeline.py
 
 echo.
 echo ══════════════════════════════════════════════════════════════

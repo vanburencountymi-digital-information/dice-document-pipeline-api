@@ -14,7 +14,7 @@ echo.
 
 cd /d "%~dp0"
 
-py -3 acrobat_pass.py
+py -3.11 acrobat_pass.py
 
 echo.
 echo ============================================================

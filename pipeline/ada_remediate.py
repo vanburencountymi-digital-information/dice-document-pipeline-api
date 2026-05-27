@@ -6,7 +6,7 @@ Single-pass pipeline. Processes every row in remediation_status.csv
 where pipeline_pass_status = pending.
 
 Usage:
-    py -3 ada_remediate.py
+    py -3.11 ada_remediate.py
 
 What this does per document:
     1. Embeds fonts via Ghostscript (non-destructive: src → temp)
@@ -30,14 +30,17 @@ import sys
 from pathlib import Path
 
 # ── Config import ─────────────────────────────────────────────────────────────
-# Add the repo root to sys.path so 'config.constants' is importable regardless
+# Add the repo root and src package to sys.path so imports are stable regardless
 # of the current working directory.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _REPO_ROOT)
+sys.path.insert(0, os.path.join(_REPO_ROOT, "src"))
 from config.constants import (
     COUNTY_NAME, COUNTY_DEPARTMENT, COUNTY_AUTHOR, COUNTY_SUBJECT, COUNTY_PRODUCER,
     CLAUDE_MODEL, DOWNLOADS_DIR, REMEDIATED_DIR, LOGS_DIR, STATUS_CSV,
     POPPLER_PATH, TESSERACT_PATH, GHOSTSCRIPT_PATH,
 )
+from dice_document_pipeline.remediation.scoring import score_document as _reusable_score_document
 # ─────────────────────────────────────────────────────────────────────────────
 
 # API key — set ANTHROPIC_API_KEY in your environment or .env file.
@@ -2348,6 +2351,9 @@ def score_document(
 
 
 # ── Remediation log ───────────────────────────────────────────────────────────
+
+score_document = _reusable_score_document
+
 
 def write_log(
     log_path: Path,
