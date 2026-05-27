@@ -1,0 +1,23 @@
+# Secrets — never commit
+.env
+
+# Runtime work directories — large PDFs, logs, output files
+remediation_work/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Status CSVs contain local file paths — generate on each machine
+remediation_status.csv
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# OS junk
+.DS_Store
+Thumbs.db
