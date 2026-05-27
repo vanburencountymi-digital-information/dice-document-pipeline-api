@@ -40,6 +40,7 @@ from config.constants import (
     CLAUDE_MODEL, DOWNLOADS_DIR, REMEDIATED_DIR, LOGS_DIR, STATUS_CSV,
     POPPLER_PATH, TESSERACT_PATH, GHOSTSCRIPT_PATH,
 )
+from dice_document_pipeline.remediation.logs import write_log as _reusable_write_log
 from dice_document_pipeline.remediation.scoring import score_document as _reusable_score_document
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -2373,6 +2374,20 @@ def write_log(
         ISSUES FIXED     — every automated fix applied
         MANUAL REVIEW    — specific actionable instructions for human reviewer
     """
+    _reusable_write_log(
+        log_path,
+        filename=filename,
+        issues=issues,
+        fixes=fixes,
+        alt_log_entries=alt_log_entries,
+        manual_items=manual_items,
+        score=score,
+        grade=grade,
+        county_name=COUNTY_NAME,
+        log_date=TODAY,
+    )
+    return
+
     page_count = issues.get("page_count", 0)
 
     lines = [
