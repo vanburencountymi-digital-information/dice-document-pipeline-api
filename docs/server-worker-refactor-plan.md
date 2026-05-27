@@ -81,7 +81,7 @@ Current package status:
 DIC-156 adapter status:
 
 - `src/dice_document_pipeline/workers/storage.py` defines storage read/write interfaces plus a local filesystem adapter.
-- `src/dice_document_pipeline/workers/adobe_pdf_services.py` defines the Adobe Auto-Tag interface plus a local no-network stub.
+- `src/dice_document_pipeline/workers/adobe_pdf_services.py` defines the Adobe Auto-Tag interface, a local no-network stub, and a lazy Adobe PDF Services SDK adapter based on the eval harness.
 - `src/dice_document_pipeline/workers/server_worker.py` composes storage, Adobe, and the reusable package boundary.
 - Real GCS, Adobe credentials, pg-boss, and Cloud Run callbacks should plug into these interfaces instead of replacing package logic.
 
