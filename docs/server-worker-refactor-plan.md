@@ -78,6 +78,13 @@ Current package status:
 - That first implementation assesses, scores, writes a log, and copies the source PDF to a local output directory when requested.
 - It does not yet poll pg-boss, call Adobe PDF Services, read/write object storage, or callback to Cloud Run. Those remain DIC-156 infrastructure tasks.
 
+DIC-156 adapter status:
+
+- `src/dice_document_pipeline/workers/storage.py` defines storage read/write interfaces plus a local filesystem adapter.
+- `src/dice_document_pipeline/workers/adobe_pdf_services.py` defines the Adobe Auto-Tag interface plus a local no-network stub.
+- `src/dice_document_pipeline/workers/server_worker.py` composes storage, Adobe, and the reusable package boundary.
+- Real GCS, Adobe credentials, pg-boss, and Cloud Run callbacks should plug into these interfaces instead of replacing package logic.
+
 ## Phase 3: Replace Local State
 
 Replace:
