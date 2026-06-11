@@ -4,11 +4,14 @@
 # Runtime work directories — large PDFs, logs, output files
 remediation_work/
 
-# Python bytecode
+# Python bytecode and build artifacts
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+dist/
+build/
 
 # Status CSVs contain local file paths — generate on each machine
 remediation_status.csv

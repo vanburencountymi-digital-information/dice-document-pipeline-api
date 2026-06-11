@@ -10,13 +10,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "anthropic",
+  "httpx",
   "pdf2image",
   "pdfplumber",
   "pikepdf",
   "Pillow",
   "pypdf",
+  "PyMuPDF",
   "pytesseract",
   "python-docx",
+  "python-dotenv",
   "openpyxl",
   "requests",
 ]
