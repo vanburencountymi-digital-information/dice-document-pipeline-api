@@ -28,6 +28,7 @@ dependencies = [
 windows = ["pywin32"]
 adobe = ["pdfservices-sdk==4.2.0", "python-dotenv"]
 docling = ["docling>=2.0.0"]
+gcs = ["google-cloud-storage>=2.0.0"]
 test = ["pytest"]
 
 [tool.setuptools.packages.find]
