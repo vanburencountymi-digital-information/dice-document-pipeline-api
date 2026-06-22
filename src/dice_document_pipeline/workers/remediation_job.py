@@ -40,6 +40,8 @@ class RemediationResult:
     job_id: str
     status: str
     remediated_pdf_uri: str | None = None
+    html_uri: str | None = None
+    markdown_uri: str | None = None
     compliance_score: int | None = None
     compliance_grade: str | None = None
     manual_review_items: list[str] = field(default_factory=list)

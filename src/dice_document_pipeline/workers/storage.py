@@ -20,6 +20,12 @@ class StorageAdapter(Protocol):
     def upload_log(self, source: Path, destination_name: str) -> str:
         """Upload a remediation log and return its storage URI."""
 
+    def upload_html(self, source: Path, destination_name: str) -> str:
+        """Upload a Docling HTML rendering and return its storage URI."""
+
+    def upload_markdown(self, source: Path, destination_name: str) -> str:
+        """Upload a Docling markdown rendering and return its storage URI."""
+
 
 class LocalStorageAdapter:
     """Filesystem-backed storage adapter used for local tests and dry runs."""
@@ -28,8 +34,12 @@ class LocalStorageAdapter:
         self.output_dir = output_dir.resolve()
         self.pdf_dir = self.output_dir / "pdfs"
         self.log_dir = self.output_dir / "logs"
+        self.html_dir = self.output_dir / "html"
+        self.markdown_dir = self.output_dir / "markdown"
         self.pdf_dir.mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.html_dir.mkdir(parents=True, exist_ok=True)
+        self.markdown_dir.mkdir(parents=True, exist_ok=True)
 
     def download_pdf(self, source_uri: str, destination: Path) -> Path:
         source = local_path_from_uri(source_uri)
@@ -50,6 +60,20 @@ class LocalStorageAdapter:
 
     def upload_log(self, source: Path, destination_name: str) -> str:
         destination = self.log_dir / destination_name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        return destination.as_uri()
+
+    def upload_html(self, source: Path, destination_name: str) -> str:
+        destination = self.html_dir / destination_name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.resolve() != destination.resolve():
+            shutil.copy2(source, destination)
+        return destination.as_uri()
+
+    def upload_markdown(self, source: Path, destination_name: str) -> str:
+        destination = self.markdown_dir / destination_name
         destination.parent.mkdir(parents=True, exist_ok=True)
         if source.resolve() != destination.resolve():
             shutil.copy2(source, destination)

@@ -2,7 +2,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from dice_document_pipeline.workers import (
-    LocalAdobePdfServicesStub,
+    LocalDoclingStub,
     LocalStorageAdapter,
     RemediationJob,
     process_server_remediation_job,
@@ -31,11 +31,11 @@ def complete_issues(**overrides):
     return issues
 
 
-def test_server_worker_runs_storage_adobe_and_package_boundaries(tmp_path: Path):
+def test_server_worker_runs_storage_docling_and_package_boundaries(tmp_path: Path):
     source_pdf = tmp_path / "source.pdf"
     source_pdf.write_bytes(b"%PDF-1.4\n")
     storage = LocalStorageAdapter(tmp_path / "storage")
-    adobe = LocalAdobePdfServicesStub()
+    docling = LocalDoclingStub()
     job = RemediationJob(
         job_id="job-156",
         archival_object_id="archive-156",
@@ -53,16 +53,20 @@ def test_server_worker_runs_storage_adobe_and_package_boundaries(tmp_path: Path)
         "dice_document_pipeline.workers.remediation_job.assess_document",
         return_value=complete_issues(),
     ):
-        result = process_server_remediation_job(job, storage=storage, adobe=adobe)
+        result = process_server_remediation_job(job, storage=storage, docling=docling)
 
     assert result.status == "complete"
     assert result.compliance_score == 100
     assert result.compliance_grade == "A"
     assert result.remediated_pdf_uri is not None
+    assert result.html_uri is not None
+    assert result.markdown_uri is not None
     assert result.log_uri is not None
     assert len(result.external_api_calls) == 1
     assert result.external_api_calls[0]["mode"] == "local_stub"
     assert (tmp_path / "storage" / "pdfs" / "job-156.pdf").exists()
+    assert (tmp_path / "storage" / "html" / "job-156.html").exists()
+    assert (tmp_path / "storage" / "markdown" / "job-156.md").exists()
     assert (tmp_path / "storage" / "logs" / "job-156.txt").exists()
 
 
