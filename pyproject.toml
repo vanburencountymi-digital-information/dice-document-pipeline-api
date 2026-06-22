@@ -29,7 +29,13 @@ windows = ["pywin32"]
 adobe = ["pdfservices-sdk==4.2.0", "python-dotenv"]
 docling = ["docling>=2.0.0"]
 gcs = ["google-cloud-storage>=2.0.0"]
-test = ["pytest"]
+api = [
+  "fastapi>=0.110.0",
+  "python-multipart>=0.0.9",
+  "uvicorn[standard]>=0.29.0",
+  "pydantic-settings>=2.0.0",
+]
+test = ["pytest", "httpx>=0.27.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
