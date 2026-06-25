@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -16,6 +17,7 @@ def process_server_remediation_job(
     *,
     storage: StorageAdapter | None = None,
     docling: DoclingAdapter | None = None,
+    progress: Callable[[str, str], None] | None = None,
 ) -> RemediationResult:
     """Process a remediation job through adapter boundaries.
 
@@ -27,6 +29,8 @@ def process_server_remediation_job(
     Pass real GCS and DoclingPdfAdapter instances for production. Omit both
     to run against local filesystem with the no-op stub (tests and dry runs).
     """
+    _progress = progress or (lambda stage, msg: None)
+
     with tempfile.TemporaryDirectory(prefix=f"dice-remediation-{job.job_id}-") as tmp:
         work_dir = Path(tmp)
         storage_adapter = storage or LocalStorageAdapter(
@@ -35,15 +39,19 @@ def process_server_remediation_job(
         docling_adapter = docling or LocalDoclingStub()
 
         try:
+            _progress("downloading", "Downloading source PDF")
             source_path = storage_adapter.download_pdf(
                 job.source_pdf_uri,
                 work_dir / "input" / "source.pdf",
             )
 
             # Docling: PDF → HTML + markdown for KB ingestion and WP Document CPT.
+            _progress("converting", "Running Docling — OCR and layout analysis")
             conversion = docling_adapter.convert_pdf(source_path)
+            _progress("converted", f"Docling complete — {conversion.pages or '?'} page(s), {conversion.word_count or '?'} words")
 
             # ADA assessment + scoring runs on the original PDF.
+            _progress("assessing", "Scoring ADA compliance")
             local_options = dict(job.pipeline_options)
             local_options.update(
                 {
@@ -62,6 +70,7 @@ def process_server_remediation_job(
                     external_api_calls=conversion.api_calls + result.external_api_calls,
                 )
 
+            _progress("uploading", "Uploading results to storage")
             remediated_uri = None
             if result.remediated_pdf_uri:
                 remediated_uri = storage_adapter.upload_pdf(

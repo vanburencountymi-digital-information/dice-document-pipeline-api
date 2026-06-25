@@ -53,10 +53,12 @@ class DoclingPdfAdapter:
         images_scale: float = 1.0,
         generate_page_images: bool = False,
         generate_picture_images: bool = False,
+        do_ocr: bool = True,
     ):
         self._images_scale = images_scale
         self._generate_page_images = generate_page_images
         self._generate_picture_images = generate_picture_images
+        self._do_ocr = do_ocr
         self._converter = self._build_converter()
 
     def _build_converter(self):
@@ -68,6 +70,9 @@ class DoclingPdfAdapter:
             pipeline_options.images_scale = self._images_scale
             pipeline_options.generate_page_images = self._generate_page_images
             pipeline_options.generate_picture_images = self._generate_picture_images
+            # Always enable OCR so image-only (scanned) PDFs produce usable text.
+            # Docling uses EasyOCR on GPU when available, Tesseract as fallback.
+            pipeline_options.do_ocr = self._do_ocr
             return DocumentConverter(
                 format_options={"pdf": PdfFormatOption(pipeline_options=pipeline_options)}
             )

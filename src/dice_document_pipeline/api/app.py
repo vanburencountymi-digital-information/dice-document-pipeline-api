@@ -9,12 +9,16 @@ Production (Cloud Run):
 """
 from __future__ import annotations
 
+import asyncio
+import json
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from sse_starlette.sse import EventSourceResponse
 
 from dice_document_pipeline.workers import (
     LocalDoclingStub,
@@ -132,18 +136,83 @@ async def get_job_status(job_id: str):
     return JobStatusResponse(**record.__dict__)
 
 
+@app.get("/jobs/{job_id}/events")
+async def stream_job_events(job_id: str, request: Request):
+    """Server-Sent Events stream for live job progress.
+
+    Connect with EventSource in the browser or portal:
+        const es = new EventSource(`/jobs/${jobId}/events`);
+        es.onmessage = e => console.log(JSON.parse(e.data));
+
+    Emits one JSON object per event: {stage, message}.
+    Terminal stages are "complete", "manual_review", and "failed".
+    The stream closes automatically after a terminal event.
+    """
+    record = job_store.get(job_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id!r} not found.")
+
+    q = job_store.get_event_queue(job_id)
+    loop = asyncio.get_event_loop()
+    terminal = {"complete", "manual_review", "failed"}
+
+    async def generator():
+        # If the job already reached a terminal state before the client connected,
+        # synthesise a single terminal event from the stored record and close.
+        rec = job_store.get(job_id)
+        if rec and rec.status in terminal:
+            yield {"data": json.dumps({"stage": rec.status, "message": f"Job {rec.status}"})}
+            return
+
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                event = await loop.run_in_executor(
+                    None, lambda: q.get(timeout=1.0)  # type: ignore[union-attr]
+                )
+                yield {"data": json.dumps(event)}
+                if event.get("stage") in terminal:
+                    break
+            except Exception:
+                # Queue.get timed out — send a keepalive comment and check status.
+                rec = job_store.get(job_id)
+                if rec and rec.status in terminal:
+                    yield {"data": json.dumps({"stage": rec.status, "message": f"Job {rec.status}"})}
+                    break
+                yield {"comment": "keepalive"}
+
+    return EventSourceResponse(generator())
+
+
 # ------------------------------------------------------------------
 # Background worker
 # ------------------------------------------------------------------
 
 def _run_job(job: RemediationJob) -> None:
+    def _push(stage: str, message: str) -> None:
+        job_store.push_event(job.job_id, {"stage": stage, "message": message})
+
+    started_at = datetime.now(timezone.utc).isoformat()
     job_store.update_status(job.job_id, "running")
+    job_store.set_started_at(job.job_id, started_at)
+    t0 = time.monotonic()
     try:
         result = process_server_remediation_job(
             job,
             storage=_build_storage(),
             docling=_build_docling(),
+            progress=_push,
         )
-        job_store.update_from_result(job.job_id, result)
+        elapsed = time.monotonic() - t0
+        completed_at = datetime.now(timezone.utc).isoformat()
+        job_store.update_from_result(
+            job.job_id,
+            result,
+            completed_at=completed_at,
+            processing_seconds=round(elapsed, 2),
+        )
+        _push(result.status, f"Job {result.status} — score {result.compliance_score} ({result.compliance_grade})")
     except Exception as exc:
         job_store.set_failed(job.job_id, str(exc))
+        job_store.push_event(job.job_id, {"stage": "failed", "message": str(exc)})

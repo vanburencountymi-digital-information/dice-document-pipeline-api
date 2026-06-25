@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../dice-portal"
+		},
+		{
+			"path": "../county-data-services"
+		},
+		{
+			"path": "../external-drive-inventory"
+		}
+	]
+}

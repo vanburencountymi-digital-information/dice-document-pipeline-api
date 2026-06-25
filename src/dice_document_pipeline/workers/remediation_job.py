@@ -44,6 +44,7 @@ class RemediationResult:
     markdown_uri: str | None = None
     compliance_score: int | None = None
     compliance_grade: str | None = None
+    page_count: int | None = None
     manual_review_items: list[str] = field(default_factory=list)
     log_uri: str | None = None
     pipeline_version: str | None = None
@@ -121,6 +122,7 @@ def process_remediation_job(job: RemediationJob) -> RemediationResult:
             remediated_pdf_uri=remediated_pdf_uri,
             compliance_score=score,
             compliance_grade=grade,
+            page_count=page_count,
             manual_review_items=manual_items,
             log_uri=log_path.as_uri(),
             pipeline_version=pipeline_version,
