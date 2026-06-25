@@ -63,16 +63,22 @@ class DoclingPdfAdapter:
 
     def _build_converter(self):
         try:
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.datamodel.pipeline_options import (
+                PdfPipelineOptions,
+                TesseractCliOcrOptions,
+            )
             from docling.document_converter import DocumentConverter, PdfFormatOption
 
             pipeline_options = PdfPipelineOptions()
             pipeline_options.images_scale = self._images_scale
             pipeline_options.generate_page_images = self._generate_page_images
             pipeline_options.generate_picture_images = self._generate_picture_images
-            # Always enable OCR so image-only (scanned) PDFs produce usable text.
-            # Docling uses EasyOCR on GPU when available, Tesseract as fallback.
+            # Use Tesseract (system package, no model downloads) so the container
+            # starts reliably. RapidOCR/EasyOCR require weights that must be
+            # explicitly pre-fetched at build time; Tesseract needs none.
             pipeline_options.do_ocr = self._do_ocr
+            if self._do_ocr:
+                pipeline_options.ocr_options = TesseractCliOcrOptions()
             return DocumentConverter(
                 format_options={"pdf": PdfFormatOption(pipeline_options=pipeline_options)}
             )

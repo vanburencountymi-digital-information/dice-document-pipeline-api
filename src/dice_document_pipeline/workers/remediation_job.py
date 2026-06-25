@@ -40,6 +40,7 @@ class RemediationResult:
     job_id: str
     status: str
     remediated_pdf_uri: str | None = None
+    tagged_pdf_uri: str | None = None
     html_uri: str | None = None
     markdown_uri: str | None = None
     compliance_score: int | None = None

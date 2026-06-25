@@ -44,6 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libglib2.0-0 \
         # curl for healthcheck debugging
         curl \
+        # OpenDataLoader PDF requires Java 21 (spawns a JVM subprocess per job)
+        openjdk-21-jre-headless \
     && rm -rf /var/lib/apt/lists/*
 
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
@@ -60,7 +62,7 @@ COPY src/ ./src/
 # Install api + docling + gcs extras.
 # PyTorch (CPU-only wheel) is pulled in by docling; the CUDA runtime above
 # provides the GPU libraries that PyTorch links against at runtime.
-RUN pip install -e ".[api,docling,gcs]"
+RUN pip install -e ".[api,docling,gcs,remediation]"
 
 # ── Pre-bake Docling models ────────────────────────────────────────────────────
 # Runs DocumentConverter() once so all transformer model weights are

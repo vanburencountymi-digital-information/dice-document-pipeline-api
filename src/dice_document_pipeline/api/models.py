@@ -25,6 +25,7 @@ class JobStatusResponse(BaseModel):
     compliance_score: int | None = None
     compliance_grade: str | None = None
     remediated_pdf_uri: str | None = None
+    tagged_pdf_uri: str | None = None
     html_uri: str | None = None
     markdown_uri: str | None = None
     log_uri: str | None = None

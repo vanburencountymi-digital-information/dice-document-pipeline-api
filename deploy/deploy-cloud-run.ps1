@@ -33,7 +33,7 @@ gcloud run deploy $ServiceName `
     --max-instances=3 `
     --timeout=600 `
     --no-allow-unauthenticated `
-    --set-env-vars="USE_GCS=true,GCS_INBOUND_BUCKET=dice-pipeline-inbound,GCS_ARTIFACTS_BUCKET=dice-pipeline-artifacts,GCS_PREFIX=jobs,USE_DOCLING=true,CORS_ORIGINS=*" `
+    --set-env-vars="USE_GCS=true,GCS_INBOUND_BUCKET=dice-pipeline-inbound,GCS_ARTIFACTS_BUCKET=dice-pipeline-artifacts,GCS_PREFIX=jobs,USE_DOCLING=true,USE_OPENDATALOADER=true,CORS_ORIGINS=*" `
     --set-secrets="ANTHROPIC_API_KEY=PS_ANTHROPIC_API_KEY:latest"
 
 if ($LASTEXITCODE -eq 0) {

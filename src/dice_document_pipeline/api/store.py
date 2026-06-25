@@ -28,6 +28,7 @@ class JobRecord:
     compliance_score: int | None = None
     compliance_grade: str | None = None
     remediated_pdf_uri: str | None = None
+    tagged_pdf_uri: str | None = None
     html_uri: str | None = None
     markdown_uri: str | None = None
     log_uri: str | None = None
@@ -77,6 +78,7 @@ class InMemoryJobStore:
             rec.compliance_score = result.compliance_score
             rec.compliance_grade = result.compliance_grade
             rec.remediated_pdf_uri = result.remediated_pdf_uri
+            rec.tagged_pdf_uri = result.tagged_pdf_uri
             rec.html_uri = result.html_uri
             rec.markdown_uri = result.markdown_uri
             rec.log_uri = result.log_uri
