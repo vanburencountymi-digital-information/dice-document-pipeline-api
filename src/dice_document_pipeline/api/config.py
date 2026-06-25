@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     gcs_prefix: str = "jobs"
 
     use_docling: bool = False
+    use_opendataloader: bool = False
+    use_alt_text: bool = True
 
     # Local filesystem root used when use_gcs=false.
     storage_output_dir: str = "/tmp/dice-pipeline"

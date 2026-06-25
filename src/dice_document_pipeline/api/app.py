@@ -65,6 +65,14 @@ def _build_docling():
     return LocalDoclingStub()
 
 
+def _build_tagging():
+    if settings.use_opendataloader:
+        from dice_document_pipeline.workers.opendataloader_adapter import OpenDataLoaderAdapter
+        return OpenDataLoaderAdapter()
+    from dice_document_pipeline.workers.opendataloader_adapter import LocalTaggingStub
+    return LocalTaggingStub()
+
+
 # ------------------------------------------------------------------
 # Routes
 # ------------------------------------------------------------------
@@ -202,6 +210,8 @@ def _run_job(job: RemediationJob) -> None:
             job,
             storage=_build_storage(),
             docling=_build_docling(),
+            tagging=_build_tagging(),
+            use_alt_text=settings.use_alt_text,
             progress=_push,
         )
         elapsed = time.monotonic() - t0
@@ -212,7 +222,7 @@ def _run_job(job: RemediationJob) -> None:
             completed_at=completed_at,
             processing_seconds=round(elapsed, 2),
         )
-        _push(result.status, f"Job {result.status} — score {result.compliance_score} ({result.compliance_grade})")
+        _push(result.status, f"Job {result.status} — score {result.compliance_score} ({result.compliance_grade}) — tagged PDF: {result.tagged_pdf_uri}")
     except Exception as exc:
         job_store.set_failed(job.job_id, str(exc))
         job_store.push_event(job.job_id, {"stage": "failed", "message": str(exc)})
