@@ -22,8 +22,11 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies:
-          - django-stubs
-          - djangorestframework-stubs
+          - Django==6.0.7
+          - django-environ==0.14.0
+          - djangorestframework==3.17.1
+          - django-stubs==6.0.7
+          - djangorestframework-stubs==3.17.0
         args: [--config-file=pyproject.toml, .]
         pass_filenames: false
         always_run: true
