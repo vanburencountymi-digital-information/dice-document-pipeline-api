@@ -21,6 +21,17 @@ venv/
 .venv/
 env/
 
+# Lint/type-check caches
+.mypy_cache/
+.ruff_cache/
+
+# Django
+db.sqlite3
+db.sqlite3-journal
+local_settings.py
+staticfiles/
+media/
+
 # OS junk
 .DS_Store
 Thumbs.db

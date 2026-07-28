@@ -1,5 +1,18 @@
 # Dice Document Pipeline API
 
+## Setup
+
+Setup a python3 env using 3.13 or above and activate it
+
+```bash
+pip install -r requirements.txt
+pre-commit install
+python manage.py migrate
+python manage.py runserver
+```
+
+Linting and type checking are enforced via Ruff and MyPy and will automatically run when attempting to commit.
+
 ## Problem Definition
 
 In the first half of 2026, Jerry Happel and Drake Olejniczak from the [Van Buren County Digital Information Department](https://vanburencountymi.gov/departments/departments-offices/digital-information/) were facing an interesting and pressing problem: the [Van Buren County website](https://vanburencountymi.gov) contained almost 4000 media files, includes thousands of pdf files that would not meet the WCAG 2.1 Level AA technical standard required by ADA Title II web and mobile accessibility compliance.
@@ -27,7 +40,7 @@ The planned V2 prototype is an API that leverages a number of new open-source pa
 - Final document is written (likely claude?)
 - Document is validated with VeraPDF
 - If pass, return remediated PDF
-- If fail, enter secondary AI pipeline, which? 
+- If fail, enter secondary AI pipeline, which?
 
 ## OLD README FROM V1
 
