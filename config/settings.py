@@ -121,6 +121,11 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# Media files (user uploads — PDFs). FileSystemStorage locally; swap to
+# django-storages' GoogleCloudStorage via STORAGES["default"] for Cloud Run.
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 # REST_FRAMEWORK
 
 REST_FRAMEWORK = {
