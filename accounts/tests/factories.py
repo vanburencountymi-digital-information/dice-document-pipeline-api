@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import factory
 from django.contrib.auth import get_user_model
+from rest_framework.authtoken.models import Token
 
 from accounts.models import Organization, ServiceAccount
 
@@ -37,3 +38,9 @@ class ServiceAccountFactory(factory.django.DjangoModelFactory):
     organization = factory.SubFactory(OrganizationFactory)
     user = factory.SubFactory(UserFactory)
     name = factory.Sequence(lambda n: f"service-account-{n}")
+
+    @factory.post_generation
+    def token(self, create, extracted, **kwargs):
+        # Real service accounts always have a token (ServiceAccountService.create()).
+        if create:
+            Token.objects.get_or_create(user=self.user)
