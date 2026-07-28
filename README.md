@@ -1,10 +1,35 @@
-# DICE Document Pipeline
+# Dice Document Pipeline API
 
-ADA PDF remediation and evaluation tooling for the DICE County Knowledge Base Pipeline.
+## Problem Definition
 
-This repository currently contains the desktop batch pipeline that was proven against Van Buren County and St. Joseph County document sets, plus an Adobe PDF Services Auto-Tag evaluation harness. The next phase is to refactor the reusable remediation logic into a server worker for the County Knowledge Base Pipeline.
+In the first half of 2026, Jerry Happel and Drake Olejniczak from the [Van Buren County Digital Information Department](https://vanburencountymi.gov/departments/departments-offices/digital-information/) were facing an interesting and pressing problem: the [Van Buren County website](https://vanburencountymi.gov) contained almost 4000 media files, includes thousands of pdf files that would not meet the WCAG 2.1 Level AA technical standard required by ADA Title II web and mobile accessibility compliance.
 
-## Current Components
+## V1 Prototype
+
+With the deadline swiftly approaching, they created the [Dice Document Pipeline](https://github.com/vanburencountymi-digital-information/dice-document-pipeline) as a protoype; this AI assisted document remediation pipeline requires a windows desktop, on which it drives Adobe Acrobat Pro through COM automation to OCR, auto-tag, and run Acrobat's accessibility check. Then, another pass applies python remediation fixes, generates Claude-assisted alt test/headings/contrast checks, scores compliance, and writes per-document logs.
+
+### V1 Limitations
+
+The prototype was able to batch remediate over a thousand documents to a high standard, proving AI tools could be an effective solution to the problem of document remediation. However, as a protoype, it had several important limitations:
+- Required the usage of a windows desktop with adobe acrobat
+- AI tools were most costly than algorithmic solutions
+- Would require human intervention at regular intervals to scrape the website for new documents, download them, batch convert them, and upload them, which represented a significant administrative burden.
+
+## V2 Prototype
+
+The planned V2 prototype is an API that leverages a number of new open-source packages with the following pipeline:
+
+- END USER uploads a document to a platform that has a plugin that taps into the remediation pipeline (i.e., WordPress)
+- Worker sends call to Django API with file
+- Django API creates a remediation job and instantiates a background worker (Celery)
+- Worker checks for OCR/text extraction and performs it if necessary with OpenDataLoader
+- Worker applies PDF Tags + Metadata with OpenDataLoader and python remediation fixes (check on this to see how much open data loader can do and how much is needed via claude)
+- Final document is written (likely claude?)
+- Document is validated with VeraPDF
+- If pass, return remediated PDF
+- If fail, enter secondary AI pipeline, which? 
+
+## OLD README FROM V1
 
 - `pipeline/acrobat_pass.py` - Windows desktop Pass 1. Drives Adobe Acrobat Pro through COM automation to OCR, auto-tag, and run Acrobat's accessibility check.
 - `pipeline/ada_remediate.py` - Pass 2. Applies Python remediation fixes, generates Claude-assisted alt text/headings/contrast checks, scores compliance, and writes per-document logs.

@@ -1,7 +1,0 @@
-sample-docs/
-results/
-.env
-__pycache__/
-*.pyc
-venv/
-.venv/
