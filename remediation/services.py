@@ -1,3 +1,7 @@
+import hashlib
+
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from accounts.models import ServiceAccount
@@ -5,6 +9,34 @@ from remediation.models import Remediation
 
 
 class RemediationService:
+    def _hash_file(self, uploaded_file: UploadedFile) -> str:
+        hasher = hashlib.sha256()
+        for chunk in uploaded_file.chunks():
+            hasher.update(chunk)
+        uploaded_file.seek(0)
+        return hasher.hexdigest()
+
+    def get(self, remediation_id: str) -> Remediation:
+        return Remediation.objects.get(pk=remediation_id)
+
+    def get_or_create_from_upload(
+        self, service_account: ServiceAccount, uploaded_file: UploadedFile
+    ) -> tuple[Remediation, bool]:
+        """Submits an uploaded PDF for remediation, deduplicating by content hash.
+
+        Returns `(remediation, created)` — `created` is `False` when a reusable
+        (non-`FAILED`) attempt already exists for this document, in which case
+        storage is never touched.
+        """
+        content_hash = self._hash_file(uploaded_file)
+        existing = self.find_existing(service_account, content_hash)
+        if existing is not None:
+            return existing, False
+
+        name = default_storage.save(f"remediations/{uploaded_file.name}", uploaded_file)
+        remediation = self.create(service_account, source_pdf_uri=name, content_hash=content_hash)
+        return remediation, True
+
     def find_existing(
         self, service_account: ServiceAccount, content_hash: str
     ) -> Remediation | None:

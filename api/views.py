@@ -1,8 +1,4 @@
-import hashlib
-
 from django.contrib.auth.models import AnonymousUser
-from django.core.files.storage import default_storage
-from django.core.files.uploadedfile import UploadedFile
 from django.http import Http404
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
@@ -12,64 +8,73 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import ServiceAccount
-from remediation.serializers import RemediationSerializer
+from remediation.serializers import RemediationSerializer, RemediationUploadSerializer
 from remediation.services import RemediationService
+from remediation.tasks import process_remediation
 
 
-def _service_account(request: Request) -> ServiceAccount:
-    # IsAuthenticated already guarantees this; narrows the type for mypy.
-    assert not isinstance(request.user, AnonymousUser)
-    return request.user.serviceaccount
+class ServiceAccountRequiredMixin(APIView):
+    """Token-authenticates a request and exposes the caller's `ServiceAccount`."""
 
-
-class StatusView(APIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+
+    @property
+    def service_account(self) -> ServiceAccount:
+        # IsAuthenticated already guarantees this; narrows the type for mypy.
+        assert not isinstance(self.request.user, AnonymousUser)
+        return self.request.user.serviceaccount
+
+
+class StatusView(ServiceAccountRequiredMixin):
+    """Placeholder; checks if user token is valid."""
 
     def get(self, request: Request) -> Response:
         return Response({"status": "ok"})
 
 
-def _hash_file(uploaded_file: UploadedFile) -> str:
-    hasher = hashlib.sha256()
-    for chunk in uploaded_file.chunks():
-        hasher.update(chunk)
-    uploaded_file.seek(0)
-    return hasher.hexdigest()
+class CreateRemediationView(ServiceAccountRequiredMixin):
+    """
+    Handles incoming files for remediation jobs.
+    If the file (by content hash) is new for the service account, or last attempt failed, enqueues a new remediation job.
+    Otherwise returns the most recent non-failed remediation job for that file.
+
+    Takes:
+        a PDF document.
+
+    Returns:
+        Response with the serialized remediation job (id, document_id, status, error, created_at, started_at, completed_at).
 
 
-class CreateRemediationView(APIView):
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+    """
 
     def post(self, request: Request) -> Response:
-        uploaded_file = request.FILES.get("file")
-        if uploaded_file is None:
-            return Response({"detail": "file is required."}, status=status.HTTP_400_BAD_REQUEST)
-        if not uploaded_file.name.lower().endswith(".pdf"):
-            return Response({"detail": "file must be a PDF."}, status=status.HTTP_400_BAD_REQUEST)
+        upload = RemediationUploadSerializer(data=request.data)
+        upload.is_valid(raise_exception=True)
 
-        service = RemediationService()
-        content_hash = _hash_file(uploaded_file)
-        existing = service.find_existing(_service_account(request), content_hash)
-        if existing is not None:
-            return Response(RemediationSerializer(existing).data, status=status.HTTP_200_OK)
-
-        name = default_storage.save(f"remediations/{uploaded_file.name}", uploaded_file)
-        remediation = service.create(
-            _service_account(request), source_pdf_uri=name, content_hash=content_hash
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account, upload.validated_data["file"]
         )
-        return Response(RemediationSerializer(remediation).data, status=status.HTTP_201_CREATED)
+        if created:
+            process_remediation.enqueue(str(remediation.id))
+        response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(RemediationSerializer(remediation).data, status=response_status)
 
 
-class DocumentStatusView(APIView):
-    authentication_classes = [TokenAuthentication]
-    permission_classes = [IsAuthenticated]
+class DocumentStatusView(ServiceAccountRequiredMixin):
+    """
+    Looks up and returns the status of a document's most recent remediation attempt.
+
+    Takes:
+        content_hash: the SHA-256 hex digest identifying the document.
+
+    Returns:
+        Response with the serialized remediation job (id, document_id, status, error, created_at, started_at, completed_at).
+        Returns 404 if no remediation job for that file + that service account.
+    """
 
     def get(self, request: Request, content_hash: str) -> Response:
-        remediation = RemediationService().latest_for_document(
-            _service_account(request), content_hash
-        )
+        remediation = RemediationService().latest_for_document(self.service_account, content_hash)
         if remediation is None:
             raise Http404
         return Response(RemediationSerializer(remediation).data)

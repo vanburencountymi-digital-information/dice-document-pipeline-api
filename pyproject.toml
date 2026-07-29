@@ -35,8 +35,8 @@ warn_unused_ignores = true
 warn_unused_configs = true
 
 [[tool.mypy.overrides]]
-module = "*.migrations.*"
-ignore_errors = true
+module = "environ.*"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # factory_boy has no type stubs, so both factories and the tests that use

@@ -1,17 +1,27 @@
 from __future__ import annotations
 
-from django.test import TestCase
+import tempfile
+
+from django.core.files.storage import default_storage
+from django.test import TestCase, override_settings
 
 from accounts.tests.factories import ServiceAccountFactory
 from remediation.models import Remediation
 from remediation.services import RemediationService
-from remediation.tests.factories import RemediationFactory
+from remediation.tests.factories import PdfUploadFactory, RemediationFactory
 
 
 class RemediationServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
         cls.service_account = ServiceAccountFactory()
+
+    def test_get_returns_remediation_by_id(self) -> None:
+        remediation = RemediationFactory(service_account=self.service_account)
+
+        found = RemediationService().get(str(remediation.id))
+
+        self.assertEqual(found, remediation)
 
     def test_create_links_remediation_to_service_account_and_queues_it(self) -> None:
         remediation = RemediationService().create(
@@ -106,3 +116,47 @@ class RemediationServiceTests(TestCase):
         self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
         self.assertEqual(remediation.error, "Timeout error during OCR")
         self.assertIsNotNone(remediation.completed_at)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class RemediationServiceGetOrCreateFromUploadTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.service_account = ServiceAccountFactory()
+
+    def test_creates_new_remediation_and_saves_file_for_new_content(self) -> None:
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory()
+        )
+
+        self.assertTrue(created)
+        self.assertEqual(remediation.service_account, self.service_account)
+        self.assertEqual(remediation.status, Remediation.JobStatus.QUEUED)
+        self.assertTrue(default_storage.exists(remediation.source_pdf_uri))
+
+    def test_returns_existing_remediation_without_touching_storage_for_duplicate(self) -> None:
+        content = b"same bytes"
+        existing, _ = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(content=content)
+        )
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(content=content)
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(remediation, existing)
+        self.assertEqual(Remediation.objects.count(), 1)
+
+    def test_reuses_content_hash_across_differently_named_files(self) -> None:
+        content = b"same bytes"
+        existing, _ = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="first.pdf", content=content)
+        )
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="second.pdf", content=content)
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(remediation, existing)
