@@ -17,6 +17,7 @@ class Remediation(models.Model):
     status = models.CharField(max_length=20, choices=JobStatus.choices, default=JobStatus.QUEUED)
 
     source_pdf_uri = models.CharField(max_length=500)
+    content_hash = models.CharField(max_length=64)  # sha256 hex digest
     error = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -25,7 +26,7 @@ class Remediation(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["status"])]
+        indexes = [models.Index(fields=["service_account", "content_hash"])]
 
     def __str__(self) -> str:
         return f"{self.service_account}: {self.source_pdf_uri} ({self.status})"

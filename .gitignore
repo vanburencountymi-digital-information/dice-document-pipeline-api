@@ -1,6 +1,9 @@
 # Secrets — never commit
 .env
 
+# Local working notes — not for the repo history
+implementation_plan.md
+
 # Runtime work directories — large PDFs, logs, output files
 remediation_work/
 

@@ -12,3 +12,4 @@ class RemediationFactory(factory.django.DjangoModelFactory):
 
     service_account = factory.SubFactory(ServiceAccountFactory)
     source_pdf_uri = factory.Sequence(lambda n: f"local:///tmp/document-{n}.pdf")
+    content_hash = factory.Sequence(lambda n: f"hash-{n}")
