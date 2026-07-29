@@ -36,3 +36,40 @@ class Remediation(models.Model):
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return None
+
+
+class RemediationArtifact(models.Model):
+    """Per-step outcome + output lineage for one `Remediation` attempt.
+
+    One row per step actually reached (ADR 0003) — `Remediation.source_pdf_uri` stays the
+    single immutable input; each step's `output_uri` is the file it handed to the next step.
+    """
+
+    class Step(models.TextChoices):
+        PRECHECK = "precheck", "Precheck"
+        OCR = "ocr", "OCR"
+        FINALIZE_TAGS = "finalize_tags", "Finalize tags"
+        ALT_TEXT = "alt_text", "Alt text"
+        LINK_TAG = "link_tag", "Link tag"
+        POSTCHECK = "postcheck", "Postcheck"
+
+    class StepStatus(models.TextChoices):
+        COMPLETED = "completed", "Completed"
+        SKIPPED = "skipped", "Skipped"
+        FAILED = "failed", "Failed"
+
+    remediation = models.ForeignKey(Remediation, on_delete=models.CASCADE, related_name="artifacts")
+    step = models.CharField(max_length=20, choices=Step.choices)
+    status = models.CharField(max_length=20, choices=StepStatus.choices)
+    output_uri = models.CharField(max_length=500, blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["remediation", "step"], name="one_artifact_per_step")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.remediation_id}: {self.step} ({self.status})"

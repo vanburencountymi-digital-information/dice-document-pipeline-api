@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from accounts.models import ServiceAccount
-from remediation.models import Remediation
+from remediation.models import Remediation, RemediationArtifact
 
 
 class RemediationService:
@@ -80,3 +80,30 @@ class RemediationService:
         remediation.error = error
         remediation.completed_at = timezone.now()
         remediation.save(update_fields=["status", "error", "completed_at"])
+
+
+class ArtifactService:
+    """Mixin for pipeline step services that records their outcome as a `RemediationArtifact`.
+
+    Subclasses set `step` to the `RemediationArtifact.Step` they represent.
+    """
+
+    step: RemediationArtifact.Step
+
+    def _mark_status(
+        self, remediation: Remediation, status: RemediationArtifact.StepStatus, **fields: str
+    ) -> RemediationArtifact:
+        return RemediationArtifact.objects.create(
+            remediation=remediation, step=self.step, status=status, **fields
+        )
+
+    def mark_completed(self, remediation: Remediation, output_uri: str) -> RemediationArtifact:
+        return self._mark_status(
+            remediation, RemediationArtifact.StepStatus.COMPLETED, output_uri=output_uri
+        )
+
+    def mark_skipped(self, remediation: Remediation, reason: str) -> RemediationArtifact:
+        return self._mark_status(remediation, RemediationArtifact.StepStatus.SKIPPED, error=reason)
+
+    def mark_failed(self, remediation: Remediation, error: str) -> RemediationArtifact:
+        return self._mark_status(remediation, RemediationArtifact.StepStatus.FAILED, error=error)

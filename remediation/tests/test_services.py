@@ -3,12 +3,17 @@ from __future__ import annotations
 import tempfile
 
 from django.core.files.storage import default_storage
+from django.db import IntegrityError
 from django.test import TestCase, override_settings
 
 from accounts.tests.factories import ServiceAccountFactory
-from remediation.models import Remediation
-from remediation.services import RemediationService
-from remediation.tests.factories import PdfUploadFactory, RemediationFactory
+from remediation.models import Remediation, RemediationArtifact
+from remediation.services import ArtifactService, RemediationService
+from remediation.tests.factories import (
+    PdfUploadFactory,
+    RemediationArtifactFactory,
+    RemediationFactory,
+)
 
 
 class RemediationServiceTests(TestCase):
@@ -160,3 +165,44 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
 
         self.assertFalse(created)
         self.assertEqual(remediation, existing)
+
+
+class ArtifactServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.remediation = RemediationFactory()
+        cls.service = ArtifactService()
+        cls.service.step = RemediationArtifact.Step.OCR
+
+    def test_mark_completed_records_completed_status_and_output_uri(self) -> None:
+        artifact = self.service.mark_completed(self.remediation, "local:///tmp/output.pdf")
+
+        self.assertEqual(artifact.remediation, self.remediation)
+        self.assertEqual(artifact.step, RemediationArtifact.Step.OCR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, "local:///tmp/output.pdf")
+        self.assertEqual(artifact.error, "")
+
+    def test_mark_skipped_records_skipped_status_and_reason(self) -> None:
+        artifact = self.service.mark_skipped(self.remediation, "no untagged figures")
+
+        self.assertEqual(artifact.remediation, self.remediation)
+        self.assertEqual(artifact.step, RemediationArtifact.Step.OCR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.SKIPPED)
+        self.assertEqual(artifact.error, "no untagged figures")
+        self.assertEqual(artifact.output_uri, "")
+
+    def test_mark_failed_records_failed_status_and_error(self) -> None:
+        artifact = self.service.mark_failed(self.remediation, "Timeout error during OCR")
+
+        self.assertEqual(artifact.remediation, self.remediation)
+        self.assertEqual(artifact.step, RemediationArtifact.Step.OCR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "Timeout error during OCR")
+        self.assertEqual(artifact.output_uri, "")
+
+    def test_mark_completed_for_step_already_recorded_violates_unique_constraint(self) -> None:
+        RemediationArtifactFactory(remediation=self.remediation, step=RemediationArtifact.Step.OCR)
+
+        with self.assertRaises(IntegrityError):
+            self.service.mark_completed(self.remediation, "local:///tmp/output-2.pdf")
