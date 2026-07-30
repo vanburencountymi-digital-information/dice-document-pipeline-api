@@ -1,4 +1,4 @@
-# 3. Remediation pipeline: step sequence, branching, and service shape
+# 3. Remediation pipeline: artifact-based step architecture
 
 ## Status
 
@@ -6,39 +6,38 @@ Accepted
 
 ## Context
 
-The `process_remediation` job is currently a placeholder, and we are ready to define the pipeline architecture moving forward.
+`process_remediation` is currently a placeholder. We need an architecture for the real pipeline: a sequence of stages, each independently skippable and failable, with enough recorded lineage to answer "what happened to this document" after the fact — not just a single pass/fail flag.
 
-Initially, our hope was to use base interface classes that would then call adapters to avoid lock-in with a specific service.
-
-So, for example, a base class of OCRService everywhere it's called in a view or service class, and then an adapter or client class used in instantiation (DoclingOCRService).
-
-However, investigation into the best possible automated tagging solutions revealed that OpenDataLoader--our frontrunner for tagging--cannot split OCR and tagging calls easily (although it can be done, depending on how the server is instantiated); additionally, given its strong performance in benchmarks, it is likely the preferred solution for a number of different functions.
-
-Another decision tree involved alt-text; although OpenDataLoader's OCR service *does* supply alt-text, it uses an ultra-lightweight model that likely is not able to tag images to a sufficient enough standard to meet WCAG guidelines.
-
-## Options Considered
-1. Move forward with pinning OpenDataLoader as a dependency, which will tightly couple our codebase to the product, which would result in a larger lift if we ever wanted to move forward with a different OCR or tagging service.
-2. Move forward with separate interface classes, essentially skipping unused classes with a no-op.
+Which engine backs OCR/tagging (OpenDataLoader) is a related but separate decision — see [ADR 0004](0004-ocr-tagging-engine.md). This ADR is about the pipeline's shape: the stages, what each one is responsible for, and how outcomes are recorded — independent of which engine backs any given stage.
 
 ## Decision
 
-Proceed with Java + OpenDataLoader as a real, pinned system dependency, with hybrid mode(--hybrid docling-fast)
+The pipeline is a fixed sequence of responsibilities, each producing its own artifact:
 
-### Steps and Service Shape
+1. **Validate input** — check the uploaded PDF against PDF/UA compliance before doing any other work. If it already passes, the job completes immediately without touching any other stage.
+2. **Produce tagged structure and text** — OCR (where needed) and generate the PDF's tag tree in one pass. The initial conception included separate OCR and tagged structure steps, see ADR 0004 for why that is not possible that the moment.
+3. **Normalize accessibility metadata** — fix up mandatory `MarkInfo`/`Lang`/title/tab-order gaps left by the previous stage; possibly skippable with a different OCR/tagging engine.
+4. **Enrich figures** — generate alt text for untagged, non-decorative figures; skipped if there's no `/StructTreeRoot` or nothing left to enrich.
+5. **Repair links** — provide struct-tree linking for `/Link` annotations.
+6. **Validate output** — re-run the same PDF/UA check used at input. Passing completes the job; failing marks the whole job `FAILED`.
 
-Steps should each be independently skippable and failable, and a failed step marks the whole job as failed.
+Each stage's outcome is recorded as a `RemediationArtifact` (`remediation`, `step`, `status` [completed/skipped/failed], `output_uri`, `error`) — one row per stage actually reached. `Remediation.source_pdf_uri` is never modified, so content-hash-based dedup keeps working regardless of how far a given attempt got; each stage instead writes its own `output_uri` and hands it to the next stage as input.
 
-The original source URI is never changed to preserve content hash, but each step produces an artifact that writes a new URI and passes it forward as the next steps input.
+Artifact persistence exists to answer "which stage did a failed job die on, and what did each stage actually produce" without re-running anything — an audit trail and debugging aid. It is not, today, a resumability mechanism — see Failure semantics below for why.
 
-1. `PrecheckService()` - calls VeraPDFAdapter on the original upload. Compliant → `mark_complete`, done.
-2. `OCRService()` - calls OpenDataLoaderAdapter, runs OCR in hybrid mode and tags the file.
-3. `TaggingService.finalize_tags()` - fixup on step 2's output that calls PikePDFAdapter, supplies mandatory `MarkInfo`/`Lang`/title/tab-order.
-4. `AltTextService()` - calls ClaudeVisionAdapter(), should be skipped if no `/StructTreeRoot` or no untagged non-decorative figures.
-5. `LinkService()` - call PikePdfAdapter to provide struct-tree linking for `/Link` annotations.
-6. `PostCheckService()` - recall veraPDF on  step 5's output. Compliant → `mark_complete`. If fails, mark the remediation job as failed.
+### Failure semantics
+
+- At this time, a failed stage fails the whole `Remediation` — there is no partial success and no "manual review" status between complete and failed.
+- At this time, failed jobs do not resume, and stages are not individually rerun within one `Remediation`. A retry of the same document creates a brand-new `Remediation` row (the existing dedup rule already excludes `FAILED` attempts when deciding whether to reuse one — see `RemediationService.find_existing`) and reprocesses from stage one; it does not resume from or reuse the failed attempt's artifacts. This will likely be updated in a future ADR and has been chosen as a shape at the moment for ease of implementation and testing purposes.
+- `RemediationArtifact` rows are immutable history once written — `(remediation, step)` is enforced unique at the database level, so a stage cannot be silently rerun and overwritten within the same attempt.
+- This is a deliberate simplicity choice, not an oversight. True resumability (skip stages a *new* attempt has already redone, reuse a prior attempt's OCR output, etc.) is a real possible extension of this same artifact table, but nothing today requires it, and it adds real complexity (partial-attempt state, cache invalidation when an upstream stage's own logic changes). Revisit only if a real cost shows up — e.g. expensive OCR being redone on every retry of a large document.
+
+### Open consideration: task redelivery vs. the per-step uniqueness constraint
+
+The `(remediation, step)` uniqueness above assumes each step runs at most once per attempt because nothing redelivers a task mid-pipeline. That's true under `ImmediateBackend` today (see [ADR 0002](0002-task-execution-framework.md)), but not guaranteed once the production backend swaps to Cloud Tasks, which does at-least-once push delivery with retries. If `process_remediation` were redelivered mid-pipeline, the second run would hit this constraint as an `IntegrityError` on any step that already completed — which `tasks.py`'s current try/except/else would read as a real failure and call `mark_failed`, incorrectly failing a job that was actually still progressing fine. This is a different problem from the content-hash submission dedup in `RemediationService.find_existing` — that prevents duplicate *uploads* of the same document, not duplicate *task executions* of the same `Remediation`. Needs a real answer (e.g. treating an existing-artifact `IntegrityError` for the current step as a no-op rather than a failure) before that backend swap, not after.
 
 ## Consequences
-- In the event we want to move away from OpenDataLoader, we will have to build new service classes into the pipeline.
-- Hybrid mode requires the `opendataloader-pdf-hybrid` server running alongside the main CLI — an operational dependency beyond just installing the pip package + Java that needs accounting for in local dev setup and the Cloud Run image/process model.
-- `--ocr-engine` choice is still open and needs to be made.
-- `Remediation` now needs a per-step outcome record — a `RemediationArtifact`-shaped table (`remediation`, `step`, `status`, `output_uri`, `error`) instead of one flat `output_uri` field.
+
+- `Remediation` needed a per-stage outcome record instead of one flat `output_uri` field — see `RemediationArtifact` (`remediation/models.py`).
+- Concrete service classes exist per stage (`PrecheckService`, `OCRService`, `TaggingService.finalize_tags`, `AltTextService`, `LinkService`, `PostCheckService`)
+- This ADR doesn't decide which engine backs any given stage — see [ADR 0004](0004-ocr-tagging-engine.md) for OCR/tagging specifically.
