@@ -30,8 +30,15 @@ make migrate          # apply new migrations to the running Postgres
 make up               # start the app (without rebuilding or migrating)
 make down             # stop everything
 make shell            # shell inside the app container
+make pyshell          # Django shell (manage.py shell) inside the app container
 make test             # run the test suite
 make verapdf-version  # confirm veraPDF/Java installed correctly
+```
+
+Docker only reads `.env` when a container is created, not while it's already running. If you edit `.env` (e.g. flipping a `RUN_*` pipeline toggle), a plain `make up` on an already-running container won't pick up the change — recreate it instead:
+
+```bash
+make down && make build && make up
 ```
 
 ### 2b. Bare-metal (Python only)
@@ -45,6 +52,29 @@ cp .env.example .env   # then set SECRET_KEY
 python manage.py migrate
 python manage.py runserver
 ```
+
+## Testing with Postman
+
+The API authenticates requests with a token tied to a `ServiceAccount`. To create one, open a Django shell (`make pyshell`) and run:
+
+```python
+from accounts.models import Organization
+from accounts.services import ServiceAccountService
+
+org = Organization.objects.create(name="Test Org")
+account = ServiceAccountService().create(org, "test-service-account")
+print(account.token)  # save this — you'll paste it into Postman
+```
+
+**Submit a document**
+1. New request: `POST http://localhost:8000/api/submit-document/`
+2. Headers: `Authorization: Token <the token you printed above>`
+3. Body → `form-data` → add key `file`, change its type from "Text" to **"File"**, and pick a PDF (there are sample files under `docs/tests/example-files/original/` and `.../remediated/`).
+4. Send. The response is the remediation job — `status` will be `COMPLETE` or `FAILED` immediately, since the pipeline runs synchronously by default.
+
+**Check a document's status later**
+1. New request: `GET http://localhost:8000/api/document-status/<document_id>/`, using the `document_id` from the submit response.
+2. Same `Authorization` header as above.
 
 ## Problem Definition
 

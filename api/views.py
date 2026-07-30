@@ -57,6 +57,7 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
         )
         if created:
             process_remediation.enqueue(str(remediation.id))
+            remediation.refresh_from_db()
         response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return Response(RemediationSerializer(remediation).data, status=response_status)
 
