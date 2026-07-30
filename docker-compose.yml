@@ -1,0 +1,36 @@
+services:
+  db:
+    # 18 = latest stable and Cloud SQL's current default, so local dev
+    # matches the eventual production target rather than trailing it.
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: dice_document_pipeline
+      POSTGRES_USER: dice
+      POSTGRES_PASSWORD: dice
+    # Postgres 18+ images manage their own versioned subdirectory under this
+    # mount (e.g. /var/lib/postgresql/18/docker) — mounting at .../data like
+    # pre-18 images did makes the image refuse to start.
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dice -d dice_document_pipeline"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Overrides config/settings.py's sqlite default — only applies inside
+      # this compose network, where "db" resolves to the postgres service.
+      DATABASE_URL: postgres://dice:dice@db:5432/dice_document_pipeline
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
