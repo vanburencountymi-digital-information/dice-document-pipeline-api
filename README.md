@@ -30,6 +30,7 @@ make migrate          # apply new migrations to the running Postgres
 make up               # start the app (without rebuilding or migrating)
 make down             # stop everything
 make shell            # shell inside the app container
+make test             # run the test suite
 make verapdf-version  # confirm veraPDF/Java installed correctly
 ```
 

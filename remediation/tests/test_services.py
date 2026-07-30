@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import tempfile
+from unittest.mock import create_autospec
 
 from django.core.files.storage import default_storage
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
+from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
+from remediation.adapters.base import AdapterError
+from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
-from remediation.services import ArtifactService, RemediationService
+from remediation.services import (
+    AlreadyCompliant,
+    ArtifactService,
+    NotCompliant,
+    PostCheckService,
+    PrecheckService,
+    RemediationService,
+)
 from remediation.tests.factories import (
     PdfUploadFactory,
     RemediationArtifactFactory,
@@ -206,3 +217,78 @@ class ArtifactServiceTests(TestCase):
 
         with self.assertRaises(IntegrityError):
             self.service.mark_completed(self.remediation, "local:///tmp/output-2.pdf")
+
+    @parameterized.expand(
+        [
+            ("enabled", True, False),
+            ("disabled", False, True),
+        ]
+    )
+    def test_is_disabled_reflects_setting(self, _name, setting_value, expected) -> None:
+        with override_settings(RUN_OCR=setting_value):
+            self.assertEqual(self.service.is_disabled(), expected)
+
+    def test_record_skip_records_skipped_status_with_setting_name_reason(self) -> None:
+        artifact = self.service.record_skip(self.remediation)
+
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.SKIPPED)
+        self.assertEqual(artifact.error, "RUN_OCR is disabled")
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class VerificationServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
+
+    def setUp(self) -> None:
+        self.adapter = create_autospec(VeraPDFAdapter, spec_set=True)
+
+    @parameterized.expand(
+        [
+            (
+                "precheck_compliant_raises_already_compliant",
+                PrecheckService,
+                True,
+                AlreadyCompliant,
+            ),
+            ("precheck_noncompliant_continues", PrecheckService, False, None),
+            ("postcheck_compliant_continues", PostCheckService, True, None),
+            ("postcheck_noncompliant_raises_not_compliant", PostCheckService, False, NotCompliant),
+        ]
+    )
+    def test_run_signals_based_on_compliance(
+        self, _name, service_cls, is_compliant, expected_exception
+    ) -> None:
+        self.adapter.validate.return_value = (is_compliant, "<report/>")
+        service = service_cls(adapter=self.adapter)
+
+        if expected_exception is not None:
+            with self.assertRaises(expected_exception):
+                service.run(self.remediation, pdf_uri="remediations/test.pdf")
+        else:
+            result = service.run(self.remediation, pdf_uri="remediations/test.pdf")
+            self.assertEqual(result, "remediations/test.pdf")
+
+        artifact = self.remediation.artifacts.get(step=service.step)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, "remediations/test.pdf")
+
+    @parameterized.expand(
+        [
+            ("precheck", PrecheckService),
+            ("postcheck", PostCheckService),
+        ]
+    )
+    def test_run_records_failed_artifact_and_reraises_on_adapter_error(
+        self, _name, service_cls
+    ) -> None:
+        self.adapter.validate.side_effect = AdapterError("boom")
+        service = service_cls(adapter=self.adapter)
+
+        with self.assertRaises(AdapterError):
+            service.run(self.remediation, pdf_uri="remediations/test.pdf")
+
+        artifact = self.remediation.artifacts.get(step=service.step)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "boom")

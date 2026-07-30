@@ -1,10 +1,13 @@
 import hashlib
 
+from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from accounts.models import ServiceAccount
+from remediation.adapters.base import AdapterError, VerificationAdapter
+from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
 
 
@@ -85,10 +88,22 @@ class RemediationService:
 class ArtifactService:
     """Mixin for pipeline step services that records their outcome as a `RemediationArtifact`.
 
-    Subclasses set `step` to the `RemediationArtifact.Step` they represent.
+    Subclasses set `step` to the `RemediationArtifact.Step` they represent. Every step is
+    gated by a `RUN_<STEP>` setting named after the step itself (default off), so gating a
+    new step never needs its own registration — just add the setting.
     """
 
     step: RemediationArtifact.Step
+
+    @property
+    def setting_name(self) -> str:
+        return f"RUN_{self.step.name}"
+
+    def is_disabled(self) -> bool:
+        return not getattr(settings, self.setting_name)
+
+    def record_skip(self, remediation: Remediation) -> RemediationArtifact:
+        return self.mark_skipped(remediation, f"{self.setting_name} is disabled")
 
     def _mark_status(
         self, remediation: Remediation, status: RemediationArtifact.StepStatus, **fields: str
@@ -107,3 +122,61 @@ class ArtifactService:
 
     def mark_failed(self, remediation: Remediation, error: str) -> RemediationArtifact:
         return self._mark_status(remediation, RemediationArtifact.StepStatus.FAILED, error=error)
+
+
+class AlreadyCompliant(Exception):
+    """Not an error — raised by `PrecheckService` when the document already passes
+    verification, signalling the pipeline to stop early and mark the job complete
+    (ADR 0003)."""
+
+
+class NotCompliant(Exception):
+    """Not an error — raised by `PostCheckService` when the document still isn't compliant
+    after remediation, signalling the job should be marked failed (ADR 0003)."""
+
+
+class VerificationService(ArtifactService):
+    """Shared machinery for stages 1 and 6 of ADR 0003's pipeline — precheck and postcheck.
+
+    Runs a `VerificationAdapter` against a PDF, records the outcome, and returns `pdf_uri`
+    unchanged (verification doesn't transform the document) so every pipeline step shares the
+    same "URI in, URI out" shape. Not instantiated directly — see `PrecheckService`/
+    `PostCheckService`, which each fix `step` and `handle_result`.
+    """
+
+    def __init__(self, adapter: VerificationAdapter | None = None) -> None:
+        self.adapter = adapter or VeraPDFAdapter()
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        # default_storage.path() assumes FileSystemStorage — will need reworking once a
+        # GCS backend is wired in (implementation_plan.md Backlog), since veraPDF needs a
+        # real local file path, not a storage-abstracted name/URL.
+        pdf_path = default_storage.path(pdf_uri)
+        try:
+            is_compliant, _report = self.adapter.validate(pdf_path)
+        except AdapterError as exc:
+            self.mark_failed(remediation, str(exc))
+            raise
+
+        self.mark_completed(remediation, output_uri=pdf_uri)
+        self.handle_result(is_compliant)
+        return pdf_uri
+
+    def handle_result(self, is_compliant: bool) -> None:
+        raise NotImplementedError
+
+
+class PrecheckService(VerificationService):
+    step = RemediationArtifact.Step.PRECHECK
+
+    def handle_result(self, is_compliant: bool) -> None:
+        if is_compliant:
+            raise AlreadyCompliant
+
+
+class PostCheckService(VerificationService):
+    step = RemediationArtifact.Step.POSTCHECK
+
+    def handle_result(self, is_compliant: bool) -> None:
+        if not is_compliant:
+            raise NotCompliant

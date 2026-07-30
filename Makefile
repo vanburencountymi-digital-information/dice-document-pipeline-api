@@ -1,4 +1,4 @@
-.PHONY: build up down migrate shell verapdf-version init
+.PHONY: build up down migrate shell test verapdf-version init
 
 build:
 	docker compose build
@@ -18,6 +18,9 @@ migrate:
 
 shell:
 	docker compose run --rm app /bin/sh
+
+test:
+	docker compose run --rm app python manage.py test
 
 verapdf-version:
 	docker compose run --rm app verapdf --version
