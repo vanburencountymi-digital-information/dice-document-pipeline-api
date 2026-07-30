@@ -18,3 +18,4 @@ If asked to create a test, observe the following guidelines:
 - We prefer tests with clear boundaries. In the case of a view that calls a service class to perform an operation, the unit tests in `test_views.py` should mock the service class (ideally with a factory if needed) using the unittest.mock library (prefer the `@patch` decorator when possible, and with `auto_spec` and `spec_set` when possible/applicable.)
 - Use `@parameterized.expand` decorator when possible to condense tests.
 - Use `SimpleTestCase` for tests that don't require the DB if possible, `setUpTestData` (over `setUp`) when possible.
+- Tests should work the same on both local + production environments; for tasks, use `override_settings` and mock the task backend with `django.tasks.backends.immediate.ImmediateBackend`
