@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-[ADR 0005](0005-alt-text-engine.md) picked Claude Vision for the `alt_text` stage without having tested OpenDataLoader's built-in SmolVLM (256M-parameter) alt-text output against it, and set a revisit trigger: run that comparison for real once `AltTextService`/`ClaudeVisionAdapter` has a working implementation. Rather than build a one-off table just for that comparison, this ADR designs the tracking mechanism generally enough to reuse for any future pipeline stage's engine comparison (e.g. a future OCR-engine or tagging-engine bake-off) — the alt-text case is the first user of it, not the only one it's designed for.
+[ADR 0005](0005-alt-text-engine.md) picked Claude Vision for the `alt_text` stage without having tested OpenDataLoader's built-in SmolVLM (256M-parameter) alt-text output against it, and set a revisit trigger: run that comparison for real once `AltTextService`/`ClaudeVisionClient` has a working implementation. Rather than build a one-off table just for that comparison, this ADR designs the tracking mechanism generally enough to reuse for any future pipeline stage's engine comparison (e.g. a future OCR-engine or tagging-engine bake-off) — the alt-text case is the first user of it, not the only one it's designed for.
 
 SmolVLM's description is already computed as a byproduct of the `finalize_tags` stage when OpenDataLoader is run with `--enrich-picture-description` — it isn't a separate API call or a separate adapter, just an output we'd otherwise discard. `RemediationArtifact` isn't the right place to store any of this: that table records one row per pipeline stage per attempt (`step`, `status`, `output_uri`, `error`) for operational lineage, not per-item vendor-comparison payloads, and adding comparison fields to it would conflate a production audit trail with a research/bake-off mechanism.
 
@@ -19,7 +19,7 @@ Add a general, permanent table, `EngineComparisonSample`, gated by a setting (`R
 - `service_1` — name of the first service/engine being compared
 - `service_2` — name of the second service/engine being compared
 - `description_1` — `service_1`'s output for the compared item (first use case: SmolVLM's description, captured from the `finalize_tags` stage's `--enrich-picture-description` output)
-- `description_2` — `service_2`'s output for the same item (first use case: the `alt_text` stage's real `ClaudeVisionAdapter` output for the same figure)
+- `description_2` — `service_2`'s output for the same item (first use case: the `alt_text` stage's real `ClaudeVisionClient` output for the same figure)
 - `item_reference` — whatever identifies the specific compared item within its stage (for alt-text, a figure's page number + bounding box, or an index into OpenDataLoader's picture list)
 - `item_type` — a category label for stratified sampling (for alt-text: chart/graph, photo, diagram/flowchart, table-rendered-as-image, icon/simple graphic); initially blank, assigned during manual review
 - `created_at`
