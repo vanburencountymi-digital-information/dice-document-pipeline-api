@@ -24,8 +24,17 @@ from remediation.tests.factories import PdfUploadFactory
 @override_settings(
     MEDIA_ROOT=tempfile.mkdtemp(),
     TASKS={"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}},
+    RUN_PRECHECK=False,
+    RUN_OCR=False,
+    RUN_FINALIZE_TAGS=False,
+    RUN_ALT_TEXT=False,
+    RUN_LINK_TAG=False,
+    RUN_POSTCHECK=False,
 )
 class CreateRemediationIntegrationTests(TestCase):
+    """Smoke tests the upload -> service - > storage task wiring to make sure a job
+    runs end to end. Doesn't actually perform any compliance operations."""
+
     def setUp(self) -> None:
         self.url = reverse("submit-document")
         self.service_account = ServiceAccountFactory()

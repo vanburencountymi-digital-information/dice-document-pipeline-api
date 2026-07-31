@@ -154,3 +154,8 @@ RUN_FINALIZE_TAGS = env.bool("RUN_FINALIZE_TAGS", default=False)
 RUN_ALT_TEXT = env.bool("RUN_ALT_TEXT", default=False)
 RUN_LINK_TAG = env.bool("RUN_LINK_TAG", default=False)
 RUN_POSTCHECK = env.bool("RUN_POSTCHECK", default=False)
+
+# ADR 0004's OpenDataLoader hybrid AI backend — docker-compose.yml overrides this to the
+# `opendataloader-hybrid` service's own DNS name; this default only matters if that
+# override is ever missing.
+OPENDATALOADER_HYBRID_URL = env.str("OPENDATALOADER_HYBRID_URL", default="http://localhost:5002")

@@ -53,7 +53,8 @@ class CreateRemediationViewTests(TestCase):
     def test_new_upload_calls_service_enqueues_task_and_returns_201(
         self, mock_service_cls, mock_process_remediation
     ) -> None:
-        remediation = RemediationFactory.build()
+
+        remediation = RemediationFactory()
         mock_service_cls.return_value.get_or_create_from_upload.return_value = (
             remediation,
             True,

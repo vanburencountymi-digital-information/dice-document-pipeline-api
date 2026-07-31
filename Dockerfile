@@ -1,11 +1,16 @@
 # dice-document-pipeline-api — dev image
 #
 # Scope (see ADR 0007 for the Java version call, and implementation_plan.md's
-# Decisions for why Docker is staged this way): just enough to run the Django
-# app plus veraPDF for the precheck/postcheck stages. Does NOT yet provision
-# for the OpenDataLoader hybrid server or Docling model weights — that lands
-# once OCRService/TaggingService actually exist, per the documented build
-# order, so this image doesn't have to guess at their requirements.
+# Decisions for why Docker is staged this way): the Django app, veraPDF for the
+# precheck/postcheck stages, and Java + the `opendataloader-pdf` pip package
+# (in requirements.txt) for the ocr stage's local/client-side processing.
+#
+# Deliberately NOT here: the OpenDataLoader hybrid AI backend
+# (`opendataloader-pdf-hybrid`, ADR 0004's "--hybrid docling-fast") or Docling's
+# model weights — that server needs PyTorch/Docling, which don't ship
+# musl/Alpine wheels, so it lives in its own glibc-based image
+# (Dockerfile.opendataloader-hybrid) and its own docker-compose service
+# instead of fighting this image's Alpine base. See ADR 0004's Consequences.
 #
 # Run via docker-compose (app + Postgres — see docker-compose.yml):
 #   docker compose up --build

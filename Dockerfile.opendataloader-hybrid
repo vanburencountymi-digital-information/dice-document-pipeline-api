@@ -1,0 +1,20 @@
+# opendataloader-pdf's AI backend server — the "--hybrid docling-fast" mode ADR 0004
+# decided on. A separate process/image from the main app on purpose: it needs
+# Docling + PyTorch (multi-GB, no musl/Alpine wheels), while the main app only needs
+# the lightweight `opendataloader-pdf` client (pure Python, talks to this server over
+# HTTP) plus Java for its own local-processing core. See ADR 0004's Consequences and
+# this repo's main Dockerfile header.
+#
+# Model weights are NOT baked in here yet (v1 did this for its own Docling adapter —
+# see implementation_plan.md's Docker note referencing scripts/bake_docling_models.py
+# at commit e5e9d55). First request after a fresh container will be slow while Docling
+# downloads its models.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY requirements-opendataloader-hybrid.txt .
+RUN pip install --no-cache-dir -r requirements-opendataloader-hybrid.txt
+
+EXPOSE 5002
+CMD ["opendataloader-pdf-hybrid", "--port", "5002"]

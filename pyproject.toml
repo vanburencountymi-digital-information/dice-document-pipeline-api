@@ -39,6 +39,11 @@ module = "environ.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# opendataloader_pdf ships no type stubs.
+module = "opendataloader_pdf.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # factory_boy has no type stubs, so both factories and the tests that use
 # them get correctness from actually running, not from mypy.
 module = "*.tests.*"

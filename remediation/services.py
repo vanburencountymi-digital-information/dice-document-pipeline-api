@@ -1,4 +1,5 @@
 import hashlib
+import os
 
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -6,7 +7,8 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from accounts.models import ServiceAccount
-from remediation.adapters.base import AdapterError, VerificationAdapter
+from remediation.adapters.base import AdapterError, OCRAdapter, VerificationAdapter
+from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
 
@@ -180,3 +182,30 @@ class PostCheckService(VerificationService):
     def handle_result(self, is_compliant: bool) -> None:
         if not is_compliant:
             raise NotCompliant
+
+
+class OCRService(ArtifactService):
+    """Stage 2 of ADR 0003's pipeline: OCR + auto-tagging in one pass.
+    Produces tagged structure but requires more fixup.
+    """
+
+    step = RemediationArtifact.Step.OCR
+
+    def __init__(self, adapter: OCRAdapter | None = None) -> None:
+        self.adapter = adapter or OpenDataLoaderAdapter(
+            hybrid_url=settings.OPENDATALOADER_HYBRID_URL
+        )
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        # Same FileSystemStorage assumption as VerificationService.run — see its comment.
+        pdf_path = default_storage.path(pdf_uri)
+        output_dir = default_storage.path(f"remediations/{remediation.id}/ocr")
+        try:
+            output_path = self.adapter.tag(pdf_path, output_dir=output_dir)
+        except AdapterError as exc:
+            self.mark_failed(remediation, str(exc))
+            raise
+
+        output_uri = os.path.relpath(output_path, default_storage.path(""))
+        self.mark_completed(remediation, output_uri=output_uri)
+        return output_uri

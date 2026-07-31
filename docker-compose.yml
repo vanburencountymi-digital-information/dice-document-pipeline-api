@@ -25,12 +25,27 @@ services:
     env_file:
       - .env
     environment:
-      # Overrides config/settings.py's sqlite default — only applies inside
-      # this compose network, where "db" resolves to the postgres service.
+      # Overrides config/settings.py's defaults — only apply inside this
+      # compose network, where service names resolve via Docker's DNS.
       DATABASE_URL: postgres://dice:dice@db:5432/dice_document_pipeline
+      OPENDATALOADER_HYBRID_URL: http://opendataloader-hybrid:5002
     depends_on:
       db:
         condition: service_healthy
+      opendataloader-hybrid:
+        condition: service_started
+
+  # ADR 0004's "--hybrid docling-fast" AI backend — see Dockerfile.opendataloader-hybrid
+  # for why this is a separate image from `app`. No healthcheck: `app` only calls this
+  # over HTTP during the `ocr` pipeline step, not at startup, so there's nothing to
+  # gate `app` starting on — but the first real OCR request will be slow while this
+  # container's first request downloads Docling's model weights.
+  opendataloader-hybrid:
+    build:
+      context: .
+      dockerfile: Dockerfile.opendataloader-hybrid
+    ports:
+      - "5002:5002"
 
 volumes:
   postgres_data:

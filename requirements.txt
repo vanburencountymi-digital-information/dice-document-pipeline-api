@@ -17,7 +17,9 @@ librt==0.13.0
 mypy==2.3.0
 mypy_extensions==1.1.0
 nodeenv==1.10.0
+opendataloader-pdf==2.5.0
 packaging==26.2
+parameterized==0.9.0
 pathspec==1.1.1
 platformdirs==4.11.0
 pluggy==1.6.0

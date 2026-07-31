@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 from unittest.mock import create_autospec
 
@@ -10,12 +11,14 @@ from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
 from remediation.adapters.base import AdapterError
+from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
 from remediation.services import (
     AlreadyCompliant,
     ArtifactService,
     NotCompliant,
+    OCRService,
     PostCheckService,
     PrecheckService,
     RemediationService,
@@ -292,3 +295,48 @@ class VerificationServiceTests(TestCase):
         artifact = self.remediation.artifacts.get(step=service.step)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
         self.assertEqual(artifact.error, "boom")
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class OCRServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
+
+    def setUp(self) -> None:
+        self.adapter = create_autospec(OpenDataLoaderAdapter, spec_set=True)
+
+    def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
+        output_dir = default_storage.path(f"remediations/{self.remediation.id}/ocr")
+        tagged_path = os.path.join(output_dir, "test.pdf")
+        self.adapter.tag.return_value = tagged_path
+
+        result = OCRService(adapter=self.adapter).run(
+            self.remediation, pdf_uri="remediations/test.pdf"
+        )
+
+        expected_uri = f"remediations/{self.remediation.id}/ocr/test.pdf"
+        self.assertEqual(result, expected_uri)
+        self.adapter.tag.assert_called_once_with(
+            default_storage.path("remediations/test.pdf"), output_dir=output_dir
+        )
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, expected_uri)
+
+    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
+        self.adapter.tag.side_effect = AdapterError("boom")
+
+        with self.assertRaises(AdapterError):
+            OCRService(adapter=self.adapter).run(self.remediation, pdf_uri="remediations/test.pdf")
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "boom")
+
+    def test_default_adapter_uses_hybrid_url_setting(self) -> None:
+        with override_settings(OPENDATALOADER_HYBRID_URL="http://opendataloader-hybrid:5002"):
+            service = OCRService()
+
+        self.assertIsInstance(service.adapter, OpenDataLoaderAdapter)
+        self.assertEqual(service.adapter.hybrid_url, "http://opendataloader-hybrid:5002")

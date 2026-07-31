@@ -26,3 +26,11 @@ class VerificationAdapter(Adapter):
     @abstractmethod
     def validate(self, pdf_path: str) -> tuple[bool, str]:
         pass
+
+
+class OCRAdapter(Adapter):
+    """Base class that wraps adapters for the OCR/auto-tagging stage."""
+
+    @abstractmethod
+    def tag(self, pdf_path: str, *, output_dir: str) -> str:
+        pass

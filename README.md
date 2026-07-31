@@ -1,59 +1,48 @@
 # Dice Document Pipeline API
 
-A Django API that takes an uploaded PDF, checks it against accessibility standards (WCAG 2.1 AA / PDF/UA), and — if it fails — runs it through an automated remediation pipeline (OCR, tagging, alt text, link repair) before re-checking it. This is a rebuild of an earlier prototype (see History below); the current architecture and status live in [`implementation_plan.md`](implementation_plan.md) and [`docs/adrs/`](docs/adrs/0000-README.md).
+A Django API that takes an uploaded PDF, checks it against accessibility standards (WCAG 2.1 AA / PDF/UA). Upon failure, it runs the document through an automated remediation pipeline (OCR, tagging, metadata fixes, alt text, link repair) before re-checking it. This is a rebuild of an earlier prototype (see History below).
 
 ## Setup
 
-### 1. Install the git hooks (either path below)
+Docker only — the current implementation depends on Postgres, Java/veraPDF, and the OpenDataLoader hybrid server.
 
-Linting and type checking (ruff + mypy) run automatically on commit via pre-commit. This runs on your host machine's `git commit`, not inside Docker, so it's needed regardless of which path you pick below:
+### 1. Docker
+
+Includes Postgres, the veraPDF/Java tooling the precheck/postcheck stages need (see [`docs/adrs/0007-java-version.md`](docs/adrs/0007-java-version.md)), and the OpenDataLoader hybrid server the `ocr` stage needs (see [`docs/adrs/0004-ocr-tagging-engine.md`](docs/adrs/0004-ocr-tagging-engine.md)).
+
+```bash
+cp .env.example .env   # then set SECRET_KEY (see comment in the file)
+```
+
+Other make commands include:
+
+```bash
+make init             # first time only convenience method: build the images, migrate, then start the app
+make build            # rebuild the images (after changing requirements*.txt/Dockerfile*)
+make migrate          # apply new migrations to the running Postgres
+make up               # start the app (without rebuilding or migrating)
+make down             # stop everything
+make recreate         # a convenience method that bundles down, build, and up - use when you edit .env on an already-running container
+
+make shell            # shell inside the app container
+make pyshell          # Django shell (manage.py shell) inside the app container
+make test             # run the test suite
+
+make verapdf-version  # confirm veraPDF/Java installed correctly
+```
+
+The app runs at `http://localhost:8000`.
+
+### 2. Install the git hooks (if making changes)
+
+Linting and type checking (ruff + mypy) run automatically on commit via pre-commit. This runs on your host machine's `git commit`, not inside Docker:
 
 ```bash
 pipx install pre-commit   # or: pip install pre-commit
 pre-commit install
 ```
 
-### 2a. Docker (recommended)
-
-Includes Postgres and the veraPDF/Java tooling the precheck/postcheck stages need — see [`docs/adrs/0007-java-version.md`](docs/adrs/0007-java-version.md).
-
-```bash
-cp .env.example .env   # then set SECRET_KEY (see comment in the file)
-make init              # first time only: build the image, migrate, then start the app
-```
-
-The app runs at `http://localhost:8000`. Other commands:
-
-```bash
-make build            # rebuild the image (after changing requirements.txt/Dockerfile)
-make migrate          # apply new migrations to the running Postgres
-make up               # start the app (without rebuilding or migrating)
-make down             # stop everything
-make shell            # shell inside the app container
-make pyshell          # Django shell (manage.py shell) inside the app container
-make test             # run the test suite
-make verapdf-version  # confirm veraPDF/Java installed correctly
-```
-
-Docker only reads `.env` when a container is created, not while it's already running. If you edit `.env` (e.g. flipping a `RUN_*` pipeline toggle), a plain `make up` on an already-running container won't pick up the change — recreate it instead:
-
-```bash
-make down && make build && make up
-```
-
-### 2b. Bare-metal (Python only)
-
-Faster to start, but falls back to SQLite and won't have veraPDF/Java available — fine for API/model work, not for testing the precheck/postcheck stages.
-
-```bash
-python3.12 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env   # then set SECRET_KEY
-python manage.py migrate
-python manage.py runserver
-```
-
-## Testing with Postman
+## Testing the API
 
 The API authenticates requests with a token tied to a `ServiceAccount`. To create one, open a Django shell (`make pyshell`) and run:
 
@@ -63,18 +52,26 @@ from accounts.services import ServiceAccountService
 
 org = Organization.objects.create(name="Test Org")
 account = ServiceAccountService().create(org, "test-service-account")
-print(account.token)  # save this — you'll paste it into Postman
+print(account.token)  # save this
 ```
 
-**Submit a document**
-1. New request: `POST http://localhost:8000/api/submit-document/`
-2. Headers: `Authorization: Token <the token you printed above>`
-3. Body → `form-data` → add key `file`, change its type from "Text" to **"File"**, and pick a PDF (there are sample files under `docs/tests/example-files/original/` and `.../remediated/`).
+### With Postman
+
+#### Submit a document
+1. New request: `POST http://localhost:8000/api/submit-document/` (or whatever URL you've deployed to)
+2. Headers: Key: `Authorization`, Value: `Token <the token you printed above>`
+3. Body: Choose `form-data` radio button. Add key `file`, change its type (in next colument) from "Text" to `File`, and pick a PDF.
 4. Send. The response is the remediation job — `status` will be `COMPLETE` or `FAILED` immediately, since the pipeline runs synchronously by default.
 
-**Check a document's status later**
+The response will contain an `id` field with the remediation job id and a `document_id` that is a hashed key for your document; save this if you want to check status later.
+
+#### Check a submitted document's status
 1. New request: `GET http://localhost:8000/api/document-status/<document_id>/`, using the `document_id` from the submit response.
 2. Same `Authorization` header as above.
+
+---- Notes for later, ignore for now----
+
+## Historical Data
 
 ## Problem Definition
 
