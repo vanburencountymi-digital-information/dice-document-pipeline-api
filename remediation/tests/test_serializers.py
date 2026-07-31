@@ -40,14 +40,24 @@ class RemediationUploadSerializerTests(SimpleTestCase):
 
 class RemediationSerializerTests(TestCase):
     def test_serializes_expected_fields(self) -> None:
-        remediation = RemediationFactory(content_hash="abc123")
+        remediation = RemediationFactory(content_hash="abc123", original_filename="test.pdf")
 
         data = RemediationSerializer(remediation).data
 
         self.assertEqual(
             set(data.keys()),
-            {"id", "document_id", "status", "error", "created_at", "started_at", "completed_at"},
+            {
+                "id",
+                "document_id",
+                "original_filename",
+                "status",
+                "error",
+                "created_at",
+                "started_at",
+                "completed_at",
+            },
         )
         self.assertEqual(data["id"], str(remediation.id))
         self.assertEqual(data["document_id"], "abc123")
+        self.assertEqual(data["original_filename"], "test.pdf")
         self.assertEqual(data["status"], remediation.status)

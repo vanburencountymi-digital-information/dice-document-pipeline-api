@@ -165,6 +165,17 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
         )
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
+    def test_tag_renames_output_to_match_input_filename(self, mock_convert) -> None:
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document_tagged.pdf")
+
+        result = OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+
+        expected_path = os.path.join(self.output_dir, "document.pdf")
+        self.assertEqual(result, expected_path)
+        self.assertTrue(os.path.exists(expected_path))
+        self.assertFalse(os.path.exists(os.path.join(self.output_dir, "document_tagged.pdf")))
+
+    @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
     def test_tag_raises_when_no_output_produced(self, mock_convert) -> None:
         with self.assertRaises(AdapterError):
             OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)

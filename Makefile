@@ -1,4 +1,4 @@
-.PHONY: build up down recreate migrate shell pyshell test verapdf-version init
+.PHONY: build up down recreate migrations migrate shell pyshell test verapdf-version init
 
 build:
 	docker compose build
@@ -16,6 +16,9 @@ down:
 # Docker only reads .env at container creation — use this after editing it
 # (e.g. flipping a RUN_* pipeline toggle) so the change actually takes effect.
 recreate: down build up
+
+migrations:
+	docker compose run --rm app python manage.py makemigrations
 
 migrate:
 	docker compose run --rm app python manage.py migrate

@@ -36,16 +36,18 @@ class StatusView(ServiceAccountRequiredMixin):
 class CreateRemediationView(ServiceAccountRequiredMixin):
     """
     Handles incoming files for remediation jobs.
-    If the file (by content hash) is new for the service account, or last attempt failed, enqueues a new remediation job.
-    Otherwise returns the most recent non-failed remediation job for that file.
+
+    If the file (by content hash) is new for the service account, enqueues a new
+    remediation job.
+
+    Otherwise finds the most recent existing job for that file.
 
     Takes:
         a PDF document.
 
     Returns:
-        Response with the serialized remediation job (id, document_id, status, error, created_at, started_at, completed_at).
-
-
+        Response with the serialized remediation job (id, document_id, original_filename,
+        status, error, created_at, started_at, completed_at).
     """
 
     def post(self, request: Request) -> Response:
@@ -70,7 +72,8 @@ class DocumentStatusView(ServiceAccountRequiredMixin):
         content_hash: the SHA-256 hex digest identifying the document.
 
     Returns:
-        Response with the serialized remediation job (id, document_id, status, error, created_at, started_at, completed_at).
+        Response with the serialized remediation job (id, document_id, original_filename,
+        status, error, created_at, started_at, completed_at).
         Returns 404 if no remediation job for that file + that service account.
     """
 

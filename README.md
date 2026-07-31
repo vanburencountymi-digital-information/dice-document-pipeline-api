@@ -19,7 +19,8 @@ Other make commands include:
 ```bash
 make init             # first time only convenience method: build the images, migrate, then start the app
 make build            # rebuild the images (after changing requirements*.txt/Dockerfile*)
-make migrate          # apply new migrations to the running Postgres
+make migrations       # generate migration files after changing a model (review before committing)
+make migrate          # apply migrations to the running Postgres
 make up               # start the app (without rebuilding or migrating)
 make down             # stop everything
 make recreate         # a convenience method that bundles down, build, and up - use when you edit .env on an already-running container

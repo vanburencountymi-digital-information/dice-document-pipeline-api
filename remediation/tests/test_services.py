@@ -53,33 +53,6 @@ class RemediationServiceTests(TestCase):
         self.assertEqual(remediation.source_pdf_uri, "local:///tmp/document.pdf")
         self.assertEqual(remediation.status, Remediation.JobStatus.QUEUED)
 
-    def test_find_existing_returns_matching_non_failed_remediation(self) -> None:
-        remediation = RemediationFactory(
-            service_account=self.service_account, content_hash="abc123"
-        )
-
-        found = RemediationService().find_existing(self.service_account, "abc123")
-
-        self.assertEqual(found, remediation)
-
-    def test_find_existing_ignores_failed_remediation(self) -> None:
-        RemediationFactory(
-            service_account=self.service_account,
-            content_hash="abc123",
-            status=Remediation.JobStatus.FAILED,
-        )
-
-        found = RemediationService().find_existing(self.service_account, "abc123")
-
-        self.assertIsNone(found)
-
-    def test_find_existing_ignores_other_service_accounts(self) -> None:
-        RemediationFactory(content_hash="abc123")
-
-        found = RemediationService().find_existing(self.service_account, "abc123")
-
-        self.assertIsNone(found)
-
     def test_latest_for_document_returns_most_recent_attempt(self) -> None:
         RemediationFactory(service_account=self.service_account, content_hash="abc123")
         newest = RemediationFactory(service_account=self.service_account, content_hash="abc123")
@@ -145,13 +118,35 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
 
     def test_creates_new_remediation_and_saves_file_for_new_content(self) -> None:
         remediation, created = RemediationService().get_or_create_from_upload(
-            self.service_account, PdfUploadFactory()
+            self.service_account, PdfUploadFactory(name="test.pdf")
         )
 
         self.assertTrue(created)
         self.assertEqual(remediation.service_account, self.service_account)
         self.assertEqual(remediation.status, Remediation.JobStatus.QUEUED)
+        self.assertEqual(remediation.original_filename, "test.pdf")
+        expected_uri = f"remediations/{self.service_account.id}/{remediation.content_hash}/test.pdf"
+        self.assertEqual(remediation.source_pdf_uri, expected_uri)
         self.assertTrue(default_storage.exists(remediation.source_pdf_uri))
+
+    def test_resubmitting_failed_remediation_reports_it_without_new_job_or_file(self) -> None:
+        content = b"same bytes"
+        failed, _ = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+        failed.status = Remediation.JobStatus.FAILED
+        failed.save(update_fields=["status"])
+        original_path = failed.source_pdf_uri
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(remediation, failed)
+        self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
+        self.assertEqual(Remediation.objects.count(), 1)
+        self.assertEqual(remediation.source_pdf_uri, original_path)
 
     def test_returns_existing_remediation_without_touching_storage_for_duplicate(self) -> None:
         content = b"same bytes"
@@ -187,6 +182,16 @@ class ArtifactServiceTests(TestCase):
         cls.remediation = RemediationFactory()
         cls.service = ArtifactService()
         cls.service.step = RemediationArtifact.Step.OCR
+
+    def test_construct_output_dir_keys_path_by_document_and_step(self) -> None:
+        remediation = RemediationFactory(content_hash="abc123")
+
+        output_dir = self.service.construct_output_dir(remediation)
+
+        expected = default_storage.path(
+            f"remediations/{remediation.service_account_id}/abc123/{remediation.id}/ocr"
+        )
+        self.assertEqual(output_dir, expected)
 
     def test_mark_completed_records_completed_status_and_output_uri(self) -> None:
         artifact = self.service.mark_completed(self.remediation, "local:///tmp/output.pdf")
@@ -301,24 +306,34 @@ class VerificationServiceTests(TestCase):
 class OCRServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
-        cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
+        cls.service_account = ServiceAccountFactory()
+        cls.remediation = RemediationFactory(
+            service_account=cls.service_account,
+            content_hash="abc123",
+            source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+        )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(OpenDataLoaderAdapter, spec_set=True)
 
+    def _output_dir(self) -> str:
+        return OCRService(adapter=self.adapter).construct_output_dir(self.remediation)
+
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
-        output_dir = default_storage.path(f"remediations/{self.remediation.id}/ocr")
+        output_dir = self._output_dir()
         tagged_path = os.path.join(output_dir, "test.pdf")
         self.adapter.tag.return_value = tagged_path
 
         result = OCRService(adapter=self.adapter).run(
-            self.remediation, pdf_uri="remediations/test.pdf"
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
         )
 
-        expected_uri = f"remediations/{self.remediation.id}/ocr/test.pdf"
+        expected_uri = (
+            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/ocr/test.pdf"
+        )
         self.assertEqual(result, expected_uri)
         self.adapter.tag.assert_called_once_with(
-            default_storage.path("remediations/test.pdf"), output_dir=output_dir
+            default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
         )
         artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
@@ -328,7 +343,9 @@ class OCRServiceTests(TestCase):
         self.adapter.tag.side_effect = AdapterError("boom")
 
         with self.assertRaises(AdapterError):
-            OCRService(adapter=self.adapter).run(self.remediation, pdf_uri="remediations/test.pdf")
+            OCRService(adapter=self.adapter).run(
+                self.remediation, pdf_uri=self.remediation.source_pdf_uri
+            )
 
         artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)

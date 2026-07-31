@@ -21,10 +21,19 @@ class RemediationSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "document_id",
+            "original_filename",
             "status",
             "error",
             "created_at",
             "started_at",
             "completed_at",
         ]
-        read_only_fields = ["id", "status", "error", "created_at", "started_at", "completed_at"]
+        read_only_fields = [
+            "id",
+            "original_filename",
+            "status",
+            "error",
+            "created_at",
+            "started_at",
+            "completed_at",
+        ]

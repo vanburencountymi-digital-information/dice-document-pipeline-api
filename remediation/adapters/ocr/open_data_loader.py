@@ -58,4 +58,14 @@ class OpenDataLoaderAdapter(OCRAdapter):
             self.raise_adapter_error(
                 f"opendataloader-pdf produced multiple candidate outputs in {output_dir}: {matches}"
             )
-        return matches[0]
+
+        # Force the output's filename to match the input's exactly, regardless of
+        # whatever OpenDataLoader itself named it (undocumented, and not guaranteed
+        # to just be the input's basename) — every stage's artifact should be
+        # findable under the same name as the original.
+        output_path = matches[0]
+        target_path = os.path.join(output_dir, os.path.basename(pdf_path))
+        if output_path != target_path:
+            os.replace(output_path, target_path)
+            output_path = target_path
+        return output_path

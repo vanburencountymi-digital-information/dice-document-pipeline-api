@@ -29,28 +29,35 @@ class RemediationService:
     ) -> tuple[Remediation, bool]:
         """Submits an uploaded PDF for remediation, deduplicating by content hash.
 
-        Returns `(remediation, created)` — `created` is `False` when a reusable
-        (non-`FAILED`) attempt already exists for this document, in which case
-        storage is never touched.
+        Returns `(remediation, created)` — `created` is `False` whenever *any* attempt
+        already exists for this document, including a `FAILED` one: resubmitting the same
+        file never auto-retriggers a job, it just reports that attempt's current state.
+        There is deliberately no retry mechanism yet (a document stuck on `FAILED` stays
+        `FAILED` until one exists) — see ADR 0009.
         """
         content_hash = self._hash_file(uploaded_file)
-        existing = self.find_existing(service_account, content_hash)
+        existing = self.latest_for_document(service_account, content_hash)
         if existing is not None:
             return existing, False
 
-        name = default_storage.save(f"remediations/{uploaded_file.name}", uploaded_file)
-        remediation = self.create(service_account, source_pdf_uri=name, content_hash=content_hash)
-        return remediation, True
+        # RemediationUploadSerializer.validate_file already guarantees a non-empty ".pdf"
+        # name by the time an upload reaches here — `or ""` is only to satisfy the type
+        # checker against UploadedFile.name's `str | None` stub, not a real fallback path.
+        original_filename = uploaded_file.name or ""
 
-    def find_existing(
-        self, service_account: ServiceAccount, content_hash: str
-    ) -> Remediation | None:
-        return (
-            Remediation.objects.filter(service_account=service_account, content_hash=content_hash)
-            .exclude(status=Remediation.JobStatus.FAILED)
-            .order_by("-created_at")
-            .first()
+        # Keyed by (service_account, content_hash) rather than upload-time filename —
+        # deterministic, so the same document never occupies more than one path even if
+        # something upstream (e.g. a future retry mechanism) re-saves it.
+        original_path = f"remediations/{service_account.id}/{content_hash}/{original_filename}"
+        if not default_storage.exists(original_path):
+            default_storage.save(original_path, uploaded_file)
+        remediation = self.create(
+            service_account,
+            source_pdf_uri=original_path,
+            content_hash=content_hash,
+            original_filename=original_filename,
         )
+        return remediation, True
 
     def latest_for_document(
         self, service_account: ServiceAccount, content_hash: str
@@ -62,12 +69,18 @@ class RemediationService:
         )
 
     def create(
-        self, service_account: ServiceAccount, *, source_pdf_uri: str, content_hash: str
+        self,
+        service_account: ServiceAccount,
+        *,
+        source_pdf_uri: str,
+        content_hash: str,
+        original_filename: str = "",
     ) -> Remediation:
         return Remediation.objects.create(
             service_account=service_account,
             source_pdf_uri=source_pdf_uri,
             content_hash=content_hash,
+            original_filename=original_filename,
         )
 
     def mark_running(self, remediation: Remediation) -> None:
@@ -106,6 +119,18 @@ class ArtifactService:
 
     def record_skip(self, remediation: Remediation) -> RemediationArtifact:
         return self.mark_skipped(remediation, f"{self.setting_name} is disabled")
+
+    def construct_output_dir(self, remediation: Remediation) -> str:
+        """This step's own working directory for one remediation attempt (ADR 0008):
+        `remediations/<service_account_id>/<content_hash>/<remediation_id>/<step>`.
+
+        Assumes FileSystemStorage — same assumption `VerificationService.run` already
+        makes for `pdf_path`, called out there rather than repeated at every call site.
+        """
+        return default_storage.path(
+            f"remediations/{remediation.service_account_id}/"
+            f"{remediation.content_hash}/{remediation.id}/{self.step.value}"
+        )
 
     def _mark_status(
         self, remediation: Remediation, status: RemediationArtifact.StepStatus, **fields: str
@@ -197,9 +222,9 @@ class OCRService(ArtifactService):
         )
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        # Same FileSystemStorage assumption as VerificationService.run — see its comment.
         pdf_path = default_storage.path(pdf_uri)
-        output_dir = default_storage.path(f"remediations/{remediation.id}/ocr")
+        output_dir = self.construct_output_dir(remediation)
+
         try:
             output_path = self.adapter.tag(pdf_path, output_dir=output_dir)
         except AdapterError as exc:

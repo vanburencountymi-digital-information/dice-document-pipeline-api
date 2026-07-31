@@ -52,5 +52,6 @@ class CreateRemediationIntegrationTests(TestCase):
         self.assertEqual(response.status_code, 201)
         remediation = Remediation.objects.get(id=response.data["id"])
         self.assertEqual(remediation.service_account, self.service_account)
+        self.assertEqual(remediation.original_filename, "test.pdf")
         self.assertTrue(default_storage.exists(remediation.source_pdf_uri))
         self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)

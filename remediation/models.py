@@ -18,6 +18,7 @@ class Remediation(models.Model):
 
     source_pdf_uri = models.CharField(max_length=500)
     content_hash = models.CharField(max_length=64)  # sha256 hex digest
+    original_filename = models.CharField(max_length=255, default="", blank=True)
     error = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)

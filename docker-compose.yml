@@ -22,6 +22,11 @@ services:
     build: .
     ports:
       - "8000:8000"
+    volumes:
+      # Bind mount, not a named volume like postgres_data: lets you inspect
+      # uploaded/remediated PDFs directly from the host (./media/remediations/...)
+      # and survives `make recreate`.
+      - ./media:/app/media
     env_file:
       - .env
     environment:
