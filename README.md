@@ -35,12 +35,9 @@ The app runs at `http://localhost:8000`.
 
 ### Adding a migration
 
-Not a `make` target, on purpose — generating a migration writes a new file that has to survive past the container, and the app service doesn't bind-mount its source (only `./media`, for inspecting remediated files). Run it with an explicit mount so the file lands in your actual `remediation/migrations/` (or whichever app's) directory, and `--user` so it's owned by you instead of the container's root:
-
 ```bash
 docker compose run --rm --user "$(id -u):$(id -g)" -v "$(pwd):/app" app python manage.py makemigrations
 ```
-
 now run `make build` and `make migrate`
 
 ### 2. Install the git hooks (if making changes)
@@ -48,7 +45,7 @@ now run `make build` and `make migrate`
 Linting and type checking (ruff + mypy) run automatically on commit via pre-commit. This runs on your host machine's `git commit`, not inside Docker:
 
 ```bash
-pipx install pre-commit   # or: pip install pre-commit
+pip install pre-commit
 pre-commit install
 ```
 

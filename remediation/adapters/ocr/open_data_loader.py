@@ -1,5 +1,6 @@
 import glob
 import os
+import subprocess
 
 import opendataloader_pdf
 
@@ -47,6 +48,17 @@ class OpenDataLoaderAdapter(OCRAdapter):
                 hybrid=self.HYBRID_MODE,
                 **kwargs,
             )
+        except subprocess.CalledProcessError as exc:
+            # str(exc) alone is just "Command '[...]' returned non-zero exit status N" —
+            # the JVM's actual error (bad input, unreachable hybrid server, etc.) is in
+            # stdout/stderr, when the library call captured them at all.
+            raw_detail = exc.stderr or exc.stdout
+            if isinstance(raw_detail, bytes):
+                raw_detail = raw_detail.decode(errors="replace")
+            message = f"opendataloader-pdf failed: {exc}"
+            if raw_detail and raw_detail.strip():
+                message += f"\n{raw_detail.strip()}"
+            self.raise_adapter_error(message)
         except Exception as exc:
             self.raise_adapter_error(f"opendataloader-pdf failed: {exc}")
 

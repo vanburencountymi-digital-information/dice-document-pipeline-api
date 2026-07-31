@@ -11,6 +11,20 @@
 # downloads its models.
 FROM python:3.12-slim
 
+# easyocr (Docling's default OCR engine, per ADR 0004's Backlog note) imports cv2
+# (OpenCV), which needs a handful of X11 shared libraries even when running fully
+# headless — python:3.12-slim doesn't ship them. Without this, the server 500s on
+# every real conversion with "ImportError: libxcb.so.1: cannot open shared object
+# file" (or the next one in this same chain, once that's fixed).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libxcb1 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements-opendataloader-hybrid.txt .

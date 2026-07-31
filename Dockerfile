@@ -65,5 +65,9 @@ COPY accounts/ ./accounts/
 COPY api/ ./api/
 COPY remediation/ ./remediation/
 
+# Make app created files locally editable
+RUN addgroup -g 1000 app && adduser -D -u 1000 -G app app
+USER app
+
 EXPOSE 8000
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

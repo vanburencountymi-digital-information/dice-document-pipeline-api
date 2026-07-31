@@ -197,3 +197,21 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
 
         with self.assertRaisesMessage(AdapterError, "opendataloader-pdf failed: java not found"):
             OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+
+    @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
+    def test_tag_includes_stderr_from_called_process_error(self, mock_convert) -> None:
+        mock_convert.side_effect = subprocess.CalledProcessError(
+            returncode=1, cmd=["java", "-jar", "cli.jar"], stderr="Exception in thread main"
+        )
+
+        with self.assertRaisesMessage(AdapterError, "Exception in thread main"):
+            OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+
+    @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
+    def test_tag_decodes_bytes_stderr_from_called_process_error(self, mock_convert) -> None:
+        mock_convert.side_effect = subprocess.CalledProcessError(
+            returncode=1, cmd=["java", "-jar", "cli.jar"], stderr=b"Exception in thread main"
+        )
+
+        with self.assertRaisesMessage(AdapterError, "Exception in thread main"):
+            OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
