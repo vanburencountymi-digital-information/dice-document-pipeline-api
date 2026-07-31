@@ -1,6 +1,10 @@
 .PHONY: build up down recreate migrate shell pyshell test verapdf-version init
 
 build:
+	# Docker auto-creates a missing bind-mount source as root, which then blocks
+	# the app container's non-root user from writing to it — pre-create it
+	# ourselves so it's always owned by whoever runs `make`.
+	mkdir -p media
 	docker compose build
 
 up:
