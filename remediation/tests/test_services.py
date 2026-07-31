@@ -321,18 +321,18 @@ class OCRServiceTests(TestCase):
 
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
         output_dir = self._output_dir()
-        tagged_path = os.path.join(output_dir, "test.pdf")
-        self.adapter.tag.return_value = tagged_path
+        extracted_path = os.path.join(output_dir, "test.json")
+        self.adapter.extract.return_value = extracted_path
 
         result = OCRService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
         )
 
         expected_uri = (
-            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/ocr/test.pdf"
+            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/ocr/test.json"
         )
         self.assertEqual(result, expected_uri)
-        self.adapter.tag.assert_called_once_with(
+        self.adapter.extract.assert_called_once_with(
             default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
         )
         artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
@@ -340,7 +340,7 @@ class OCRServiceTests(TestCase):
         self.assertEqual(artifact.output_uri, expected_uri)
 
     def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
-        self.adapter.tag.side_effect = AdapterError("boom")
+        self.adapter.extract.side_effect = AdapterError("boom")
 
         with self.assertRaises(AdapterError):
             OCRService(adapter=self.adapter).run(

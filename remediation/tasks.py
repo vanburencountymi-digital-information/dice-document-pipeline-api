@@ -7,12 +7,14 @@ from remediation.services import (
     PostCheckService,
     PrecheckService,
     RemediationService,
+    TagBuilderService,
 )
 
 PIPELINE_STEPS = [
     PrecheckService,
     OCRService,
-    # TaggingService.finalize_tags, AltTextService, LinkService go here once built.
+    TagBuilderService,
+    # MetadataService, AltTextService, LinkService go here once built.
     PostCheckService,
 ]
 

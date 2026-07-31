@@ -124,94 +124,98 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
     def _write_output(self, name: str) -> str:
         path = os.path.join(self.output_dir, name)
         with open(path, "w") as f:
-            f.write("fake tagged pdf")
+            f.write("fake json output")
         return path
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_returns_path_to_matching_output_pdf(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document.pdf")
+    def test_extract_returns_path_to_matching_output_json(self, mock_convert) -> None:
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document.json")
 
-        result = OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+        result = OpenDataLoaderAdapter().extract(
+            "/tmp/input/document.pdf", output_dir=self.output_dir
+        )
 
-        self.assertEqual(result, os.path.join(self.output_dir, "document.pdf"))
+        self.assertEqual(result, os.path.join(self.output_dir, "document.json"))
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_invokes_convert_with_hybrid_mode_and_no_output(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document.pdf")
+    def test_extract_invokes_convert_with_hybrid_mode_and_json_format(self, mock_convert) -> None:
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document.json")
 
-        OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+        OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
 
         mock_convert.assert_called_once_with(
             input_path=["/tmp/input/document.pdf"],
             output_dir=self.output_dir,
-            format="tagged-pdf",
+            format="json",
             hybrid="docling-fast",
         )
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_passes_hybrid_url_when_configured(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document.pdf")
+    def test_extract_passes_hybrid_url_when_configured(self, mock_convert) -> None:
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document.json")
 
-        OpenDataLoaderAdapter(hybrid_url="http://opendataloader-hybrid:5002").tag(
+        OpenDataLoaderAdapter(hybrid_url="http://opendataloader-hybrid:5002").extract(
             "/tmp/input/document.pdf", output_dir=self.output_dir
         )
 
         mock_convert.assert_called_once_with(
             input_path=["/tmp/input/document.pdf"],
             output_dir=self.output_dir,
-            format="tagged-pdf",
+            format="json",
             hybrid="docling-fast",
             hybrid_url="http://opendataloader-hybrid:5002",
         )
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_renames_output_to_match_input_filename(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document_tagged.pdf")
+    def test_extract_renames_output_to_match_input_stem(self, mock_convert) -> None:
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document_extracted.json")
 
-        result = OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+        result = OpenDataLoaderAdapter().extract(
+            "/tmp/input/document.pdf", output_dir=self.output_dir
+        )
 
-        expected_path = os.path.join(self.output_dir, "document.pdf")
+        expected_path = os.path.join(self.output_dir, "document.json")
         self.assertEqual(result, expected_path)
         self.assertTrue(os.path.exists(expected_path))
-        self.assertFalse(os.path.exists(os.path.join(self.output_dir, "document_tagged.pdf")))
+        self.assertFalse(os.path.exists(os.path.join(self.output_dir, "document_extracted.json")))
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_raises_when_no_output_produced(self, mock_convert) -> None:
+    def test_extract_raises_when_no_output_produced(self, mock_convert) -> None:
         with self.assertRaises(AdapterError):
-            OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+            OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_raises_when_multiple_candidate_outputs(self, mock_convert) -> None:
+    def test_extract_raises_when_multiple_candidate_outputs(self, mock_convert) -> None:
         def _write_two(**kwargs):
-            self._write_output("document.pdf")
-            self._write_output("document_2.pdf")
+            self._write_output("document.json")
+            self._write_output("document_2.json")
 
         mock_convert.side_effect = _write_two
 
         with self.assertRaises(AdapterError):
-            OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+            OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_wraps_underlying_exception_in_adapter_error(self, mock_convert) -> None:
+    def test_extract_wraps_underlying_exception_in_adapter_error(self, mock_convert) -> None:
         mock_convert.side_effect = Exception("java not found")
 
         with self.assertRaisesMessage(AdapterError, "opendataloader-pdf failed: java not found"):
-            OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+            OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_includes_stderr_from_called_process_error(self, mock_convert) -> None:
+    def test_extract_includes_stderr_from_called_process_error(self, mock_convert) -> None:
         mock_convert.side_effect = subprocess.CalledProcessError(
             returncode=1, cmd=["java", "-jar", "cli.jar"], stderr="Exception in thread main"
         )
 
         with self.assertRaisesMessage(AdapterError, "Exception in thread main"):
-            OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+            OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_tag_decodes_bytes_stderr_from_called_process_error(self, mock_convert) -> None:
+    def test_extract_decodes_bytes_stderr_from_called_process_error(self, mock_convert) -> None:
         mock_convert.side_effect = subprocess.CalledProcessError(
             returncode=1, cmd=["java", "-jar", "cli.jar"], stderr=b"Exception in thread main"
         )
 
         with self.assertRaisesMessage(AdapterError, "Exception in thread main"):
-            OpenDataLoaderAdapter().tag("/tmp/input/document.pdf", output_dir=self.output_dir)
+            OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)

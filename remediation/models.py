@@ -49,7 +49,8 @@ class RemediationArtifact(models.Model):
     class Step(models.TextChoices):
         PRECHECK = "precheck", "Precheck"
         OCR = "ocr", "OCR"
-        FINALIZE_TAGS = "finalize_tags", "Finalize tags"
+        BUILD_TAGS = "build_tags", "Build tags"
+        FINALIZE_METADATA = "finalize_metadata", "Finalize metadata"
         ALT_TEXT = "alt_text", "Alt text"
         LINK_TAG = "link_tag", "Link tag"
         POSTCHECK = "postcheck", "Postcheck"

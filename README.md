@@ -49,6 +49,19 @@ pip install pre-commit
 pre-commit install
 ```
 
+## Pipeline steps
+
+If all steps are enabled via environment variable, a document upload runs through the following steps in order (see [ADR 0003](docs/adrs/0003-pipeline-steps-and-branching.md) and [ADR 0010](docs/adrs/0010-split-tag-construction-from-ocr.md)):
+
+1. `PrecheckService` → Verify with veraPDF
+2. `OCRService` → OCR + extract structure (JSON) via OpenDataLoader
+3. `TagBuilderService` → Build tagged PDF from that JSON, via PDFBox
+4. `MetadataService` → Fix metadata (pikepdf) — `MarkInfo`/`Lang`/title/tab-order
+5. `AltTextService` → Alt text (Claude Vision)
+6. `LinkService` → Tag links (pikepdf)
+7. `PostCheckService` → Verify with veraPDF
+
+
 ## Testing the API
 
 The API authenticates requests with a token tied to a `ServiceAccount`. To create one, open a Django shell (`make pyshell`) and run:

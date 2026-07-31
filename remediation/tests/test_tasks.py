@@ -17,7 +17,7 @@ from remediation.tests.factories import RemediationFactory
     MEDIA_ROOT=tempfile.mkdtemp(),
 )
 class ProcessRemediationTaskTests(TestCase):
-    @override_settings(RUN_PRECHECK=False, RUN_OCR=False, RUN_POSTCHECK=False)
+    @override_settings(RUN_PRECHECK=False, RUN_OCR=False, RUN_BUILD_TAGS=False, RUN_POSTCHECK=False)
     def test_marks_complete_when_all_steps_disabled(self) -> None:
         remediation = RemediationFactory()
 
@@ -33,6 +33,7 @@ class ProcessRemediationTaskTests(TestCase):
             {
                 (RemediationArtifact.Step.PRECHECK, RemediationArtifact.StepStatus.SKIPPED),
                 (RemediationArtifact.Step.OCR, RemediationArtifact.StepStatus.SKIPPED),
+                (RemediationArtifact.Step.BUILD_TAGS, RemediationArtifact.StepStatus.SKIPPED),
                 (RemediationArtifact.Step.POSTCHECK, RemediationArtifact.StepStatus.SKIPPED),
             },
         )
@@ -100,8 +101,8 @@ class ProcessRemediationTaskTests(TestCase):
             (True, "<report/>"),
         ]
         remediation = RemediationFactory()
-        mock_ocr_cls.return_value.tag.return_value = default_storage.path(
-            f"remediations/{remediation.id}/ocr/test.pdf"
+        mock_ocr_cls.return_value.extract.return_value = default_storage.path(
+            f"remediations/{remediation.id}/ocr/test.json"
         )
 
         result = process_remediation.enqueue(str(remediation.id))
