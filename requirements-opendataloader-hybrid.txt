@@ -1,1 +1,6 @@
 opendataloader-pdf[hybrid]==2.5.0
+
+# Build-time only — used by scripts/bake_docling_models.py to generate a
+# throwaway test PDF for pre-downloading Docling's model weights. Not
+# imported by the hybrid server itself at runtime.
+pikepdf

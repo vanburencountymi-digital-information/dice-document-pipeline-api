@@ -5,11 +5,17 @@
 # HTTP) plus Java for its own local-processing core. See ADR 0004's Consequences and
 # this repo's main Dockerfile header.
 #
-# Model weights are NOT baked in here yet (v1 did this for its own Docling adapter —
-# see implementation_plan.md's Docker note referencing scripts/bake_docling_models.py
-# at commit e5e9d55). First request after a fresh container will be slow while Docling
-# downloads its models.
+# Docling's model weights are baked in at build time.
+# This trades image size for a cold container that
+# never has to reach out to HuggingFace on its first real request (ideal)
+# for scale to zero cold starts.
 FROM python:3.12-slim
+
+# Consolidates Docling's own downloads (layout/table-structure safetensors) and
+# EasyOCR's recognition models under one baked-in directory instead of each
+# defaulting to a separate cache under $HOME.
+ENV HF_HOME=/opt/docling-models \
+    DOCLING_ARTIFACTS_PATH=/opt/docling-models
 
 # easyocr (Docling's default OCR engine, per ADR 0004's Backlog note) imports cv2
 # (OpenCV), which needs a handful of X11 shared libraries even when running fully
@@ -29,6 +35,10 @@ WORKDIR /app
 
 COPY requirements-opendataloader-hybrid.txt .
 RUN pip install --no-cache-dir -r requirements-opendataloader-hybrid.txt
+
+# Pre-bake Docling's model weights
+COPY scripts/bake_docling_models.py ./scripts/bake_docling_models.py
+RUN python scripts/bake_docling_models.py
 
 EXPOSE 5002
 CMD ["opendataloader-pdf-hybrid", "--port", "5002"]
