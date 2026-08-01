@@ -124,35 +124,37 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
     def _write_output(self, name: str) -> str:
         path = os.path.join(self.output_dir, name)
         with open(path, "w") as f:
-            f.write("fake json output")
+            f.write("fake pdf output")
         return path
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_extract_returns_path_to_matching_output_json(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document.json")
+    def test_extract_returns_path_to_matching_output_pdf(self, mock_convert) -> None:
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document.pdf")
 
         result = OpenDataLoaderAdapter().extract(
             "/tmp/input/document.pdf", output_dir=self.output_dir
         )
 
-        self.assertEqual(result, os.path.join(self.output_dir, "document.json"))
+        self.assertEqual(result, os.path.join(self.output_dir, "document.pdf"))
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
-    def test_extract_invokes_convert_with_hybrid_mode_and_json_format(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document.json")
+    def test_extract_invokes_convert_with_hybrid_mode_and_tagged_pdf_format(
+        self, mock_convert
+    ) -> None:
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document.pdf")
 
         OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
 
         mock_convert.assert_called_once_with(
             input_path=["/tmp/input/document.pdf"],
             output_dir=self.output_dir,
-            format="json",
+            format="tagged-pdf",
             hybrid="docling-fast",
         )
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
     def test_extract_passes_hybrid_url_when_configured(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document.json")
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document.pdf")
 
         OpenDataLoaderAdapter(hybrid_url="http://opendataloader-hybrid:5002").extract(
             "/tmp/input/document.pdf", output_dir=self.output_dir
@@ -161,23 +163,23 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
         mock_convert.assert_called_once_with(
             input_path=["/tmp/input/document.pdf"],
             output_dir=self.output_dir,
-            format="json",
+            format="tagged-pdf",
             hybrid="docling-fast",
             hybrid_url="http://opendataloader-hybrid:5002",
         )
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
     def test_extract_renames_output_to_match_input_stem(self, mock_convert) -> None:
-        mock_convert.side_effect = lambda **kwargs: self._write_output("document_extracted.json")
+        mock_convert.side_effect = lambda **kwargs: self._write_output("document_extracted.pdf")
 
         result = OpenDataLoaderAdapter().extract(
             "/tmp/input/document.pdf", output_dir=self.output_dir
         )
 
-        expected_path = os.path.join(self.output_dir, "document.json")
+        expected_path = os.path.join(self.output_dir, "document.pdf")
         self.assertEqual(result, expected_path)
         self.assertTrue(os.path.exists(expected_path))
-        self.assertFalse(os.path.exists(os.path.join(self.output_dir, "document_extracted.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.output_dir, "document_extracted.pdf")))
 
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
     def test_extract_raises_when_no_output_produced(self, mock_convert) -> None:
@@ -187,8 +189,8 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
     @patch("remediation.adapters.ocr.open_data_loader.opendataloader_pdf.convert", autospec=True)
     def test_extract_raises_when_multiple_candidate_outputs(self, mock_convert) -> None:
         def _write_two(**kwargs):
-            self._write_output("document.json")
-            self._write_output("document_2.json")
+            self._write_output("document.pdf")
+            self._write_output("document_2.pdf")
 
         mock_convert.side_effect = _write_two
 

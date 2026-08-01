@@ -29,16 +29,8 @@ class VerificationAdapter(Adapter):
 
 
 class OCRAdapter(Adapter):
-    """Base class that wraps adapters for the OCR/structure-extraction stage."""
+    """Base class that wraps adapters for the OCR/tagging stage."""
 
     @abstractmethod
     def extract(self, pdf_path: str, *, output_dir: str) -> str:
-        pass
-
-
-class TagBuilderAdapter(Adapter):
-    """Base class that wraps adapters for the build_tags stage (ADR 0010)."""
-
-    @abstractmethod
-    def build(self, structure_path: str, *, output_dir: str) -> str:
         pass

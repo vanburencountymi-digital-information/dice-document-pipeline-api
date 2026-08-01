@@ -26,7 +26,6 @@ from remediation.tests.factories import PdfUploadFactory
     TASKS={"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}},
     RUN_PRECHECK=False,
     RUN_OCR=False,
-    RUN_BUILD_TAGS=False,
     RUN_FINALIZE_METADATA=False,
     RUN_ALT_TEXT=False,
     RUN_LINK_TAG=False,

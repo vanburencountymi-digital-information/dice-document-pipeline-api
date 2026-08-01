@@ -8,15 +8,13 @@ from remediation.adapters.base import OCRAdapter
 
 
 class OpenDataLoaderAdapter(OCRAdapter):
-    """Wraps OpenDataLoader's Python API to OCR and extract a PDF's structure as JSON (ADR 0010).
+    """Wraps OpenDataLoader's Python API to OCR and build a tagged PDF in one call (ADR 0010).
 
-    Requests `format="json"`, not `format="tagged-pdf"`: OpenDataLoader's hybrid mode
-    silently drops AI-backend-recovered OCR text from `tagged-pdf`/`pdf` output — a
-    confirmed bug in its bundled Java CLI, isolated independent of this adapter (see
-    ADR 0010) — but the same run's `json` output is fully and correctly populated,
-    including real recovered text and correct PDF/UA tag roles (`P`, `H1`, `Figure`).
-    `TagBuilderService`/`TaggedPdfWriterAdapter` builds the actual tagged PDF from that
-    JSON in the next pipeline step; this adapter only extracts.
+    Requests `format="tagged-pdf"` directly — this pipeline runs its own patched fork of
+    `opendataloader-pdf` (see ADR 0010) that fixes a confirmed upstream bug where hybrid
+    mode's AI-backend-recovered OCR text was silently dropped from `tagged-pdf`/`pdf`
+    output. With that fixed, one call does the whole job: OCR, structure detection, and
+    writing the actual tagged PDF, same as OpenDataLoader's own native mode always could.
 
     Always runs in `--hybrid docling-fast` mode per ADR 0004 — not configurable, since the
     ADR didn't decide to support a non-hybrid fallback. That backend lives at `hybrid_url`,
@@ -35,9 +33,9 @@ class OpenDataLoaderAdapter(OCRAdapter):
         return "OpenDataLoader Adapter"
 
     def extract(self, pdf_path: str, *, output_dir: str) -> str:
-        """OCRs and extracts `pdf_path`'s structure, writing a JSON file into `output_dir`.
+        """OCRs `pdf_path` and writes a tagged PDF into `output_dir`.
 
-        Returns the JSON file's path. OpenDataLoader's Python API doesn't document its
+        Returns the tagged PDF's path. OpenDataLoader's Python API doesn't document its
         output filename convention or what it raises on failure (missing Java, a bad PDF,
         a hybrid server that's unreachable or still downloading its models, etc.), so this
         reads the result back off disk rather than trusting a return value, and wraps any
@@ -49,7 +47,7 @@ class OpenDataLoaderAdapter(OCRAdapter):
             opendataloader_pdf.convert(
                 input_path=[pdf_path],
                 output_dir=output_dir,
-                format="json",
+                format="tagged-pdf",
                 hybrid=self.HYBRID_MODE,
                 **kwargs,
             )
@@ -68,9 +66,9 @@ class OpenDataLoaderAdapter(OCRAdapter):
             self.raise_adapter_error(f"opendataloader-pdf failed: {exc}")
 
         stem = os.path.splitext(os.path.basename(pdf_path))[0]
-        matches = glob.glob(os.path.join(output_dir, f"{stem}*.json"))
+        matches = glob.glob(os.path.join(output_dir, f"{stem}*.pdf"))
         if not matches:
-            self.raise_adapter_error(f"opendataloader-pdf produced no JSON output in {output_dir}")
+            self.raise_adapter_error(f"opendataloader-pdf produced no tagged PDF in {output_dir}")
         if len(matches) > 1:
             self.raise_adapter_error(
                 f"opendataloader-pdf produced multiple candidate outputs in {output_dir}: {matches}"
@@ -81,7 +79,7 @@ class OpenDataLoaderAdapter(OCRAdapter):
         # to just be the input's basename) — every stage's artifact should be
         # findable under the same name as the original.
         output_path = matches[0]
-        target_path = os.path.join(output_dir, f"{stem}.json")
+        target_path = os.path.join(output_dir, f"{stem}.pdf")
         if output_path != target_path:
             os.replace(output_path, target_path)
             output_path = target_path

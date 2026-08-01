@@ -150,7 +150,6 @@ TASKS = {
 # Remediation pipeline step toggles
 RUN_PRECHECK = env.bool("RUN_PRECHECK", default=False)
 RUN_OCR = env.bool("RUN_OCR", default=False)
-RUN_BUILD_TAGS = env.bool("RUN_BUILD_TAGS", default=False)
 RUN_FINALIZE_METADATA = env.bool("RUN_FINALIZE_METADATA", default=False)
 RUN_ALT_TEXT = env.bool("RUN_ALT_TEXT", default=False)
 RUN_LINK_TAG = env.bool("RUN_LINK_TAG", default=False)

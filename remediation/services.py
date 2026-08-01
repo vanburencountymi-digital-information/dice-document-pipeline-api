@@ -7,14 +7,8 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from accounts.models import ServiceAccount
-from remediation.adapters.base import (
-    AdapterError,
-    OCRAdapter,
-    TagBuilderAdapter,
-    VerificationAdapter,
-)
+from remediation.adapters.base import AdapterError, OCRAdapter, VerificationAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
-from remediation.adapters.tagging.tagged_pdf_writer import TaggedPdfWriterAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
 
@@ -216,12 +210,9 @@ class PostCheckService(VerificationService):
 
 
 class OCRService(ArtifactService):
-    """OCR + structure extraction.
-
-    Produces a JSON description of the document's structure, not a PDF — OpenDataLoader's
-    hybrid mode silently drops OCR-recovered text from `tagged-pdf`/`pdf` output (a
-    confirmed bug, see ADR 0010), so this step only extracts. `TagBuilderService` builds
-    the actual tagged PDF from this step's output next.
+    """OCR + tagging in one call, via a patched fork of `opendataloader-pdf` (ADR 0010) that
+    fixes a confirmed upstream bug where hybrid mode's OCR-recovered text was silently
+    dropped from `tagged-pdf`/`pdf` output. Produces the tagged PDF directly.
     """
 
     step = RemediationArtifact.Step.OCR
@@ -237,34 +228,6 @@ class OCRService(ArtifactService):
 
         try:
             output_path = self.adapter.extract(pdf_path, output_dir=output_dir)
-        except AdapterError as exc:
-            self.mark_failed(remediation, str(exc))
-            raise
-
-        output_uri = os.path.relpath(output_path, default_storage.path(""))
-        self.mark_completed(remediation, output_uri=output_uri)
-        return output_uri
-
-
-class TagBuilderService(ArtifactService):
-    """Takes `OCRService`'s JSON output and constructs a real `StructTreeRoot`/marked-content
-    structure via `TaggedPdfWriterAdapter` (Apache PDFBox) — the step OpenDataLoader's own
-    `tagged-pdf` output was supposed to produce, before ADR 0010 found that combination
-    broken. `MetadataService` (`finalize_metadata`) patches remaining catalog-level gaps
-    (`MarkInfo`/`Lang`/title/tab-order) in this step's output next.
-    """
-
-    step = RemediationArtifact.Step.BUILD_TAGS
-
-    def __init__(self, adapter: TagBuilderAdapter | None = None) -> None:
-        self.adapter = adapter or TaggedPdfWriterAdapter()
-
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        structure_path = default_storage.path(pdf_uri)
-        output_dir = self.construct_output_dir(remediation)
-
-        try:
-            output_path = self.adapter.build(structure_path, output_dir=output_dir)
         except AdapterError as exc:
             self.mark_failed(remediation, str(exc))
             raise

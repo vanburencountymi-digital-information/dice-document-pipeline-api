@@ -321,7 +321,7 @@ class OCRServiceTests(TestCase):
 
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
         output_dir = self._output_dir()
-        extracted_path = os.path.join(output_dir, "test.json")
+        extracted_path = os.path.join(output_dir, "test.pdf")
         self.adapter.extract.return_value = extracted_path
 
         result = OCRService(adapter=self.adapter).run(
@@ -329,7 +329,7 @@ class OCRServiceTests(TestCase):
         )
 
         expected_uri = (
-            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/ocr/test.json"
+            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/ocr/test.pdf"
         )
         self.assertEqual(result, expected_uri)
         self.adapter.extract.assert_called_once_with(

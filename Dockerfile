@@ -3,7 +3,8 @@
 # Scope (see ADR 0007 for the Java version call, and implementation_plan.md's
 # Decisions for why Docker is staged this way): the Django app, veraPDF for the
 # precheck/postcheck stages, and Java + the `opendataloader-pdf` pip package
-# (in requirements.txt) for the ocr stage's local/client-side processing.
+# (in requirements.txt) for the ocr stage — patched to our own fork (ADR 0010)
+# to fix a confirmed upstream bug in hybrid mode's tagged-pdf output.
 #
 # Deliberately NOT here: the OpenDataLoader hybrid AI backend
 # (`opendataloader-pdf-hybrid`, ADR 0004's "--hybrid docling-fast") or Docling's
@@ -38,6 +39,20 @@ RUN "$JAVA_HOME/bin/jlink" \
         --strip-debug --no-man-pages --no-header-files --compress=2 \
         --output /javaruntime
 
+# ---- Stage 3: build our patched opendataloader-pdf jar (ADR 0010) ----------
+# TODO(ADR 0010): temporary — remove this stage and go back to a plain
+# `pip install opendataloader-pdf==<version>` once our fix is merged upstream
+# and released. See docs/adrs/0010-fix-opendataloader-hybrid-tagging-upstream.md.
+FROM eclipse-temurin:21-jdk-alpine AS opendataloader-pdf-builder
+WORKDIR /build
+RUN apk add --no-cache git maven
+RUN git clone --branch fix/hybrid-tagged-pdf-text-drop \
+        https://github.com/ViolanteCodes/opendataloader-pdf.git .
+# The Maven aggregator POM lives at java/pom.xml, not the repo root — module names in
+# -pl are relative to it (plain opendataloader-pdf-core/-cli, no java/ prefix).
+WORKDIR /build/java
+RUN mvn -pl opendataloader-pdf-core,opendataloader-pdf-cli -am package -DskipTests
+
 # ---- Final: Python 3.12 + the Java 21 JRE + veraPDF ------------------------
 # Alpine throughout on purpose: the JRE above is built against musl libc
 # (Alpine), and copying musl-linked binaries into a glibc image like
@@ -58,6 +73,16 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
+
+# Overwrite opendataloader_pdf's bundled CLI jar with our patched build (ADR 0010) — the
+# package always installs to this exact site-packages path regardless of pip's resolution,
+# and our from-source build always produces this filename (the repo's pom.xml version is an
+# unset "0.0.0" placeholder; real version numbers are only assigned by upstream's own release
+# pipeline, which we're not using). Remove this override once our fix is merged upstream and
+# released, and go back to a plain `pip install opendataloader-pdf==<version>`.
+COPY --from=opendataloader-pdf-builder \
+     /build/java/opendataloader-pdf-cli/target/opendataloader-pdf-cli-0.0.0.jar \
+     /usr/local/lib/python3.12/site-packages/opendataloader_pdf/jar/opendataloader-pdf-cli.jar
 
 COPY manage.py .
 COPY config/ ./config/

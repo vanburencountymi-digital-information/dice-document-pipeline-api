@@ -1,14 +1,12 @@
 # Dice Document Pipeline API
 
-A Django API that takes an uploaded PDF, checks it against accessibility standards (WCAG 2.1 AA / PDF/UA). Upon failure, it runs the document through an automated remediation pipeline (OCR, tagging, metadata fixes, alt text, link repair) before re-checking it. This is a rebuild of an earlier prototype (see History below).
+A Django API that takes an uploaded PDF and checks it against accessibility standards (WCAG 2.1 AA / PDF/UA). Upon failure, it runs the document through an automated remediation pipeline (OCR, tagging, metadata fixes, alt text, link repair) before re-checking it.
 
 ## Setup
 
 Docker only — the current implementation depends on Postgres, Java/veraPDF, and the OpenDataLoader hybrid server.
 
 ### 1. Docker
-
-Includes Postgres, the veraPDF/Java tooling the precheck/postcheck stages need (see [`docs/adrs/0007-java-version.md`](docs/adrs/0007-java-version.md)), and the OpenDataLoader hybrid server the `ocr` stage needs (see [`docs/adrs/0004-ocr-tagging-engine.md`](docs/adrs/0004-ocr-tagging-engine.md)).
 
 ```bash
 cp .env.example .env   # then set SECRET_KEY (see comment in the file)
@@ -51,15 +49,14 @@ pre-commit install
 
 ## Pipeline steps
 
-If all steps are enabled via environment variable, a document upload runs through the following steps in order (see [ADR 0003](docs/adrs/0003-pipeline-steps-and-branching.md) and [ADR 0010](docs/adrs/0010-split-tag-construction-from-ocr.md)):
+If all steps are enabled via environment variable, a document upload runs through the following steps in order (see [ADR 0003](docs/adrs/0003-pipeline-steps-and-branching.md) and [ADR 0010](docs/adrs/0010-fix-opendataloader-hybrid-tagging-upstream.md)):
 
 1. `PrecheckService` → Verify with veraPDF
-2. `OCRService` → OCR + extract structure (JSON) via OpenDataLoader
-3. `TagBuilderService` → Build tagged PDF from that JSON, via PDFBox
-4. `MetadataService` → Fix metadata (pikepdf) — `MarkInfo`/`Lang`/title/tab-order
+2. `OCRService` → OCR + build tagged PDF via OpenDataLoader
+3. `MetadataService` → Fix metadata (pikepdf) — `MarkInfo`/`Lang`/title/tab-order
+4. `LinkService` → Tag links (pikepdf)
 5. `AltTextService` → Alt text (Claude Vision)
-6. `LinkService` → Tag links (pikepdf)
-7. `PostCheckService` → Verify with veraPDF
+6. `PostCheckService` → Verify with veraPDF
 
 
 ## Testing the API
@@ -80,8 +77,8 @@ print(account.token)  # save this
 #### Submit a document
 1. New request: `POST http://localhost:8000/api/submit-document/` (or whatever URL you've deployed to)
 2. Headers: Key: `Authorization`, Value: `Token <the token you printed above>`
-3. Body: Choose `form-data` radio button. Add key `file`, change its type (in next colument) from "Text" to `File`, and pick a PDF.
-4. Send. The response is the remediation job — `status` will be `COMPLETE` or `FAILED` immediately, since the pipeline runs synchronously by default.
+3. Body: Choose `form-data` radio button. Add key `file`, change its type (in next column) from "Text" to `File`, and pick a PDF.
+4. Send. The response is the remediation job — `status` will be `COMPLETE` or `FAILED` immediately, since the pipeline runs synchronously when deployed locally (via Django Tasks ImmediateBackend.)
 
 The response will contain an `id` field with the remediation job id and a `document_id` that is a hashed key for your document; save this if you want to check status later.
 
