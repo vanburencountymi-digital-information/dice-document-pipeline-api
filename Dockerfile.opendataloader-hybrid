@@ -15,6 +15,12 @@ FROM python:3.12-slim
 
 ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
 
+# Docling's DataLoader always requests pin_memory=True regardless of whether a GPU is
+# present (no config knob for this — it's internal to the opendataloader-pdf-hybrid
+# package), so on CPU-only hosts torch emits this UserWarning on every batch. Harmless,
+# but floods the logs; filtered by module since we can't fix the call site itself.
+ENV PYTHONWARNINGS="ignore::UserWarning:torch.utils.data.dataloader"
+
 # easyocr (Docling's default OCR engine, per ADR 0004's Backlog note) imports cv2
 # (OpenCV), which needs a handful of X11 shared libraries even when running fully
 # headless — python:3.12-slim doesn't ship them. Without this, the server 500s on
