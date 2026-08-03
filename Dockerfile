@@ -47,7 +47,12 @@ FROM eclipse-temurin:21-jdk-alpine AS opendataloader-pdf-builder
 WORKDIR /build
 RUN apk add --no-cache git maven
 RUN git clone --branch fix/hybrid-tagged-pdf-text-drop \
-        https://github.com/ViolanteCodes/opendataloader-pdf.git .
+        https://github.com/ViolanteCodes/opendataloader-pdf.git . \
+    && git checkout a55c694
+# Pinned to a55c694 (fixes OCR-fallback text landing at the content-stream tail
+# instead of its correct reading-order position — see that commit's message) rather
+# than floating on the branch HEAD, so a future push to this branch can't silently
+# change what this build pulls in.
 # The Maven aggregator POM lives at java/pom.xml, not the repo root — module names in
 # -pl are relative to it (plain opendataloader-pdf-core/-cli, no java/ prefix).
 WORKDIR /build/java
