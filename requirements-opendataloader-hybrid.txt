@@ -1,1 +1,22 @@
+# Our patched docling fork (see Dockerfile.opendataloader-hybrid's comment above the
+# apt-get git install) — combines two upstream-PR'd fixes (docling-project/docling
+# #3933, #3938) not yet released to PyPI. Pinned to a commit, not a floating branch,
+# for the same reason as the opendataloader-pdf fork pin in the main Dockerfile.
+# Remove these two lines and let opendataloader-pdf's own docling[easyocr]>=2.91.0
+# dependency resolve normally once both PRs are merged and released.
+#
+# Two lines, not one, because upstream docling split into a "docling-slim" package
+# (the actual code, built from the repo root) plus a "docling" meta-package (a
+# dependency-only wheel at packages/docling/, just re-exporting docling-slim under
+# the old name for backwards compatibility — see that subdirectory's pyproject.toml).
+# A plain `docling[easyocr] @ git+...` install builds the *root* of the repo, which
+# reports its real name (docling-slim) — pip then rejects it ("has inconsistent
+# name: expected 'docling', but metadata has 'docling-slim'") rather than silently
+# accepting a same-content package under the wrong name. So: install docling-slim
+# from the repo root with the extra opendataloader-pdf actually needs, and install
+# docling itself from the packages/docling subdirectory so pip has a same-named,
+# same-version (2.118.0 both) distribution to satisfy opendataloader-pdf's
+# `docling[easyocr]>=2.91.0` dependency line against.
+docling-slim[feat-ocr-easyocr] @ git+https://github.com/ViolanteCodes/docling.git@06adc798af1f9b69e654887fe30742da989a8771
+docling @ git+https://github.com/ViolanteCodes/docling.git@06adc798af1f9b69e654887fe30742da989a8771#subdirectory=packages/docling
 opendataloader-pdf[hybrid]==2.5.0

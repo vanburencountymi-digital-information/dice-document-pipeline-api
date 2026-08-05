@@ -26,7 +26,15 @@ ENV PYTHONWARNINGS="ignore::UserWarning:torch.utils.data.dataloader"
 # headless — python:3.12-slim doesn't ship them. Without this, the server 500s on
 # every real conversion with "ImportError: libxcb.so.1: cannot open shared object
 # file" (or the next one in this same chain, once that's fixed).
+#
+# git: TODO(docling PRs #3933, #3938) — temporary, needed only because
+# requirements-opendataloader-hybrid.txt installs our patched docling fork via a
+# `git+https://` URL instead of a PyPI release (same pattern as the main Dockerfile's
+# opendataloader-pdf fork, see ADR 0010). Remove once both PRs are merged/released
+# and that requirements line reverts to letting opendataloader-pdf's own
+# docling[easyocr]>=2.91.0 dependency resolve normally.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
