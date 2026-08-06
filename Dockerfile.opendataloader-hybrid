@@ -21,6 +21,14 @@ ENV DOCLING_ARTIFACTS_PATH=/opt/docling-models
 # but floods the logs; filtered by module since we can't fix the call site itself.
 ENV PYTHONWARNINGS="ignore::UserWarning:torch.utils.data.dataloader"
 
+# Docling defaults to torch.compile()-ing its layout/classification/VLM models for a
+# speed boost, but that JIT-compiles a CPU kernel via torch._inductor, which needs a
+# C++ compiler — this image is python:3.12-slim on purpose and has none. Without this,
+# every real conversion 500s with "InvalidCxxCompiler: No working C++ compiler found".
+# Disabling compilation just means eager-mode inference (slower, still correct) instead
+# of pulling in a full g++ toolchain for a performance-only optimization.
+ENV DOCLING_INFERENCE_COMPILE_TORCH_MODELS=false
+
 # easyocr (Docling's default OCR engine, per ADR 0004's Backlog note) imports cv2
 # (OpenCV), which needs a handful of X11 shared libraries even when running fully
 # headless — python:3.12-slim doesn't ship them. Without this, the server 500s on

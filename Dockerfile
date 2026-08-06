@@ -48,11 +48,15 @@ WORKDIR /build
 RUN apk add --no-cache git maven
 RUN git clone --branch fix/hybrid-tagged-pdf-text-drop \
         https://github.com/ViolanteCodes/opendataloader-pdf.git . \
-    && git checkout a55c694
-# Pinned to a55c694 (fixes OCR-fallback text landing at the content-stream tail
-# instead of its correct reading-order position — see that commit's message) rather
-# than floating on the branch HEAD, so a future push to this branch can't silently
-# change what this build pulls in.
+    && git checkout d633c2f5ddfac883fcb245181a299084adb1c245
+# Pinned to d633c2f (branch tip as of 2026-08-06), not a55c694 (the previous pin) —
+# a55c694 is no longer a reachable commit on this branch at all (confirmed via
+# `git cat-file -t`, not just a stale local clone), so a fresh build from the old pin
+# would fail outright. This tip also picks up 0724234 ("Fix IllegalArgumentException
+# in Comparator for sortPageContents") and other fixes made since a55c694, reducing
+# the chance of re-fixing something already fixed upstream on this branch. Pinned to
+# a specific commit rather than floating on the branch HEAD so a future push can't
+# silently change what this build pulls in.
 # The Maven aggregator POM lives at java/pom.xml, not the repo root — module names in
 # -pl are relative to it (plain opendataloader-pdf-core/-cli, no java/ prefix).
 WORKDIR /build/java
