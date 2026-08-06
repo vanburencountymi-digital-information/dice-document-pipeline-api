@@ -35,12 +35,13 @@ ENV DOCLING_INFERENCE_COMPILE_TORCH_MODELS=false
 # every real conversion with "ImportError: libxcb.so.1: cannot open shared object
 # file" (or the next one in this same chain, once that's fixed).
 #
-# git: TODO(docling PRs #3933, #3938) — temporary, needed only because
-# requirements-opendataloader-hybrid.txt installs our patched docling fork via a
-# `git+https://` URL instead of a PyPI release (same pattern as the main Dockerfile's
-# opendataloader-pdf fork, see ADR 0010). Remove once both PRs are merged/released
-# and that requirements line reverts to letting opendataloader-pdf's own
-# docling[easyocr]>=2.91.0 dependency resolve normally.
+# git: TODO(docling PRs #3933, #3938, plus an unfiled containment-ratio cell-dedup fix)
+# — temporary, needed only because requirements-opendataloader-hybrid.txt installs our
+# patched docling fork (branch combined-bugfix-fork) via a `git+https://` URL instead
+# of a PyPI release (same pattern as the main Dockerfile's opendataloader-pdf fork, see
+# ADR 0010). Remove once all three fixes are merged/released and that requirements line
+# reverts to letting opendataloader-pdf's own docling[easyocr]>=2.91.0 dependency
+# resolve normally.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libgl1 \
