@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import subprocess
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pikepdf
+import pymupdf as fitz
 from django.test import SimpleTestCase
 from parameterized import parameterized
+from PIL import Image
 
+from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
+from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
 from remediation.adapters.base import Adapter, AdapterError
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
@@ -386,3 +392,225 @@ class LinkAdapterTests(SimpleTestCase):
 
         with self.assertRaises(AdapterError):
             LinkPikePdfAdapter().repair(bad_path, output_dir=self.output_dir)
+
+
+def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", size, color=color).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class AltTextAdapterTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.output_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.output_dir, ignore_errors=True)
+
+    def _write_tagged_pdf(
+        self,
+        name: str = "document.pdf",
+        *,
+        image_sizes: tuple[tuple[int, int], ...] = (),
+        extra_figures_without_image: int = 0,
+        alt_indices: dict[int, str] | None = None,
+        tagged: bool = True,
+    ) -> str:
+        """Builds a one-page PDF with real embedded images (distinct colors, so PyMuPDF
+        doesn't dedup identical XObjects), then — unless `tagged=False` — a struct tree
+        with one `<Figure>` element per image plus `extra_figures_without_image` more
+        (which won't ordinally pair to any image, exercising the full-page-render
+        fallback). `alt_indices` pre-populates `/Alt` on specific figures by index.
+        """
+        path = os.path.join(self.input_dir, name)
+        colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+
+        doc = fitz.open()
+        page = doc.new_page(width=300, height=300)
+        for i, (w, h) in enumerate(image_sizes):
+            page.insert_image(
+                fitz.Rect(10, 10, 110, 110), stream=_png_bytes((w, h), colors[i % len(colors)])
+            )
+        doc.save(path)
+        doc.close()
+
+        if not tagged:
+            return path
+
+        alt_indices = alt_indices or {}
+        figure_count = len(image_sizes) + extra_figures_without_image
+        with pikepdf.open(path, allow_overwriting_input=True) as pdf:
+            page_obj = pdf.pages[0].obj
+            elements = []
+            for fig_n in range(figure_count):
+                elem = pikepdf.Dictionary(S=pikepdf.Name("/Figure"), Pg=page_obj)
+                if fig_n in alt_indices:
+                    elem["/Alt"] = pikepdf.String(alt_indices[fig_n])
+                elements.append(pdf.make_indirect(elem))
+            pdf.Root.StructTreeRoot = pdf.make_indirect(
+                pikepdf.Dictionary(Type=pikepdf.Name("/StructTreeRoot"), K=pikepdf.Array(elements))
+            )
+            pdf.save(path)
+
+        return path
+
+    def test_collect_figures_returns_candidate_with_extracted_image(self) -> None:
+        path = self._write_tagged_pdf(image_sizes=[(200, 200)])
+
+        candidates = AltTextPikePdfAdapter().collect_figures(path)
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate.ref, (0, 0))
+        self.assertEqual(candidate.page_number, 1)
+        self.assertFalse(candidate.decorative)
+        self.assertTrue(candidate.image_bytes)
+        self.assertIn(candidate.media_type, ("image/png", "image/jpeg"))
+
+    def test_collect_figures_skips_figures_that_already_have_alt(self) -> None:
+        path = self._write_tagged_pdf(
+            image_sizes=[(200, 200), (200, 200)], alt_indices={0: "already described"}
+        )
+
+        candidates = AltTextPikePdfAdapter().collect_figures(path)
+
+        # Only one candidate — the other Figure was filtered out before enumeration, same
+        # as v1, so the surviving one is fig_n 0 within the *filtered* list, not its
+        # original struct-tree position.
+        self.assertEqual([c.ref for c in candidates], [(0, 0)])
+
+    def test_collect_figures_treats_opendataloader_placeholder_alt_as_missing(self) -> None:
+        # OpenDataLoader stamps "image " + counter on every Figure by default (see the
+        # module docstring's `_PLACEHOLDER_ALT_PATTERN` comment) — this must NOT be
+        # mistaken for a real description, or every real document would get skipped.
+        path = self._write_tagged_pdf(
+            image_sizes=[(200, 200), (200, 200)],
+            alt_indices={0: "image 1", 1: "a real hand-written description"},
+        )
+
+        candidates = AltTextPikePdfAdapter().collect_figures(path)
+
+        self.assertEqual([c.ref for c in candidates], [(0, 0)])
+
+    def test_collect_figures_returns_empty_list_when_no_struct_tree_root(self) -> None:
+        path = self._write_tagged_pdf(image_sizes=[(200, 200)], tagged=False)
+
+        candidates = AltTextPikePdfAdapter().collect_figures(path)
+
+        self.assertEqual(candidates, [])
+
+    def test_collect_figures_flags_small_image_as_decorative(self) -> None:
+        path = self._write_tagged_pdf(image_sizes=[(10, 10)])
+
+        candidates = AltTextPikePdfAdapter().collect_figures(path)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertTrue(candidates[0].decorative)
+
+    def test_collect_figures_falls_back_to_full_page_render_when_no_matching_image(self) -> None:
+        path = self._write_tagged_pdf(image_sizes=[(200, 200)], extra_figures_without_image=1)
+
+        candidates = AltTextPikePdfAdapter().collect_figures(path)
+
+        self.assertEqual(len(candidates), 2)
+        fallback = candidates[1]
+        self.assertEqual(fallback.ref, (0, 1))
+        self.assertFalse(fallback.decorative)
+        self.assertEqual(fallback.media_type, "image/png")
+        self.assertTrue(fallback.image_bytes)
+
+    def test_write_alt_text_writes_output_under_input_basename(self) -> None:
+        path = self._write_tagged_pdf(image_sizes=[(200, 200)])
+
+        result = AltTextPikePdfAdapter().write_alt_text(
+            path, output_dir=self.output_dir, alt_by_ref={(0, 0): "a red square"}
+        )
+
+        self.assertEqual(result, os.path.join(self.output_dir, "document.pdf"))
+
+    def test_write_alt_text_sets_alt_only_for_non_empty_values(self) -> None:
+        path = self._write_tagged_pdf(image_sizes=[(200, 200), (200, 200)])
+
+        result = AltTextPikePdfAdapter().write_alt_text(
+            path,
+            output_dir=self.output_dir,
+            alt_by_ref={(0, 0): "a red square", (0, 1): ""},
+        )
+
+        with pikepdf.open(result) as pdf:
+            figures = list(pdf.Root.StructTreeRoot.K)
+            self.assertEqual(str(figures[0].Alt), "a red square")
+            self.assertNotIn("/Alt", figures[1])
+
+    def test_collect_figures_raises_adapter_error_for_unopenable_pdf(self) -> None:
+        bad_path = os.path.join(self.input_dir, "not-a-pdf.pdf")
+        with open(bad_path, "w") as f:
+            f.write("not a pdf")
+
+        with self.assertRaises(AdapterError):
+            AltTextPikePdfAdapter().collect_figures(bad_path)
+
+    def test_write_alt_text_raises_adapter_error_for_unopenable_pdf(self) -> None:
+        bad_path = os.path.join(self.input_dir, "not-a-pdf.pdf")
+        with open(bad_path, "w") as f:
+            f.write("not a pdf")
+
+        with self.assertRaises(AdapterError):
+            AltTextPikePdfAdapter().write_alt_text(
+                bad_path, output_dir=self.output_dir, alt_by_ref={}
+            )
+
+
+class ClaudeVisionClientTests(SimpleTestCase):
+    # Not autospec'd: anthropic.Anthropic exposes `.messages` as a `cached_property`, which
+    # autospec can only introspect as an opaque property (not the `Messages` resource type
+    # it actually returns), so an autospec'd mock has no `.messages.create` to configure.
+    @patch("remediation.adapters.alt_text.claude_vision.anthropic.Anthropic")
+    def test_describe_returns_stripped_text_from_response(self, mock_anthropic_cls) -> None:
+        mock_anthropic_cls.return_value.messages.create.return_value = SimpleNamespace(
+            content=[SimpleNamespace(text="  A red square.  ")]
+        )
+
+        result = ClaudeVisionClient(api_key="test-key").describe(
+            b"fake-bytes", media_type="image/png", document_title="Test Doc", page_number=3
+        )
+
+        self.assertEqual(result, "A red square.")
+
+    @patch("remediation.adapters.alt_text.claude_vision.anthropic.Anthropic")
+    def test_describe_sends_image_and_context_in_prompt(self, mock_anthropic_cls) -> None:
+        mock_client = mock_anthropic_cls.return_value
+        mock_client.messages.create.return_value = SimpleNamespace(
+            content=[SimpleNamespace(text="ok")]
+        )
+
+        ClaudeVisionClient(api_key="test-key", model="claude-sonnet-5").describe(
+            b"fake-bytes", media_type="image/png", document_title="Test Doc", page_number=3
+        )
+
+        _, kwargs = mock_client.messages.create.call_args
+        self.assertEqual(kwargs["model"], "claude-sonnet-5")
+        content = kwargs["messages"][0]["content"]
+        self.assertEqual(content[0]["source"]["media_type"], "image/png")
+        self.assertIn("Test Doc", content[1]["text"])
+        self.assertIn("page 3", content[1]["text"])
+
+    def test_describe_raises_adapter_error_when_api_key_missing(self) -> None:
+        with self.assertRaises(AdapterError):
+            ClaudeVisionClient(api_key="").describe(
+                b"fake-bytes", media_type="image/png", document_title="", page_number=1
+            )
+
+    @patch("remediation.adapters.alt_text.claude_vision.anthropic.Anthropic")
+    def test_describe_raises_adapter_error_on_api_failure(self, mock_anthropic_cls) -> None:
+        mock_anthropic_cls.return_value.messages.create.side_effect = Exception("rate limited")
+
+        with self.assertRaises(AdapterError):
+            ClaudeVisionClient(api_key="test-key").describe(
+                b"fake-bytes", media_type="image/png", document_title="", page_number=1
+            )
+
+    def test_uses_default_model_when_not_specified(self) -> None:
+        client = ClaudeVisionClient(api_key="test-key")
+
+        self.assertEqual(client.model, "claude-sonnet-5")

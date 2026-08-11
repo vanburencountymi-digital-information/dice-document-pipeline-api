@@ -1,7 +1,11 @@
 """Base Adapters for processes; put framework-specific adapters in /adapters/ instead."""
 
 from abc import ABC, abstractmethod
-from typing import NoReturn
+from dataclasses import dataclass
+from typing import Literal, NoReturn
+
+# The only image formats Claude Vision (and the wider `anthropic` SDK) accepts.
+ImageMediaType = Literal["image/jpeg", "image/png", "image/gif", "image/webp"]
 
 
 class AdapterError(Exception):
@@ -49,4 +53,54 @@ class LinkAdapter(Adapter):
 
     @abstractmethod
     def repair(self, pdf_path: str, *, output_dir: str) -> str:
+        pass
+
+
+@dataclass(frozen=True)
+class FigureCandidate:
+    """One `<Figure>` element needing alt text, plus the image data to describe it with.
+
+    `ref` is `(page_idx, fig_n)` rather than a live pikepdf object handle, since object
+    handles don't survive across separate `pikepdf.open()` calls — `AltTextAdapter`
+    implementations re-derive the same struct-tree walk to relocate an element by `ref`
+    when writing results back.
+    """
+
+    ref: tuple[int, int]
+    page_number: int
+    image_bytes: bytes
+    media_type: ImageMediaType
+    decorative: bool
+
+
+class AltTextAdapter(Adapter):
+    """Base class that wraps adapters for the alt_text stage's PDF-side work (struct-tree
+    reading and writing). Pairs with `AltTextClient` for the vision-API call itself —
+    this stage needs both an outside-package integration and an outside-API integration,
+    unlike every other stage, which only needs one.
+    """
+
+    @abstractmethod
+    def collect_figures(self, pdf_path: str) -> list[FigureCandidate]:
+        pass
+
+    @abstractmethod
+    def write_alt_text(
+        self, pdf_path: str, *, output_dir: str, alt_by_ref: dict[tuple[int, int], str]
+    ) -> str:
+        pass
+
+
+class AltTextClient(Adapter):
+    """Base class that wraps clients for the alt_text stage's vision-API call."""
+
+    @abstractmethod
+    def describe(
+        self,
+        image_bytes: bytes,
+        *,
+        media_type: ImageMediaType,
+        document_title: str,
+        page_number: int,
+    ) -> str:
         pass

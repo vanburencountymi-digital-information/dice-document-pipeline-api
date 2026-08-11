@@ -10,14 +10,18 @@ from django.test import TestCase, override_settings
 from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
-from remediation.adapters.base import AdapterError
+from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
+from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
+from remediation.adapters.base import AdapterError, FigureCandidate
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
 from remediation.services import (
+    DEFAULT_TITLE,
     AlreadyCompliant,
+    AltTextService,
     ArtifactService,
     LinkService,
     MetadataService,
@@ -423,9 +427,7 @@ class MetadataServiceTests(TestCase):
 
         MetadataService(adapter=self.adapter).run(remediation, pdf_uri=remediation.source_pdf_uri)
 
-        self.assertEqual(
-            self.adapter.finalize.call_args.kwargs["title"], MetadataService.DEFAULT_TITLE
-        )
+        self.assertEqual(self.adapter.finalize.call_args.kwargs["title"], DEFAULT_TITLE)
 
     def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
         self.adapter.finalize.side_effect = AdapterError("boom")
@@ -507,3 +509,111 @@ class LinkServiceTests(TestCase):
         service = LinkService()
 
         self.assertIsInstance(service.adapter, LinkPikePdfAdapter)
+
+
+class AltTextServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.service_account = ServiceAccountFactory()
+        cls.remediation = RemediationFactory(
+            service_account=cls.service_account,
+            content_hash="abc123",
+            source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+            original_filename="test.pdf",
+        )
+
+    def setUp(self) -> None:
+        self.adapter = create_autospec(AltTextPikePdfAdapter, spec_set=True)
+        self.client = create_autospec(ClaudeVisionClient, spec_set=True)
+
+    def _output_dir(self) -> str:
+        return AltTextService(adapter=self.adapter, client=self.client).construct_output_dir(
+            self.remediation
+        )
+
+    def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
+        output_dir = self._output_dir()
+        output_path = os.path.join(output_dir, "test.pdf")
+        self.adapter.collect_figures.return_value = []
+        self.adapter.write_alt_text.return_value = output_path
+
+        result = AltTextService(adapter=self.adapter, client=self.client).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        expected_uri = (
+            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/alt_text/test.pdf"
+        )
+        self.assertEqual(result, expected_uri)
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.ALT_TEXT)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, expected_uri)
+
+    def test_run_calls_describe_once_per_non_decorative_candidate(self) -> None:
+        output_dir = self._output_dir()
+        self.adapter.collect_figures.return_value = [
+            FigureCandidate(
+                ref=(0, 0),
+                page_number=1,
+                image_bytes=b"a",
+                media_type="image/png",
+                decorative=False,
+            ),
+            FigureCandidate(
+                ref=(0, 1), page_number=1, image_bytes=b"", media_type="", decorative=True
+            ),
+        ]
+        self.adapter.write_alt_text.return_value = os.path.join(output_dir, "test.pdf")
+        self.client.describe.return_value = "a red square"
+
+        AltTextService(adapter=self.adapter, client=self.client).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        self.client.describe.assert_called_once_with(
+            b"a", media_type="image/png", document_title="test", page_number=1
+        )
+        self.adapter.write_alt_text.assert_called_once_with(
+            default_storage.path(self.remediation.source_pdf_uri),
+            output_dir=output_dir,
+            alt_by_ref={(0, 0): "a red square", (0, 1): ""},
+        )
+
+    def test_run_records_failed_artifact_and_reraises_on_collect_figures_error(self) -> None:
+        self.adapter.collect_figures.side_effect = AdapterError("boom")
+
+        with self.assertRaises(AdapterError):
+            AltTextService(adapter=self.adapter, client=self.client).run(
+                self.remediation, pdf_uri=self.remediation.source_pdf_uri
+            )
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.ALT_TEXT)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "boom")
+
+    def test_run_records_failed_artifact_and_reraises_on_describe_error(self) -> None:
+        self.adapter.collect_figures.return_value = [
+            FigureCandidate(
+                ref=(0, 0),
+                page_number=1,
+                image_bytes=b"a",
+                media_type="image/png",
+                decorative=False,
+            )
+        ]
+        self.client.describe.side_effect = AdapterError("rate limited")
+
+        with self.assertRaises(AdapterError):
+            AltTextService(adapter=self.adapter, client=self.client).run(
+                self.remediation, pdf_uri=self.remediation.source_pdf_uri
+            )
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.ALT_TEXT)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "rate limited")
+
+    def test_default_adapter_and_client(self) -> None:
+        service = AltTextService()
+
+        self.assertIsInstance(service.adapter, AltTextPikePdfAdapter)
+        self.assertIsInstance(service.client, ClaudeVisionClient)

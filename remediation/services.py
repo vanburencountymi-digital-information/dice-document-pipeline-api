@@ -7,8 +7,12 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from accounts.models import ServiceAccount
+from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
+from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
 from remediation.adapters.base import (
     AdapterError,
+    AltTextAdapter,
+    AltTextClient,
     LinkAdapter,
     MetadataAdapter,
     OCRAdapter,
@@ -245,6 +249,19 @@ class OCRService(ArtifactService):
         return output_uri
 
 
+DEFAULT_TITLE = "Untitled document"
+
+
+def _derive_title(remediation: Remediation) -> str:
+    """Shared by `MetadataService` (dc:title) and `AltTextService` (Claude prompt context).
+
+    original_filename is blank on old rows predating that field, and callers can still
+    pass "" — fall back rather than deriving an empty title.
+    """
+    stem = os.path.splitext(remediation.original_filename)[0]
+    return stem or DEFAULT_TITLE
+
+
 class MetadataService(ArtifactService):
     """Normalizes accessibility metadata OpenDataLoader's tagging leaves incomplete —
     `MarkInfo`/`Lang`/title/tab-order (ADR 0003 stage 3), via pikepdf. Doesn't touch tag
@@ -252,7 +269,6 @@ class MetadataService(ArtifactService):
     """
 
     step = RemediationArtifact.Step.FINALIZE_METADATA
-    DEFAULT_TITLE = "Untitled document"
 
     def __init__(self, adapter: MetadataAdapter | None = None) -> None:
         self.adapter = adapter or PikePdfAdapter()
@@ -265,7 +281,7 @@ class MetadataService(ArtifactService):
             output_path = self.adapter.finalize(
                 pdf_path,
                 output_dir=output_dir,
-                title=self._derive_title(remediation),
+                title=_derive_title(remediation),
                 lang=settings.LANGUAGE_CODE,
             )
         except AdapterError as exc:
@@ -275,12 +291,6 @@ class MetadataService(ArtifactService):
         output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
         return output_uri
-
-    def _derive_title(self, remediation: Remediation) -> str:
-        # original_filename is blank on old rows predating that field, and callers can
-        # still pass "" — fall back rather than writing an empty dc:title.
-        stem = os.path.splitext(remediation.original_filename)[0]
-        return stem or self.DEFAULT_TITLE
 
 
 class LinkService(ArtifactService):
@@ -300,6 +310,54 @@ class LinkService(ArtifactService):
 
         try:
             output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
+        except AdapterError as exc:
+            self.mark_failed(remediation, str(exc))
+            raise
+
+        output_uri = os.path.relpath(output_path, default_storage.path(""))
+        self.mark_completed(remediation, output_uri=output_uri)
+        return output_uri
+
+
+class AltTextService(ArtifactService):
+    """Generates WCAG-standard `/Alt` descriptions for untagged, non-decorative `<Figure>`
+    elements via Claude Vision (ADR 0003 stage 6, "Enrich figures"; ADR 0005). Splits PDF-
+    side work (`AltTextAdapter`) from the vision-API call (`AltTextClient`) rather than one
+    class doing both — this is the only stage that needs both an outside-package and an
+    outside-API integration.
+    """
+
+    step = RemediationArtifact.Step.ALT_TEXT
+
+    def __init__(
+        self, adapter: AltTextAdapter | None = None, client: AltTextClient | None = None
+    ) -> None:
+        self.adapter = adapter or AltTextPikePdfAdapter()
+        self.client = client or ClaudeVisionClient(
+            api_key=settings.ANTHROPIC_API_KEY, model=settings.CLAUDE_VISION_MODEL
+        )
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        pdf_path = default_storage.path(pdf_uri)
+        output_dir = self.construct_output_dir(remediation)
+        document_title = _derive_title(remediation)
+
+        try:
+            candidates = self.adapter.collect_figures(pdf_path)
+            alt_by_ref: dict[tuple[int, int], str] = {}
+            for candidate in candidates:
+                if candidate.decorative:
+                    alt_by_ref[candidate.ref] = ""
+                    continue
+                alt_by_ref[candidate.ref] = self.client.describe(
+                    candidate.image_bytes,
+                    media_type=candidate.media_type,
+                    document_title=document_title,
+                    page_number=candidate.page_number,
+                )
+            output_path = self.adapter.write_alt_text(
+                pdf_path, output_dir=output_dir, alt_by_ref=alt_by_ref
+            )
         except AdapterError as exc:
             self.mark_failed(remediation, str(exc))
             raise

@@ -22,6 +22,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_OCR=False,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
+        RUN_ALT_TEXT=False,
         RUN_POSTCHECK=False,
     )
     def test_marks_complete_when_all_steps_disabled(self) -> None:
@@ -44,6 +45,7 @@ class ProcessRemediationTaskTests(TestCase):
                     RemediationArtifact.StepStatus.SKIPPED,
                 ),
                 (RemediationArtifact.Step.LINK_TAG, RemediationArtifact.StepStatus.SKIPPED),
+                (RemediationArtifact.Step.ALT_TEXT, RemediationArtifact.StepStatus.SKIPPED),
                 (RemediationArtifact.Step.POSTCHECK, RemediationArtifact.StepStatus.SKIPPED),
             },
         )
@@ -58,6 +60,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_OCR=False,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
+        RUN_ALT_TEXT=False,
         RUN_POSTCHECK=True,
     )
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
@@ -86,6 +89,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_OCR=False,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
+        RUN_ALT_TEXT=False,
         RUN_POSTCHECK=True,
     )
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
@@ -117,6 +121,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_OCR=True,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
+        RUN_ALT_TEXT=False,
         RUN_POSTCHECK=True,
     )
     @patch("remediation.services.OpenDataLoaderAdapter", autospec=True)
