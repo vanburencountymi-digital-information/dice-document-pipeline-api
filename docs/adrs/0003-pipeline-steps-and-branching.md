@@ -17,8 +17,8 @@ The pipeline is a fixed sequence of responsibilities, each producing its own art
 1. **Validate input** — check the uploaded PDF against PDF/UA compliance before doing any other work. If it already passes, the job completes immediately without touching any other stage.
 2. **Produce tagged structure and text** — OCR (where needed) and generate the PDF's tag tree in one pass. The initial conception included separate OCR and tagged structure steps, see ADR 0004 for why that is not possible that the moment.
 3. **Normalize accessibility metadata** — fix up mandatory `MarkInfo`/`Lang`/title/tab-order gaps left by the previous stage; possibly skippable with a different OCR/tagging engine.
-4. **Enrich figures** — generate alt text for untagged, non-decorative figures; skipped if there's no `/StructTreeRoot` or nothing left to enrich.
-5. **Repair links** — provide struct-tree linking for `/Link` annotations.
+4. **Repair links** — provide struct-tree linking for `/Link` annotations.
+5. **Enrich figures** — generate alt text for untagged, non-decorative figures; skipped if there's no `/StructTreeRoot` or nothing left to enrich.
 6. **Validate output** — re-run the same PDF/UA check used at input. Passing completes the job; failing marks the whole job `FAILED`.
 
 Each stage's outcome is recorded as a `RemediationArtifact` (`remediation`, `step`, `status` [completed/skipped/failed], `output_uri`, `error`) — one row per stage actually reached. `Remediation.source_pdf_uri` is never modified, so content-hash-based dedup keeps working regardless of how far a given attempt got; each stage instead writes its own `output_uri` and hands it to the next stage as input.
@@ -39,5 +39,5 @@ The `(remediation, step)` uniqueness above assumes each step runs at most once p
 ## Consequences
 
 - `Remediation` needed a per-stage outcome record instead of one flat `output_uri` field — see `RemediationArtifact` (`remediation/models.py`).
-- Concrete service classes exist per stage (`PrecheckService`, `OCRService`, `TaggingService.finalize_tags`, `AltTextService`, `LinkService`, `PostCheckService`)
+- Concrete service classes exist per stage (`PrecheckService`, `OCRService`, `TaggingService.finalize_tags`, `LinkService`, `AltTextService`, `PostCheckService`)
 - This ADR doesn't decide which engine backs any given stage — see [ADR 0004](0004-ocr-tagging-engine.md) for OCR/tagging specifically.

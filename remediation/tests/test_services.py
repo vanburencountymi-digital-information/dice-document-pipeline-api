@@ -11,6 +11,7 @@ from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
 from remediation.adapters.base import AdapterError
+from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
@@ -18,6 +19,7 @@ from remediation.models import Remediation, RemediationArtifact
 from remediation.services import (
     AlreadyCompliant,
     ArtifactService,
+    LinkService,
     MetadataService,
     NotCompliant,
     OCRService,
@@ -441,3 +443,67 @@ class MetadataServiceTests(TestCase):
         service = MetadataService()
 
         self.assertIsInstance(service.adapter, PikePdfAdapter)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class LinkServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.service_account = ServiceAccountFactory()
+        cls.remediation = RemediationFactory(
+            service_account=cls.service_account,
+            content_hash="abc123",
+            source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+        )
+
+    def setUp(self) -> None:
+        self.adapter = create_autospec(LinkPikePdfAdapter, spec_set=True)
+
+    def _output_dir(self) -> str:
+        return LinkService(adapter=self.adapter).construct_output_dir(self.remediation)
+
+    def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
+        output_dir = self._output_dir()
+        repaired_path = os.path.join(output_dir, "test.pdf")
+        self.adapter.repair.return_value = repaired_path
+
+        result = LinkService(adapter=self.adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        expected_uri = (
+            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/link_tag/test.pdf"
+        )
+        self.assertEqual(result, expected_uri)
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.LINK_TAG)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, expected_uri)
+
+    def test_run_calls_adapter_with_correct_args(self) -> None:
+        output_dir = self._output_dir()
+        self.adapter.repair.return_value = os.path.join(output_dir, "test.pdf")
+
+        LinkService(adapter=self.adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        self.adapter.repair.assert_called_once_with(
+            default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
+        )
+
+    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
+        self.adapter.repair.side_effect = AdapterError("boom")
+
+        with self.assertRaises(AdapterError):
+            LinkService(adapter=self.adapter).run(
+                self.remediation, pdf_uri=self.remediation.source_pdf_uri
+            )
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.LINK_TAG)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "boom")
+
+    def test_default_adapter_is_link_pike_pdf_adapter(self) -> None:
+        service = LinkService()
+
+        self.assertIsInstance(service.adapter, LinkPikePdfAdapter)

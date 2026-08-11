@@ -14,7 +14,7 @@ Dedup ("is this the same document we've already seen") and retry ("re-attempt a 
 
 `get_or_create_from_upload` now looks up any existing attempt via `latest_for_document` — which was already the plain, un-filtered query, so this removed a redundant `find_existing` wrapper rather than adding new filtering logic. A `FAILED` attempt is "existing" like any other status. Resubmitting the same document reports that attempt's current state; it never auto-retriggers a job.
 
-There is deliberately no way to actually retry a failed job yet. It doesn't make sense to design retry semantics before the rest of the pipeline (`finalize_tags`/`alt_text`/`link_tag`) exists for a retry to run through — today, "retry" would only ever mean "re-run precheck/ocr," not the full pipeline a real retry implies. Additionally, there is no point to retrying a failed document if nothing in the pipeline has changed, as the new attempt would apply the same steps, and therefore also fail.
+There is deliberately no way to actually retry a failed job yet. It doesn't make sense to design retry semantics before the rest of the pipeline (`finalize_tags`/`link_tag`/`alt_text`) exists for a retry to run through — today, "retry" would only ever mean "re-run precheck/ocr," not the full pipeline a real retry implies. Additionally, there is no point to retrying a failed document if nothing in the pipeline has changed, as the new attempt would apply the same steps, and therefore also fail.
 
 If an altered document is uploaded, this is technically not a retry, as the content hash would be different - and so it would kick off a new remediation job.
 
