@@ -6,10 +6,13 @@ import subprocess
 import tempfile
 from unittest.mock import patch
 
+import pikepdf
 from django.test import SimpleTestCase
 from parameterized import parameterized
 
 from remediation.adapters.base import Adapter, AdapterError
+from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
+from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 
@@ -221,3 +224,165 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
 
         with self.assertRaisesMessage(AdapterError, "Exception in thread main"):
             OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
+
+
+class PikePdfAdapterTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.output_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.output_dir, ignore_errors=True)
+
+    def _write_minimal_pdf(self, name: str = "document.pdf") -> str:
+        path = os.path.join(self.input_dir, name)
+        pdf = pikepdf.new()
+        pdf.add_blank_page(page_size=(200, 200))
+        pdf.save(path)
+        return path
+
+    def test_finalize_writes_output_under_input_basename(self) -> None:
+        input_path = self._write_minimal_pdf("document.pdf")
+
+        result = PikePdfAdapter().finalize(
+            input_path, output_dir=self.output_dir, title="A Title", lang="en-us"
+        )
+
+        self.assertEqual(result, os.path.join(self.output_dir, "document.pdf"))
+        self.assertTrue(os.path.exists(result))
+
+    def test_finalize_sets_mark_info_lang_title_and_tab_order(self) -> None:
+        input_path = self._write_minimal_pdf()
+
+        result = PikePdfAdapter().finalize(
+            input_path, output_dir=self.output_dir, title="A Title", lang="en-us"
+        )
+
+        with pikepdf.open(result) as pdf:
+            self.assertTrue(pdf.Root.MarkInfo.Marked)
+            self.assertEqual(str(pdf.Root.Lang), "en-us")
+            with pdf.open_metadata() as meta:
+                self.assertEqual(meta["dc:title"], "A Title")
+            for page in pdf.pages:
+                self.assertEqual(str(page["/Tabs"]), "/S")
+
+    def test_finalize_raises_adapter_error_for_unopenable_pdf(self) -> None:
+        bad_path = os.path.join(self.input_dir, "not-a-pdf.pdf")
+        with open(bad_path, "w") as f:
+            f.write("not a pdf")
+
+        with self.assertRaises(AdapterError):
+            PikePdfAdapter().finalize(
+                bad_path, output_dir=self.output_dir, title="A Title", lang="en-us"
+            )
+
+
+class LinkAdapterTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.output_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.output_dir, ignore_errors=True)
+
+    def _write_pdf_with_link(self, name: str = "document.pdf", *, tagged: bool = True) -> str:
+        path = os.path.join(self.input_dir, name)
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(200, 200))
+
+        link_annot = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Annot"),
+                Subtype=pikepdf.Name("/Link"),
+                Rect=pikepdf.Array([0, 0, 10, 10]),
+            )
+        )
+        page["/Annots"] = pikepdf.Array([link_annot])
+
+        if tagged:
+            pdf.Root.StructTreeRoot = pdf.make_indirect(
+                pikepdf.Dictionary(Type=pikepdf.Name("/StructTreeRoot"), K=pikepdf.Array())
+            )
+
+        pdf.save(path)
+        return path
+
+    def test_repair_writes_output_under_input_basename(self) -> None:
+        input_path = self._write_pdf_with_link()
+
+        result = LinkPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        self.assertEqual(result, os.path.join(self.output_dir, "document.pdf"))
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_creates_link_struct_element_for_untagged_annotation(self) -> None:
+        input_path = self._write_pdf_with_link()
+
+        result = LinkPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as pdf:
+            kids = list(pdf.Root.StructTreeRoot.K)
+            self.assertEqual(len(kids), 1)
+            link_elem = kids[0]
+            self.assertEqual(str(link_elem.S), "/Link")
+            objr = list(link_elem.K)[0]
+            self.assertEqual(str(objr.Type), "/OBJR")
+            self.assertEqual(str(objr.Obj.Subtype), "/Link")
+
+    def test_repair_passes_through_unchanged_when_no_struct_tree_root(self) -> None:
+        input_path = self._write_pdf_with_link(tagged=False)
+
+        result = LinkPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as pdf:
+            self.assertNotIn("/StructTreeRoot", pdf.Root)
+
+    def test_repair_is_idempotent_on_already_tagged_annotation(self) -> None:
+        input_path = self._write_pdf_with_link()
+        adapter = LinkPikePdfAdapter()
+        second_output_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, second_output_dir, ignore_errors=True)
+
+        first_output = adapter.repair(input_path, output_dir=self.output_dir)
+        second_output = adapter.repair(first_output, output_dir=second_output_dir)
+
+        with pikepdf.open(second_output) as pdf:
+            kids = list(pdf.Root.StructTreeRoot.K)
+            self.assertEqual(len(kids), 1)
+
+    def test_repair_ignores_non_link_annotations(self) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(200, 200))
+        link_annot = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Annot"),
+                Subtype=pikepdf.Name("/Link"),
+                Rect=pikepdf.Array([0, 0, 10, 10]),
+            )
+        )
+        widget_annot = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Annot"),
+                Subtype=pikepdf.Name("/Widget"),
+                Rect=pikepdf.Array([0, 0, 10, 10]),
+            )
+        )
+        page["/Annots"] = pikepdf.Array([link_annot, widget_annot])
+        pdf.Root.StructTreeRoot = pdf.make_indirect(
+            pikepdf.Dictionary(Type=pikepdf.Name("/StructTreeRoot"), K=pikepdf.Array())
+        )
+        pdf.save(path)
+
+        result = LinkPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            kids = list(out_pdf.Root.StructTreeRoot.K)
+            self.assertEqual(len(kids), 1)
+            self.assertEqual(str(kids[0].S), "/Link")
+
+    def test_repair_raises_adapter_error_for_unopenable_pdf(self) -> None:
+        bad_path = os.path.join(self.input_dir, "not-a-pdf.pdf")
+        with open(bad_path, "w") as f:
+            f.write("not a pdf")
+
+        with self.assertRaises(AdapterError):
+            LinkPikePdfAdapter().repair(bad_path, output_dir=self.output_dir)

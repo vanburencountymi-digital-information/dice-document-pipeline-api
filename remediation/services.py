@@ -7,7 +7,15 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
 
 from accounts.models import ServiceAccount
-from remediation.adapters.base import AdapterError, OCRAdapter, VerificationAdapter
+from remediation.adapters.base import (
+    AdapterError,
+    LinkAdapter,
+    MetadataAdapter,
+    OCRAdapter,
+    VerificationAdapter,
+)
+from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
+from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
@@ -228,6 +236,70 @@ class OCRService(ArtifactService):
 
         try:
             output_path = self.adapter.extract(pdf_path, output_dir=output_dir)
+        except AdapterError as exc:
+            self.mark_failed(remediation, str(exc))
+            raise
+
+        output_uri = os.path.relpath(output_path, default_storage.path(""))
+        self.mark_completed(remediation, output_uri=output_uri)
+        return output_uri
+
+
+class MetadataService(ArtifactService):
+    """Normalizes accessibility metadata OpenDataLoader's tagging leaves incomplete —
+    `MarkInfo`/`Lang`/title/tab-order (ADR 0003 stage 3), via pikepdf. Doesn't touch tag
+    structure; see ADR 0010 for why this step is `finalize_metadata`, not `finalize_tags`.
+    """
+
+    step = RemediationArtifact.Step.FINALIZE_METADATA
+    DEFAULT_TITLE = "Untitled document"
+
+    def __init__(self, adapter: MetadataAdapter | None = None) -> None:
+        self.adapter = adapter or PikePdfAdapter()
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        pdf_path = default_storage.path(pdf_uri)
+        output_dir = self.construct_output_dir(remediation)
+
+        try:
+            output_path = self.adapter.finalize(
+                pdf_path,
+                output_dir=output_dir,
+                title=self._derive_title(remediation),
+                lang=settings.LANGUAGE_CODE,
+            )
+        except AdapterError as exc:
+            self.mark_failed(remediation, str(exc))
+            raise
+
+        output_uri = os.path.relpath(output_path, default_storage.path(""))
+        self.mark_completed(remediation, output_uri=output_uri)
+        return output_uri
+
+    def _derive_title(self, remediation: Remediation) -> str:
+        # original_filename is blank on old rows predating that field, and callers can
+        # still pass "" — fall back rather than writing an empty dc:title.
+        stem = os.path.splitext(remediation.original_filename)[0]
+        return stem or self.DEFAULT_TITLE
+
+
+class LinkService(ArtifactService):
+    """Gives every untagged `/Link` annotation a struct-tree presence (ADR 0003 stage 5,
+    "Repair links"), via pikepdf. No title/lang derivation — this step only touches
+    annotation/struct-tree wiring, not document metadata.
+    """
+
+    step = RemediationArtifact.Step.LINK_TAG
+
+    def __init__(self, adapter: LinkAdapter | None = None) -> None:
+        self.adapter = adapter or LinkPikePdfAdapter()
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        pdf_path = default_storage.path(pdf_uri)
+        output_dir = self.construct_output_dir(remediation)
+
+        try:
+            output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
         except AdapterError as exc:
             self.mark_failed(remediation, str(exc))
             raise
