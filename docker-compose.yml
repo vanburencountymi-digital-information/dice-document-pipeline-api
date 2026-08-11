@@ -27,6 +27,15 @@ services:
       # uploaded/remediated PDFs directly from the host (./media/remediations/...)
       # and survives `make recreate`.
       - ./media:/app/media
+      # Also a bind mount, for the same reason: `manage.py makemigrations` needs to
+      # write a new file back to the host so it lands in git. `remediation/` itself
+      # isn't bind-mounted (COPY'd into the image at build time, per the Dockerfile),
+      # so without this, a migration file written inside the container only exists in
+      # that container's throwaway layer and vanishes on `docker compose run --rm`.
+      # Host UID 1000 (`id -u`) matches the image's `app` user (`adduser -D -u 1000`),
+      # so files the container writes here land back on the host correctly owned —
+      # no `--user root` override needed.
+      - ./remediation/migrations:/app/remediation/migrations
     env_file:
       - .env
     environment:
