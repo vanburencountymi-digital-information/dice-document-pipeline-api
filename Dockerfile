@@ -80,6 +80,12 @@ COPY --from=verapdf-installer /opt/verapdf /opt/verapdf
 
 WORKDIR /app
 
+# PyMuPDF's compiled extension (`_extra.so`) dynamically links libstdc++.so.6, which
+# Alpine doesn't ship by default — unlike pikepdf's musllinux wheel, which statically
+# links its own C++ runtime. Without this, `import pymupdf` fails at container startup
+# with "Error loading shared library libstdc++.so.6: No such file or directory".
+RUN apk add --no-cache libstdc++
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
