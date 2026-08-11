@@ -14,13 +14,16 @@ filelock==3.32.0
 identify==2.6.19
 iniconfig==2.3.0
 librt==0.13.0
+lxml==6.1.1
 mypy==2.3.0
 mypy_extensions==1.1.0
 nodeenv==1.10.0
 opendataloader-pdf==2.5.0
-packaging==26.2
+packaging==26.3
 parameterized==0.9.0
 pathspec==1.1.1
+pikepdf==10.11.0
+pillow==12.3.0
 platformdirs==4.11.0
 pluggy==1.6.0
 pre_commit==4.6.1

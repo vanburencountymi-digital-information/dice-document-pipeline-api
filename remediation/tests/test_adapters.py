@@ -6,10 +6,12 @@ import subprocess
 import tempfile
 from unittest.mock import patch
 
+import pikepdf
 from django.test import SimpleTestCase
 from parameterized import parameterized
 
 from remediation.adapters.base import Adapter, AdapterError
+from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 
@@ -221,3 +223,53 @@ class OpenDataLoaderAdapterTests(SimpleTestCase):
 
         with self.assertRaisesMessage(AdapterError, "Exception in thread main"):
             OpenDataLoaderAdapter().extract("/tmp/input/document.pdf", output_dir=self.output_dir)
+
+
+class PikePdfAdapterTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.output_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.output_dir, ignore_errors=True)
+
+    def _write_minimal_pdf(self, name: str = "document.pdf") -> str:
+        path = os.path.join(self.input_dir, name)
+        pdf = pikepdf.new()
+        pdf.add_blank_page(page_size=(200, 200))
+        pdf.save(path)
+        return path
+
+    def test_finalize_writes_output_under_input_basename(self) -> None:
+        input_path = self._write_minimal_pdf("document.pdf")
+
+        result = PikePdfAdapter().finalize(
+            input_path, output_dir=self.output_dir, title="A Title", lang="en-us"
+        )
+
+        self.assertEqual(result, os.path.join(self.output_dir, "document.pdf"))
+        self.assertTrue(os.path.exists(result))
+
+    def test_finalize_sets_mark_info_lang_title_and_tab_order(self) -> None:
+        input_path = self._write_minimal_pdf()
+
+        result = PikePdfAdapter().finalize(
+            input_path, output_dir=self.output_dir, title="A Title", lang="en-us"
+        )
+
+        with pikepdf.open(result) as pdf:
+            self.assertTrue(pdf.Root.MarkInfo.Marked)
+            self.assertEqual(str(pdf.Root.Lang), "en-us")
+            with pdf.open_metadata() as meta:
+                self.assertEqual(meta["dc:title"], "A Title")
+            for page in pdf.pages:
+                self.assertEqual(str(page["/Tabs"]), "/S")
+
+    def test_finalize_raises_adapter_error_for_unopenable_pdf(self) -> None:
+        bad_path = os.path.join(self.input_dir, "not-a-pdf.pdf")
+        with open(bad_path, "w") as f:
+            f.write("not a pdf")
+
+        with self.assertRaises(AdapterError):
+            PikePdfAdapter().finalize(
+                bad_path, output_dir=self.output_dir, title="A Title", lang="en-us"
+            )

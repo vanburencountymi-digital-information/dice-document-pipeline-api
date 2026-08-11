@@ -11,12 +11,14 @@ from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
 from remediation.adapters.base import AdapterError
+from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import Remediation, RemediationArtifact
 from remediation.services import (
     AlreadyCompliant,
     ArtifactService,
+    MetadataService,
     NotCompliant,
     OCRService,
     PostCheckService,
@@ -357,3 +359,85 @@ class OCRServiceTests(TestCase):
 
         self.assertIsInstance(service.adapter, OpenDataLoaderAdapter)
         self.assertEqual(service.adapter.hybrid_url, "http://opendataloader-hybrid:5002")
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class MetadataServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.service_account = ServiceAccountFactory()
+        cls.remediation = RemediationFactory(
+            service_account=cls.service_account,
+            content_hash="abc123",
+            source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+            original_filename="test.pdf",
+        )
+
+    def setUp(self) -> None:
+        self.adapter = create_autospec(PikePdfAdapter, spec_set=True)
+
+    def _output_dir(self) -> str:
+        return MetadataService(adapter=self.adapter).construct_output_dir(self.remediation)
+
+    def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
+        output_dir = self._output_dir()
+        finalized_path = os.path.join(output_dir, "test.pdf")
+        self.adapter.finalize.return_value = finalized_path
+
+        result = MetadataService(adapter=self.adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        expected_uri = (
+            f"remediations/{self.service_account.id}/abc123/"
+            f"{self.remediation.id}/finalize_metadata/test.pdf"
+        )
+        self.assertEqual(result, expected_uri)
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.FINALIZE_METADATA)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, expected_uri)
+
+    def test_run_calls_adapter_with_title_derived_from_original_filename(self) -> None:
+        output_dir = self._output_dir()
+        self.adapter.finalize.return_value = os.path.join(output_dir, "test.pdf")
+
+        MetadataService(adapter=self.adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        self.adapter.finalize.assert_called_once_with(
+            default_storage.path(self.remediation.source_pdf_uri),
+            output_dir=output_dir,
+            title="test",
+            lang="en-us",
+        )
+
+    def test_run_falls_back_to_default_title_when_original_filename_blank(self) -> None:
+        remediation = RemediationFactory(
+            service_account=self.service_account, content_hash="def456", original_filename=""
+        )
+        output_dir = MetadataService(adapter=self.adapter).construct_output_dir(remediation)
+        self.adapter.finalize.return_value = os.path.join(output_dir, "test.pdf")
+
+        MetadataService(adapter=self.adapter).run(remediation, pdf_uri=remediation.source_pdf_uri)
+
+        self.assertEqual(
+            self.adapter.finalize.call_args.kwargs["title"], MetadataService.DEFAULT_TITLE
+        )
+
+    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
+        self.adapter.finalize.side_effect = AdapterError("boom")
+
+        with self.assertRaises(AdapterError):
+            MetadataService(adapter=self.adapter).run(
+                self.remediation, pdf_uri=self.remediation.source_pdf_uri
+            )
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.FINALIZE_METADATA)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "boom")
+
+    def test_default_adapter_is_pike_pdf_adapter(self) -> None:
+        service = MetadataService()
+
+        self.assertIsInstance(service.adapter, PikePdfAdapter)

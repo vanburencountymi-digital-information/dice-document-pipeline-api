@@ -2,6 +2,7 @@ from django.tasks import task
 
 from remediation.services import (
     AlreadyCompliant,
+    MetadataService,
     NotCompliant,
     OCRService,
     PostCheckService,
@@ -12,7 +13,8 @@ from remediation.services import (
 PIPELINE_STEPS = [
     PrecheckService,
     OCRService,
-    # MetadataService, AltTextService, LinkService go here once built.
+    MetadataService,
+    # AltTextService, LinkService go here once built.
     PostCheckService,
 ]
 

@@ -27,6 +27,7 @@ repos:
           - djangorestframework==3.17.1
           - django-stubs==6.0.7
           - djangorestframework-stubs==3.17.0
+          - pikepdf==10.11.0
         args: [--config-file=pyproject.toml, .]
         pass_filenames: false
         always_run: true

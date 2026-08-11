@@ -34,3 +34,11 @@ class OCRAdapter(Adapter):
     @abstractmethod
     def extract(self, pdf_path: str, *, output_dir: str) -> str:
         pass
+
+
+class MetadataAdapter(Adapter):
+    """Base class that wraps adapters for the finalize_metadata stage."""
+
+    @abstractmethod
+    def finalize(self, pdf_path: str, *, output_dir: str, title: str, lang: str) -> str:
+        pass
