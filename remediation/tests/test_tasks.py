@@ -102,7 +102,7 @@ class ProcessRemediationTaskTests(TestCase):
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
         self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
-        self.assertEqual(remediation.error, "postcheck: not PDF/UA-1 compliant")
+        self.assertEqual(remediation.error, "postcheck: not PDF/UA-1 compliant: <report/>")
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.PRECHECK,

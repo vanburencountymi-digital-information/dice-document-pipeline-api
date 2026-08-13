@@ -46,8 +46,8 @@ def process_remediation(remediation_id: str) -> None:
     except AlreadyCompliant:
         service.mark_complete(remediation)
 
-    except NotCompliant:
-        service.mark_failed(remediation, "postcheck: not PDF/UA-1 compliant")
+    except NotCompliant as exc:
+        service.mark_failed(remediation, f"postcheck: not PDF/UA-1 compliant: {exc}")
 
     except Exception as exc:
         service.mark_failed(remediation, str(exc))

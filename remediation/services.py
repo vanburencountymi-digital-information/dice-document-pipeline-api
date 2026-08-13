@@ -192,23 +192,23 @@ class VerificationService(ArtifactService):
         # real local file path, not a storage-abstracted name/URL.
         pdf_path = default_storage.path(pdf_uri)
         try:
-            is_compliant, _report = self.adapter.validate(pdf_path)
+            is_compliant, report = self.adapter.validate(pdf_path)
         except AdapterError as exc:
             self.mark_failed(remediation, str(exc))
             raise
 
         self.mark_completed(remediation, output_uri=pdf_uri)
-        self.handle_result(is_compliant)
+        self.handle_result(is_compliant, report)
         return pdf_uri
 
-    def handle_result(self, is_compliant: bool) -> None:
+    def handle_result(self, is_compliant: bool, report: str) -> None:
         raise NotImplementedError
 
 
 class PrecheckService(VerificationService):
     step = RemediationArtifact.Step.PRECHECK
 
-    def handle_result(self, is_compliant: bool) -> None:
+    def handle_result(self, is_compliant: bool, report: str) -> None:
         if is_compliant:
             raise AlreadyCompliant
 
@@ -216,9 +216,9 @@ class PrecheckService(VerificationService):
 class PostCheckService(VerificationService):
     step = RemediationArtifact.Step.POSTCHECK
 
-    def handle_result(self, is_compliant: bool) -> None:
+    def handle_result(self, is_compliant: bool, report: str) -> None:
         if not is_compliant:
-            raise NotCompliant
+            raise NotCompliant(report)
 
 
 class OCRService(ArtifactService):
