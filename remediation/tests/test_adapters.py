@@ -266,8 +266,10 @@ class PikePdfAdapterTests(SimpleTestCase):
         with pikepdf.open(result) as pdf:
             self.assertTrue(pdf.Root.MarkInfo.Marked)
             self.assertEqual(str(pdf.Root.Lang), "en-us")
+            self.assertTrue(pdf.Root.ViewerPreferences.DisplayDocTitle)
             with pdf.open_metadata() as meta:
                 self.assertEqual(meta["dc:title"], "A Title")
+                self.assertEqual(meta["pdfuaid:part"], "1")
             for page in pdf.pages:
                 self.assertEqual(str(page["/Tabs"]), "/S")
 
