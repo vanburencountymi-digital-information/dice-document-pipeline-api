@@ -398,10 +398,11 @@ class LinkAdapterTests(SimpleTestCase):
 
 
 class FontRepairAdapterTests(SimpleTestCase):
-    """The adapter never inspects the font's actual embedded program (only the font
-    dictionary's structure and the content stream's shown codes), so these fixtures use
-    synthetic Type0/Identity-H font dictionaries with no real `FontFile` — same as how the
-    adapter treats real ones, just faster to construct than a real embedded font subset.
+    """The ToUnicode-repair tests below use synthetic Type0/Identity-H font dictionaries with
+    no real `FontFile` — the adapter never inspects the font program for that repair, only the
+    dictionary structure and the content stream's shown codes. The CIDSet-repair tests further
+    down (`FontRepairAdapterCidSetTests`) *do* need a real, minimal embedded `FontFile2`, built
+    with `fontTools.fontBuilder` — that repair reads the font program's actual glyph count.
     """
 
     def setUp(self) -> None:
@@ -542,6 +543,151 @@ class FontRepairAdapterTests(SimpleTestCase):
 
         with self.assertRaises(AdapterError):
             FontRepairPikePdfAdapter().repair(bad_path, output_dir=self.output_dir)
+
+
+def _minimal_ttf_bytes(num_glyphs: int) -> bytes:
+    """Builds a tiny, real, valid TrueType font program with exactly `num_glyphs` glyphs
+    (including `.notdef`) — enough for `fontTools.ttLib.TTFont` to read back a real
+    `numGlyphs`, which is what the CIDSet repair actually reads. Real font bytes, not a mock,
+    since the repair's whole job is reading the font program truthfully.
+    """
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+
+    pen = TTGlyphPen(None)
+    pen.moveTo((0, 0))
+    pen.lineTo((0, 500))
+    pen.lineTo((500, 500))
+    pen.closePath()
+    glyph = pen.glyph()
+
+    glyph_order = [".notdef"] + [f"glyph{i}" for i in range(1, num_glyphs)]
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder(glyph_order)
+    fb.setupCharacterMap({})
+    fb.setupGlyf({name: glyph for name in glyph_order})
+    fb.setupHorizontalMetrics({name: (500, 0) for name in glyph_order})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({"familyName": "Test", "styleName": "Regular"})
+    fb.setupOS2()
+    fb.setupPost()
+
+    buf = io.BytesIO()
+    fb.save(buf)
+    return buf.getvalue()
+
+
+def _pack_cidset(set_cids: set[int], num_bytes: int) -> bytes:
+    result = bytearray(num_bytes)
+    for cid in set_cids:
+        byte_index, bit_index = divmod(cid, 8)
+        result[byte_index] |= 1 << (7 - bit_index)
+    return bytes(result)
+
+
+class FontRepairAdapterCidSetTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.output_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.output_dir, ignore_errors=True)
+
+    def _write_pdf_with_cid_font(
+        self,
+        name: str = "document.pdf",
+        *,
+        num_glyphs: int = 5,
+        cidset_bytes: bytes | None,
+        no_fontfile: bool = False,
+    ) -> str:
+        path = os.path.join(self.input_dir, name)
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+
+        descriptor = pikepdf.Dictionary(
+            Type=pikepdf.Name("/FontDescriptor"), FontName=pikepdf.Name("/Test+Synthetic")
+        )
+        if not no_fontfile:
+            font_data = _minimal_ttf_bytes(num_glyphs)
+            descriptor["/FontFile2"] = pdf.make_indirect(pikepdf.Stream(pdf, font_data))
+        if cidset_bytes is not None:
+            descriptor["/CIDSet"] = pdf.make_indirect(pikepdf.Stream(pdf, cidset_bytes))
+
+        descendant = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/CIDFontType2"),
+            BaseFont=pikepdf.Name("/Test+Synthetic"),
+            CIDSystemInfo=pikepdf.Dictionary(Registry="Adobe", Ordering="Identity", Supplement=0),
+            CIDToGIDMap=pikepdf.Name("/Identity"),
+            FontDescriptor=pdf.make_indirect(descriptor),
+        )
+        font = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/Type0"),
+            BaseFont=pikepdf.Name("/Test+Synthetic"),
+            Encoding=pikepdf.Name("/Identity-H"),
+            DescendantFonts=pikepdf.Array([pdf.make_indirect(descendant)]),
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=pdf.make_indirect(font)))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b""))
+        pdf.save(path)
+        return path
+
+    def _cidset_bytes(self, result_path: str) -> bytes:
+        with pikepdf.open(result_path) as pdf:
+            font = pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            descriptor = font["/DescendantFonts"][0]["/FontDescriptor"]
+            return bytes(descriptor["/CIDSet"].read_bytes())
+
+    def test_repair_marks_every_glyph_present(self) -> None:
+        # Only CIDs 0 and 1 marked, but the real font program has 5 glyphs (0-4) — matches the
+        # real, confirmed defect: a CIDSet reflecting document usage, not the font program.
+        input_path = self._write_pdf_with_cid_font(
+            num_glyphs=5, cidset_bytes=_pack_cidset({0, 1}, num_bytes=1)
+        )
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        self.assertEqual(self._cidset_bytes(result), _pack_cidset({0, 1, 2, 3, 4}, num_bytes=1))
+
+    def test_repair_regenerates_cidset_that_is_too_short_to_represent_all_glyphs(self) -> None:
+        # The real, worse-case instance found: a CIDSet stream too short to even represent the
+        # font's actual glyph count (12 bytes for a font with 4685 glyphs, needing 586).
+        input_path = self._write_pdf_with_cid_font(
+            num_glyphs=20, cidset_bytes=_pack_cidset({0}, num_bytes=1)
+        )
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        self.assertEqual(self._cidset_bytes(result), _pack_cidset(set(range(20)), num_bytes=3))
+
+    def test_repair_leaves_already_correct_cidset_untouched(self) -> None:
+        already_correct = _pack_cidset({0, 1, 2, 3, 4}, num_bytes=1)
+        input_path = self._write_pdf_with_cid_font(num_glyphs=5, cidset_bytes=already_correct)
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        self.assertEqual(self._cidset_bytes(result), already_correct)
+
+    def test_repair_skips_font_with_no_cidset(self) -> None:
+        # Rule 7.21.4.2 only applies when a CIDSet exists at all — no CIDSet is not a defect.
+        input_path = self._write_pdf_with_cid_font(num_glyphs=5, cidset_bytes=None)
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as pdf:
+            font = pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            descriptor = font["/DescendantFonts"][0]["/FontDescriptor"]
+            self.assertNotIn("/CIDSet", descriptor)
+
+    def test_repair_skips_font_without_fontfile2(self) -> None:
+        # No embedded FontFile2 (e.g. a CFF/FontFile3 font) — out of scope, left untouched.
+        incomplete = _pack_cidset({0}, num_bytes=1)
+        input_path = self._write_pdf_with_cid_font(cidset_bytes=incomplete, no_fontfile=True)
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        self.assertEqual(self._cidset_bytes(result), incomplete)
 
 
 def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:

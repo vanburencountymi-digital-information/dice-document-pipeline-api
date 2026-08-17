@@ -1,7 +1,9 @@
+import io
 import os
 import re
 
 import pikepdf
+from fontTools.ttLib import TTFont
 
 from remediation.adapters.base import FontRepairAdapter
 
@@ -248,21 +250,33 @@ def _build_tounicode_cmap(codes: list[int], offset: int) -> bytes:
 
 
 class PikePdfAdapter(FontRepairAdapter):
-    """Recovers missing `/ToUnicode` mappings on embedded fonts whose character codes are
-    shifted from true Unicode by a constant, per-font offset — a real, confirmed defect found
-    in a real submitted document (see the font-repair plan / `implementation_plan.md`), not a
-    hypothetical case.
+    """Repairs two distinct, confirmed embedded-font defects found in a real submitted document
+    (see the font-repair plan / `implementation_plan.md`), both traced to the same underlying
+    font-subsetting tool producing structurally incomplete fonts — not hypothetical cases.
 
-    Scoped narrowly and deliberately: only repairs `Type0`/`CIDFontType2` fonts with an
-    `Identity` encoding, no existing `/ToUnicode`, and a constant offset that clears both a
-    printable-character gate and a common-word confidence bar (`_best_offset`). Every other
-    shape of ToUnicode gap (e.g. a broken simple-font `/Differences` array) is left untouched
-    rather than guessed at — an unproven repair would be worse than the current, honestly
-    reported gap. Only scans each page's own top-level content stream and `/Resources/Font` —
-    does not recurse into Form XObjects, since the two confirmed real cases are both page-level
-    and recursing adds real resource-inheritance complexity (see the Java-side
-    `ResourceHandler`/`ChunksWriter` investigation in the NPE-crash plan for how easily that
-    goes wrong) with no concrete case driving it today.
+    1. **Missing `/ToUnicode`** on fonts whose character codes are shifted from true Unicode by
+       a constant, per-font offset. Scoped narrowly: only `Type0`/`CIDFontType2` fonts with
+       `Identity` encoding, no existing `/ToUnicode`, and a constant offset that clears both a
+       printable-character gate and a common-word confidence bar (`_best_offset`). Every other
+       shape of ToUnicode gap is left untouched rather than guessed at — an unproven repair
+       would be worse than the current, honestly reported gap. Only scans each page's own
+       top-level content stream and `/Resources/Font` — does not recurse into Form XObjects,
+       since the two confirmed real cases are both page-level and recursing adds real
+       resource-inheritance complexity (see the Java-side `ResourceHandler`/`ChunksWriter`
+       investigation in the NPE-crash plan for how easily that goes wrong) with no concrete case
+       driving it today.
+    2. **Incomplete `/CIDSet`** on the FontDescriptor of an embedded CID font: PDF/UA requires a
+       CIDSet, when present, to mark every CID actually present in the embedded font *program*
+       ("regardless of whether a CID... is referenced or used by the PDF or not" — ISO
+       14289-1:2014 7.21.4.2). Confirmed on the same two real fonts: the existing CIDSet only
+       marked CIDs the document's own content stream happened to use (in one case the stream
+       wasn't even long enough to represent the font's real glyph count at all), which is
+       exactly what the rule says is insufficient. Scoped to `CIDFontType2`/`FontFile2`
+       (TrueType) fonts — the only case confirmed so far; CFF (`FontFile3`) is out of scope
+       until a real instance shows up, same "don't guess beyond what's validated" principle as
+       the ToUnicode fix. Reads the font's true glyph count via `fontTools`, and only replaces
+       the CIDSet if it doesn't already mark every glyph in that range — never touches an
+       already-correct one.
     """
 
     @property
@@ -270,9 +284,8 @@ class PikePdfAdapter(FontRepairAdapter):
         return "pikepdf Adapter"
 
     def repair(self, pdf_path: str, *, output_dir: str) -> str:
-        """Applies the font-ToUnicode repair to `pdf_path` and writes the result into
-        `output_dir` under the same filename, same convention as the other adapters. Returns
-        the output path.
+        """Applies the font repairs to `pdf_path` and writes the result into `output_dir` under
+        the same filename, same convention as the other adapters. Returns the output path.
         """
         os.makedirs(output_dir, exist_ok=True)
         output_path = os.path.join(output_dir, os.path.basename(pdf_path))
@@ -281,9 +294,10 @@ class PikePdfAdapter(FontRepairAdapter):
             with pikepdf.open(pdf_path) as pdf:
                 for page in pdf.pages:
                     self._repair_page_fonts(pdf, page)
+                self._repair_cidsets(pdf)
                 pdf.save(output_path)
         except Exception as exc:
-            self.raise_adapter_error(f"pikepdf failed to repair font ToUnicode mappings: {exc}")
+            self.raise_adapter_error(f"pikepdf failed to repair fonts: {exc}")
 
         return output_path
 
@@ -365,3 +379,82 @@ class PikePdfAdapter(FontRepairAdapter):
         cmap_bytes = _build_tounicode_cmap(sorted(codes), offset)
         stream = pikepdf.Stream(pdf, cmap_bytes)
         font["/ToUnicode"] = pdf.make_indirect(stream)
+
+    def _repair_cidsets(self, pdf: pikepdf.Pdf) -> None:
+        """Walks every page's fonts once, deduplicating by the FontDescriptor's own indirect
+        object id — the same embedded font commonly appears under several page resource
+        entries (confirmed on the real document: the same Arial-BoldMT font is referenced from
+        both page 9 and page 34), and there's no reason to re-parse the same embedded font
+        program with `fontTools` more than once.
+        """
+        seen_descriptor_ids: set[int] = set()
+        for page in pdf.pages:
+            resources = page.obj.get("/Resources")
+            if resources is None:
+                continue
+            fonts = resources.get("/Font")
+            if fonts is None:
+                continue
+            for _name, font in fonts.items():
+                if str(font.get("/Subtype", "")) != "/Type0":
+                    continue
+                descendants = font.get("/DescendantFonts")
+                if not descendants:
+                    continue
+                font_descriptor = descendants[0].get("/FontDescriptor")
+                if font_descriptor is None:
+                    continue
+                descriptor_id = font_descriptor.objgen[0]
+                if descriptor_id in seen_descriptor_ids:
+                    continue
+                seen_descriptor_ids.add(descriptor_id)
+                self._repair_cidset(pdf, font_descriptor)
+
+    def _repair_cidset(self, pdf: pikepdf.Pdf, font_descriptor: pikepdf.Object) -> None:
+        cidset = font_descriptor.get("/CIDSet")
+        if cidset is None:
+            return  # rule 7.21.4.2 only applies when a CIDSet exists at all
+        font_file = font_descriptor.get("/FontFile2")
+        if font_file is None:
+            return  # scoped to TrueType-based CID fonts — the only confirmed real case
+
+        num_glyphs = self._count_glyphs(bytes(font_file.read_bytes()))
+        if num_glyphs is None:
+            return  # unparseable font program — leave the existing CIDSet alone, don't guess
+
+        current_bytes = bytes(cidset.read_bytes())
+        if self._cidset_covers_all_glyphs(current_bytes, num_glyphs):
+            return  # already correct — never touch a CIDSet that's already right
+
+        new_bytes = self._build_full_cidset(num_glyphs)
+        font_descriptor["/CIDSet"] = pdf.make_indirect(pikepdf.Stream(pdf, new_bytes))
+
+    def _count_glyphs(self, font_data: bytes) -> int | None:
+        try:
+            font = TTFont(io.BytesIO(font_data), lazy=True)
+            return int(font["maxp"].numGlyphs)
+        except Exception:
+            return None
+
+    def _cidset_covers_all_glyphs(self, cidset_bytes: bytes, num_glyphs: int) -> bool:
+        if len(cidset_bytes) * 8 < num_glyphs:
+            return False
+        for cid in range(num_glyphs):
+            byte_index, bit_index = divmod(cid, 8)
+            if not (cidset_bytes[byte_index] >> (7 - bit_index)) & 1:
+                return False
+        return True
+
+    def _build_full_cidset(self, num_glyphs: int) -> bytes:
+        """Builds a CIDSet with every CID in `[0, num_glyphs)` marked present — one bit per
+        CID, packed high-order-bit-first per byte (ISO 32000-2, same bit order the existing,
+        incomplete CIDSets in the real document already used). Treats every glyph slot the
+        font program declares as "present," matching how a properly-subsetted font's CIDSet is
+        normally built — these fonts are subsetted in name only (near-full glyph tables kept,
+        per `fontTools`), so this is the correct set, not an approximation.
+        """
+        result = bytearray((num_glyphs + 7) // 8)
+        for cid in range(num_glyphs):
+            byte_index, bit_index = divmod(cid, 8)
+            result[byte_index] |= 1 << (7 - bit_index)
+        return bytes(result)

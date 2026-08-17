@@ -33,20 +33,36 @@ one-line change if it's ever needed again.
 | `pages26-29-benign-ocr-fallback.pdf` | MERS retirement-plan checkbox-grid forms (pages 27-28) | Benign |
 | `pages32-35-benign-ocr-fallback.pdf` | Same MERS form pattern, ends in a blank/unsigned signature block (pages 33-34) | Benign |
 
-## Second bug: font ToUnicode-offset defect (separate from the crash above)
+## Second and third bugs: embedded-font defects (separate from the crash above)
 
-The real document also fails `postcheck` (PDF/UA-1) for a second, unrelated reason: certain
-embedded fonts have no `/ToUnicode` CMap and no internal `cmap` table, but their character codes
-turn out to be shifted from true Unicode by a **constant, per-font offset** — confirmed by hand on
-two fonts in this document. See the font-repair plan for the full root-cause writeup and fix
-design. Unlike the OCR-fallback fixtures above, these are single-page fixtures with **no buffer
-needed** — the defect is a static property of the font object itself, not document-context
-sensitive.
+The real document also fails `postcheck` (PDF/UA-1) for two more, unrelated reasons, both traced
+to the same font-subsetting tool producing structurally incomplete fonts:
+
+1. **ToUnicode-offset**: certain embedded fonts have no `/ToUnicode` CMap and no internal `cmap`
+   table, but their character codes turn out to be shifted from true Unicode by a **constant,
+   per-font offset** — confirmed by hand on two fonts in this document.
+2. **Incomplete CIDSet**: the FontDescriptor's `/CIDSet` (which PDF/UA requires to mark every CID
+   *actually present in the embedded font program*, regardless of whether the document uses it)
+   only marked CIDs the document's content stream happened to use — on one font the CIDSet
+   stream wasn't even long enough to represent the font's real glyph count. `FontRepairService`
+   fixes this by reading the font's true glyph count via `fontTools` and regenerating the CIDSet.
+
+See the font-repair plan for the full root-cause writeup and fix design for both. Unlike the
+OCR-fallback fixtures above, these are single-page fixtures with **no buffer needed** — both
+defects are static properties of the font object itself, not document-context sensitive.
+
+Fixing both brought the real document to **106/106 passed PDF/UA-1 rules — full compliance**,
+confirmed against the actual full-document pipeline output, not just these fixtures.
 
 | Fixture | Font / offset | Verified |
 |---|---|---|
-| `page9-broken-tounicode-offset29.pdf` | `LONENE+Arial-BoldMT`, offset **+29** | veraPDF: rule 7.21.7 (44 checks) + 7.21.4.2 (1 check) fail on this single page |
-| `page29-broken-tounicode-offsetneg1.pdf` | `CANKNL+HelveticaNeueLTStd-Lt`, offset **-1** | veraPDF: rule 7.21.7 (27 checks) fails on this single page |
+| `page9-broken-tounicode-offset29.pdf` | `LONENE+Arial-BoldMT`, offset **+29**, 4503 real glyphs (CIDSet only marked 45) | veraPDF: rules 7.21.7 (44 checks) + 7.21.4.2 (1 check) fail on this single page — both now fixed |
+| `page29-broken-tounicode-offsetneg1.pdf` | `CANKNL+HelveticaNeueLTStd-Lt`, offset **-1** | veraPDF: rule 7.21.7 (27 checks) fails on this single page — now fixed |
+
+The CIDSet defect on `YZPJLW+TimesNewRomanPSMT` (page 10, 4685 real glyphs, CIDSet stream only
+12 bytes — too short to represent even a fraction of the font) doesn't have its own fixture yet;
+it was verified directly against the real document's pipeline output instead. Worth adding a
+`page10-broken-cidset.pdf` fixture if this needs fast iteration again later.
 
 **The bug** (fixed — see `~/opendataloader-pdf` branch `fix/ocr-fallback-font-cache-npe`):
 `HybridDocumentProcessor.ensureOcrFallbackFont` checked whether its synthesized OCR-fallback font

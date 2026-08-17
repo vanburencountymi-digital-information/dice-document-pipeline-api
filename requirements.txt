@@ -17,6 +17,7 @@ docstring-parser==0.18.0
 factory_boy==3.3.3
 Faker==40.36.0
 filelock==3.32.0
+fonttools==4.63.0
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
