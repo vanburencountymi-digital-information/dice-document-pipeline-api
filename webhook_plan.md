@@ -117,7 +117,32 @@ def send_webhook_notification(remediation_id: str, attempt: int = 1) -> None:
 
 Async note: Django 6 tasks genuinely support `async def` task functions natively (confirmed in `Task.call()` — it branches on `iscoroutinefunction` and bridges via `asgiref`), so `send_webhook_notification` could legitimately use `httpx.AsyncClient` instead of sync `httpx.post`. Not doing that here — nothing else in this codebase is async yet, and introducing the first async code path for one task feels like a separate decision worth making deliberately rather than as a side effect of this feature. Flagging it as a real, available option if async becomes a broader direction later.
 
-`process_remediation` enqueues this as a **separate task**, not an inline call, right before returning — after the existing `mark_complete`/`mark_failed` calls in every branch (`AlreadyCompliant`, `NotCompliant`, generic `Exception`, and the success `else`). Enqueued unconditionally, every time — the "is there actually a callback to notify?" check lives once, inside `send_webhook_notification` itself (`if not remediation.callback_url: return`), rather than duplicated in `process_remediation` too. Separate task = webhook delivery failure can't affect the remediation's own recorded status, and it's independently retryable/observable later without touching pipeline logic. The success (`else`) branch's `mark_complete` needs updating to accept and persist `final_output_uri=pdf_uri` (the loop's accumulated value); the `AlreadyCompliant` branch passes `final_output_uri=remediation.source_pdf_uri` (nothing transformed it).
+`process_remediation` enqueues this as a **separate task**, not an inline call, from a `finally` block wrapped around the existing `try`/`except`/`else` — **not** a line placed "after" that block. The generic `except Exception` branch re-raises (needed so an unexpected failure still surfaces as a `TaskResult` failure, not a silently-swallowed one), and `NotCompliant`/`AlreadyCompliant` don't — so a line placed after the whole try/except/else would only ever run for the branches that don't re-raise. `finally` is the one placement that runs on every exit path regardless, including one that re-raises:
+
+```python
+try:
+    for step_service_cls in PIPELINE_STEPS:
+        ...
+        pdf_uri = step_service.run(remediation, pdf_uri=pdf_uri)
+
+except AlreadyCompliant:
+    service.mark_complete(remediation)
+
+except NotCompliant as exc:
+    service.mark_failed(remediation, f"postcheck: not PDF/UA-1 compliant: {exc}")
+
+except Exception as exc:
+    service.mark_failed(remediation, str(exc))
+    raise
+
+else:
+    service.mark_complete(remediation)
+
+finally:
+    send_webhook_notification.enqueue(str(remediation.id))
+```
+
+By the time `finally` runs, the relevant `mark_complete`/`mark_failed` call has already committed the row's final `status`/`error`, so `send_webhook_notification` always reads current state regardless of which branch got there. Enqueued unconditionally, every time — the "is there actually a callback to notify?" check lives once, inside `send_webhook_notification` itself (`if not remediation.callback_url: return`), rather than duplicated in `process_remediation` too. Separate task = webhook delivery failure can't affect the remediation's own recorded status, and it's independently retryable/observable later without touching pipeline logic. The success (`else`) branch's `mark_complete` needs updating to accept and persist `final_output_uri=pdf_uri` (the loop's accumulated value); the `AlreadyCompliant` branch passes `final_output_uri=remediation.source_pdf_uri` (nothing transformed it).
 
 ### 5. `api/views.py` + `api/urls.py` — the download endpoint
 

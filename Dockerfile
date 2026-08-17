@@ -46,17 +46,23 @@ RUN "$JAVA_HOME/bin/jlink" \
 FROM eclipse-temurin:21-jdk-alpine AS opendataloader-pdf-builder
 WORKDIR /build
 RUN apk add --no-cache git maven
-RUN git clone --branch fix/hybrid-tagged-pdf-text-drop \
+RUN git clone --branch fix/ocr-fallback-font-cache-npe \
         https://github.com/ViolanteCodes/opendataloader-pdf.git . \
-    && git checkout d633c2f5ddfac883fcb245181a299084adb1c245
-# Pinned to d633c2f (branch tip as of 2026-08-06), not a55c694 (the previous pin) —
-# a55c694 is no longer a reachable commit on this branch at all (confirmed via
-# `git cat-file -t`, not just a stale local clone), so a fresh build from the old pin
-# would fail outright. This tip also picks up 0724234 ("Fix IllegalArgumentException
-# in Comparator for sortPageContents") and other fixes made since a55c694, reducing
-# the chance of re-fixing something already fixed upstream on this branch. Pinned to
-# a specific commit rather than floating on the branch HEAD so a future push can't
-# silently change what this build pulls in.
+    && git checkout 1ad2814e2601c3c70dde3f2431e2be05607245b5
+# Pinned to 1ad2814 (branch fix/ocr-fallback-font-cache-npe, tip as of 2026-08-17), not
+# d633c2f on fix/hybrid-tagged-pdf-text-drop (the previous pin) — 1ad2814 branches
+# directly off d633c2f (fix/hybrid-tagged-pdf-text-drop only, not yet on origin/main or
+# upstream/main) and adds one fix on top: ensureOcrFallbackFont's presence-check used to
+# query PDResources#getFont(OCR_FALLBACK_FONT_NAME) before the font was added, which
+# poisoned PDResources's font-resolution cache and left the font unresolvable at tagging
+# time even after it was genuinely added to the underlying COS dictionary — crashing
+# ChunksWriter with an NPE on any document whose OCR-fallback synthesis path hit that
+# font. Fixed by checking the raw COS /Font dictionary directly instead. Confirmed via
+# targeted diagnostic logging against a real reproducing document (see
+# docs/tests/example-files/edge-cases/, fixture pages11-14-crash-ocr-fallback.pdf) and
+# by re-running the full 47-page document that originally hit this crash end to end with
+# zero errors. Pinned to a specific commit rather than floating on the branch HEAD so a
+# future push can't silently change what this build pulls in.
 # The Maven aggregator POM lives at java/pom.xml, not the repo root — module names in
 # -pl are relative to it (plain opendataloader-pdf-core/-cli, no java/ prefix).
 WORKDIR /build/java
