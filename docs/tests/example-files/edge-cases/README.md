@@ -33,6 +33,21 @@ one-line change if it's ever needed again.
 | `pages26-29-benign-ocr-fallback.pdf` | MERS retirement-plan checkbox-grid forms (pages 27-28) | Benign |
 | `pages32-35-benign-ocr-fallback.pdf` | Same MERS form pattern, ends in a blank/unsigned signature block (pages 33-34) | Benign |
 
+## Second bug: font ToUnicode-offset defect (separate from the crash above)
+
+The real document also fails `postcheck` (PDF/UA-1) for a second, unrelated reason: certain
+embedded fonts have no `/ToUnicode` CMap and no internal `cmap` table, but their character codes
+turn out to be shifted from true Unicode by a **constant, per-font offset** — confirmed by hand on
+two fonts in this document. See the font-repair plan for the full root-cause writeup and fix
+design. Unlike the OCR-fallback fixtures above, these are single-page fixtures with **no buffer
+needed** — the defect is a static property of the font object itself, not document-context
+sensitive.
+
+| Fixture | Font / offset | Verified |
+|---|---|---|
+| `page9-broken-tounicode-offset29.pdf` | `LONENE+Arial-BoldMT`, offset **+29** | veraPDF: rule 7.21.7 (44 checks) + 7.21.4.2 (1 check) fail on this single page |
+| `page29-broken-tounicode-offsetneg1.pdf` | `CANKNL+HelveticaNeueLTStd-Lt`, offset **-1** | veraPDF: rule 7.21.7 (27 checks) fails on this single page |
+
 **The bug** (fixed — see `~/opendataloader-pdf` branch `fix/ocr-fallback-font-cache-npe`):
 `HybridDocumentProcessor.ensureOcrFallbackFont` checked whether its synthesized OCR-fallback font
 was already present via `PDResources#getFont(...) != null` *before* adding it — that premature

@@ -13,6 +13,7 @@ from accounts.tests.factories import ServiceAccountFactory
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
 from remediation.adapters.base import AdapterError, FigureCandidate
+from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
@@ -23,6 +24,7 @@ from remediation.services import (
     AlreadyCompliant,
     AltTextService,
     ArtifactService,
+    FontRepairService,
     LinkService,
     MetadataService,
     NotCompliant,
@@ -448,6 +450,70 @@ class MetadataServiceTests(TestCase):
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class FontRepairServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.service_account = ServiceAccountFactory()
+        cls.remediation = RemediationFactory(
+            service_account=cls.service_account,
+            content_hash="abc123",
+            source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+        )
+
+    def setUp(self) -> None:
+        self.adapter = create_autospec(FontRepairPikePdfAdapter, spec_set=True)
+
+    def _output_dir(self) -> str:
+        return FontRepairService(adapter=self.adapter).construct_output_dir(self.remediation)
+
+    def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
+        output_dir = self._output_dir()
+        repaired_path = os.path.join(output_dir, "test.pdf")
+        self.adapter.repair.return_value = repaired_path
+
+        result = FontRepairService(adapter=self.adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        expected_uri = (
+            f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/"
+            "font_repair/test.pdf"
+        )
+        self.assertEqual(result, expected_uri)
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.FONT_REPAIR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, expected_uri)
+
+    def test_run_calls_adapter_with_correct_args(self) -> None:
+        output_dir = self._output_dir()
+        self.adapter.repair.return_value = os.path.join(output_dir, "test.pdf")
+
+        FontRepairService(adapter=self.adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        self.adapter.repair.assert_called_once_with(
+            default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
+        )
+
+    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
+        self.adapter.repair.side_effect = AdapterError("boom")
+
+        with self.assertRaises(AdapterError):
+            FontRepairService(adapter=self.adapter).run(
+                self.remediation, pdf_uri=self.remediation.source_pdf_uri
+            )
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.FONT_REPAIR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "boom")
+
+    def test_default_adapter_is_font_repair_pike_pdf_adapter(self) -> None:
+        service = FontRepairService()
+
+        self.assertIsInstance(service.adapter, FontRepairPikePdfAdapter)
+
+
 class LinkServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:

@@ -56,6 +56,14 @@ class LinkAdapter(Adapter):
         pass
 
 
+class FontRepairAdapter(Adapter):
+    """Base class that wraps adapters for the font_repair stage."""
+
+    @abstractmethod
+    def repair(self, pdf_path: str, *, output_dir: str) -> str:
+        pass
+
+
 @dataclass(frozen=True)
 class FigureCandidate:
     """One `<Figure>` element needing alt text, plus the image data to describe it with.

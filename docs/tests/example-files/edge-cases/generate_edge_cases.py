@@ -22,11 +22,10 @@ Usage: run from the repo root with the project's .venv (needs `pikepdf`):
 
 import pikepdf
 
-SOURCE_PDF = (
-    "media/remediations/1/"
-    "9d8dc8704192eae246ffbac138d26b9062a438df3444293d98f9cfbc3892c035/"
-    "0. 08-18-26 BOC Meeting Packet.pdf"
-)
+# Points at whatever local copy of the source document is currently on disk — the original
+# remediation-scoped path gets cleared whenever remediations are reset, so this isn't stable;
+# re-point it at wherever you've re-uploaded the file before regenerating.
+SOURCE_PDF = "media/0. 08-18-26 BOC Meeting Packet.pdf"
 
 # (first_page, last_page, verdict) — 1-indexed, inclusive. "verdict" is baked into the filename
 # so you know what to expect without opening the fixture. Filled in from this session's live
@@ -54,6 +53,21 @@ CLUSTERS = [
     # (43, 47, "benign") [44,45,46].
 ]
 
+# Single, non-adjacent pages for the font-ToUnicode-offset defect (a separate bug from the
+# OCR-fallback crash above — see implementation_plan.md / the font-repair plan). Unlike the
+# clusters above, these are single-page fixtures with NO buffer needed: the defect is a static
+# property of the embedded font object itself (no cmap table, no /ToUnicode, a constant
+# character-code-to-Unicode offset), not sensitive to document-wide triage context the way the
+# OCR-fallback bug was. Each entry is (page, filename_suffix) — verified via veraPDF directly
+# against the extracted single-page fixture, not just inferred from the full document.
+FONT_OFFSET_PAGES = [
+    (9, "broken-tounicode-offset29"),  # LONENE+Arial-BoldMT, offset +29 (verified: "DEPARTMENT")
+    (
+        29,
+        "broken-tounicode-offsetneg1",
+    ),  # CANKNL+HelveticaNeueLTStd-Lt, offset -1 (verified: "EXCLUDING...SHERIFF")
+]
+
 
 def main() -> None:
     source = pikepdf.open(SOURCE_PDF)
@@ -64,6 +78,13 @@ def main() -> None:
         filename = f"pages{first_page}-{last_page}-{verdict}-ocr-fallback.pdf"
         out.save(filename)
         print(f"{filename}  ({len(out.pages)} pages)")
+
+    for page, suffix in FONT_OFFSET_PAGES:
+        out = pikepdf.Pdf.new()
+        out.pages.append(source.pages[page - 1])
+        filename = f"page{page}-{suffix}.pdf"
+        out.save(filename)
+        print(f"{filename}  (1 page)")
 
 
 if __name__ == "__main__":

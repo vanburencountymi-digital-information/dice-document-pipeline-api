@@ -17,6 +17,7 @@ from PIL import Image
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
 from remediation.adapters.base import Adapter, AdapterError
+from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
@@ -394,6 +395,153 @@ class LinkAdapterTests(SimpleTestCase):
 
         with self.assertRaises(AdapterError):
             LinkPikePdfAdapter().repair(bad_path, output_dir=self.output_dir)
+
+
+class FontRepairAdapterTests(SimpleTestCase):
+    """The adapter never inspects the font's actual embedded program (only the font
+    dictionary's structure and the content stream's shown codes), so these fixtures use
+    synthetic Type0/Identity-H font dictionaries with no real `FontFile` — same as how the
+    adapter treats real ones, just faster to construct than a real embedded font subset.
+    """
+
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.output_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, self.output_dir, ignore_errors=True)
+
+    def _identity_h_font(self, pdf: pikepdf.Pdf, *, tounicode: bool = False) -> pikepdf.Object:
+        descendant = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/CIDFontType2"),
+            BaseFont=pikepdf.Name("/Test+Synthetic"),
+            CIDSystemInfo=pikepdf.Dictionary(Registry="Adobe", Ordering="Identity", Supplement=0),
+            CIDToGIDMap=pikepdf.Name("/Identity"),
+        )
+        font = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/Type0"),
+            BaseFont=pikepdf.Name("/Test+Synthetic"),
+            Encoding=pikepdf.Name("/Identity-H"),
+            DescendantFonts=pikepdf.Array([pdf.make_indirect(descendant)]),
+        )
+        if tounicode:
+            font["/ToUnicode"] = pdf.make_indirect(pikepdf.Stream(pdf, b"already present"))
+        return pdf.make_indirect(font)
+
+    def _write_pdf_with_font(
+        self, name: str, *, text: str, offset: int, tounicode: bool = False
+    ) -> str:
+        """Writes a page whose content stream shows `text` via a synthetic Identity-H font,
+        with each character's code shifted by `-offset` — so the correct recovery offset for
+        the adapter to find is exactly `offset`.
+        """
+        path = os.path.join(self.input_dir, name)
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        page["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf, tounicode=tounicode))
+        )
+        hex_codes = "".join(f"{ord(c) - offset:04X}" for c in text)
+        content = f"BT /F1 12 Tf <{hex_codes}> Tj ET".encode("ascii")
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, content))
+        pdf.save(path)
+        return path
+
+    def test_repair_writes_output_under_input_basename(self) -> None:
+        input_path = self._write_pdf_with_font(
+            "document.pdf", text="the department office please", offset=17
+        )
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        self.assertEqual(result, os.path.join(self.output_dir, "document.pdf"))
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_recovers_tounicode_for_offset_encoded_font(self) -> None:
+        # A phrase built entirely from the adapter's bundled common-word list, long enough to
+        # clear MIN_USED_CODES — matches the real, confirmed repro (constant per-font offset,
+        # recovered via printable + word-hit coherence scoring), not a hand-picked shortcut.
+        text = "please prepare the department form for the county board and file the request"
+        input_path = self._write_pdf_with_font("document.pdf", text=text, offset=29)
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as pdf:
+            font = pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertIn("/ToUnicode", font)
+            cmap_bytes = bytes(font["/ToUnicode"].read_bytes())
+            # Every code shown in the content stream should decode to its correct character.
+            for char in text:
+                code = ord(char) - 29
+                self.assertIn(f"<{code:04X}> <{ord(char):04X}>".upper(), cmap_bytes.decode())
+
+    def test_repair_leaves_font_untouched_when_already_has_tounicode(self) -> None:
+        input_path = self._write_pdf_with_font(
+            "document.pdf",
+            text="please prepare the department form for the county board",
+            offset=29,
+            tounicode=True,
+        )
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as pdf:
+            font = pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertEqual(bytes(font["/ToUnicode"].read_bytes()), b"already present")
+
+    def test_repair_leaves_font_untouched_when_no_confident_offset(self) -> None:
+        # Random, non-language bytes — no constant offset should score above the confidence
+        # threshold, so the font must be left exactly as it started: no fabricated mapping.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        page["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf))
+        )
+        # Codes chosen to be spread out and non-sequential — not derivable from any single
+        # constant shift of real English text.
+        codes = [0x1F3A, 0x0042, 0x7E01, 0x3C9B, 0x0511, 0x22F4, 0x6BAA, 0x0190, 0x4471, 0x2E0C]
+        hex_codes = "".join(f"{c:04X}" for c in codes)
+        content = f"BT /F1 12 Tf <{hex_codes}> Tj ET".encode("ascii")
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, content))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertNotIn("/ToUnicode", font)
+
+    def test_repair_ignores_non_identity_cid_fonts(self) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        simple_font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/TrueType"),
+                BaseFont=pikepdf.Name("/Helvetica"),
+                Encoding=pikepdf.Name("/WinAnsiEncoding"),
+            )
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=simple_font))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b"BT /F1 12 Tf (Hello) Tj ET"))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertNotIn("/ToUnicode", font)
+
+    def test_repair_raises_adapter_error_for_unopenable_pdf(self) -> None:
+        bad_path = os.path.join(self.input_dir, "not-a-pdf.pdf")
+        with open(bad_path, "w") as f:
+            f.write("not a pdf")
+
+        with self.assertRaises(AdapterError):
+            FontRepairPikePdfAdapter().repair(bad_path, output_dir=self.output_dir)
 
 
 def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:

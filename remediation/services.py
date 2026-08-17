@@ -13,11 +13,13 @@ from remediation.adapters.base import (
     AdapterError,
     AltTextAdapter,
     AltTextClient,
+    FontRepairAdapter,
     LinkAdapter,
     MetadataAdapter,
     OCRAdapter,
     VerificationAdapter,
 )
+from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
@@ -240,6 +242,33 @@ class OCRService(ArtifactService):
 
         try:
             output_path = self.adapter.extract(pdf_path, output_dir=output_dir)
+        except AdapterError as exc:
+            self.mark_failed(remediation, str(exc))
+            raise
+
+        output_uri = os.path.relpath(output_path, default_storage.path(""))
+        self.mark_completed(remediation, output_uri=output_uri)
+        return output_uri
+
+
+class FontRepairService(ArtifactService):
+    """Recovers missing `/ToUnicode` mappings on embedded fonts whose character codes are
+    shifted from true Unicode by a constant, per-font offset — see the font-repair plan for the
+    full root-cause writeup. Doesn't touch tag structure or metadata; purely a font-dictionary
+    repair, same footprint as `LinkService`.
+    """
+
+    step = RemediationArtifact.Step.FONT_REPAIR
+
+    def __init__(self, adapter: FontRepairAdapter | None = None) -> None:
+        self.adapter = adapter or FontRepairPikePdfAdapter()
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        pdf_path = default_storage.path(pdf_uri)
+        output_dir = self.construct_output_dir(remediation)
+
+        try:
+            output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
         except AdapterError as exc:
             self.mark_failed(remediation, str(exc))
             raise

@@ -150,6 +150,7 @@ TASKS = {
 # Remediation pipeline step toggles
 RUN_PRECHECK = env.bool("RUN_PRECHECK", default=False)
 RUN_OCR = env.bool("RUN_OCR", default=False)
+RUN_FONT_REPAIR = env.bool("RUN_FONT_REPAIR", default=False)
 RUN_FINALIZE_METADATA = env.bool("RUN_FINALIZE_METADATA", default=False)
 RUN_LINK_TAG = env.bool("RUN_LINK_TAG", default=False)
 RUN_ALT_TEXT = env.bool("RUN_ALT_TEXT", default=False)
@@ -165,3 +166,25 @@ OPENDATALOADER_HYBRID_URL = env.str("OPENDATALOADER_HYBRID_URL", default="http:/
 # actual describe() call, not at construction (see its docstring for why).
 ANTHROPIC_API_KEY = env.str("ANTHROPIC_API_KEY", default="")
 CLAUDE_VISION_MODEL = env.str("CLAUDE_VISION_MODEL", default="claude-sonnet-5")
+
+# Without this, Python's logging module silently drops anything below WARNING on the root
+# logger — meaning remediation/tasks.py's per-step progress logging (which step is running,
+# how long it took) would never actually reach the console, the exact visibility gap that
+# made "is the pipeline stuck or just slow" hard to answer locally. `LOG_LEVEL` is
+# env-driven so it can be turned down in a real deployment without a code change; INFO by
+# default matches the level tasks.py logs at.
+LOG_LEVEL = env.str("LOG_LEVEL", default="INFO")
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "console": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "console"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": LOG_LEVEL,
+    },
+}
