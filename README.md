@@ -53,10 +53,12 @@ If all steps are enabled via environment variable, a document upload runs throug
 
 1. `PrecheckService` → Verify with veraPDF
 2. `OCRService` → OCR + build tagged PDF via OpenDataLoader
-3. `MetadataService` → Fix metadata (pikepdf) — `MarkInfo`/`Lang`/title/tab-order
-4. `LinkService` → Tag links (pikepdf)
-5. `AltTextService` → Alt text (Claude Vision)
-6. `PostCheckService` → Verify with veraPDF
+3. `FontRepairService` → Repair font `ToUnicode`/`CIDSet` (pikepdf)
+4. `MetadataService` → Fix metadata (pikepdf) — `MarkInfo`/`Lang`/title/tab-order
+5. `LinkService` → Tag links (pikepdf)
+6. `AltTextService` → Alt text (Claude Vision)
+7. `ScoringService` → Heuristic compliance score, non-blocking (pikepdf/PyMuPDF)
+8. `PostCheckService` → Verify with veraPDF
 
 
 ## Testing the API
