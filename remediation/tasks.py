@@ -14,8 +14,12 @@ from remediation.services import (
     PostCheckService,
     PrecheckService,
     RemediationService,
+    ScoringService,
 )
 
+# ScoringService is non-blocking (add_confidence_scoring) — placed last before
+# PostCheckService so it scores the same file veraPDF is about to validate. If
+# PrecheckService raises AlreadyCompliant, the loop exits before this ever runs.
 PIPELINE_STEPS = [
     PrecheckService,
     OCRService,
@@ -23,6 +27,7 @@ PIPELINE_STEPS = [
     MetadataService,
     LinkService,
     AltTextService,
+    ScoringService,
     PostCheckService,
 ]
 

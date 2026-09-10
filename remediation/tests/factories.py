@@ -4,7 +4,12 @@ import factory
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from accounts.tests.factories import ServiceAccountFactory
-from remediation.models import Remediation, RemediationArtifact
+from remediation.models import (
+    Remediation,
+    RemediationArtifact,
+    RemediationScore,
+    VerificationResult,
+)
 
 
 class RemediationFactory(factory.django.DjangoModelFactory):
@@ -23,6 +28,25 @@ class RemediationArtifactFactory(factory.django.DjangoModelFactory):
     remediation = factory.SubFactory(RemediationFactory)
     step = factory.Iterator(RemediationArtifact.Step.values)
     status = factory.Iterator(RemediationArtifact.StepStatus.values)
+
+
+class VerificationResultFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = VerificationResult
+
+    remediation = factory.SubFactory(RemediationFactory)
+    step = factory.Iterator([RemediationArtifact.Step.PRECHECK, RemediationArtifact.Step.POSTCHECK])
+    is_compliant = factory.Faker("boolean")
+
+
+class RemediationScoreFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = RemediationScore
+
+    remediation = factory.SubFactory(RemediationFactory)
+    score = factory.Faker("random_int", min=0, max=100)
+    grade = factory.Iterator(RemediationScore.Grade.values)
+    manual_review_items = factory.LazyFunction(list)
 
 
 class PdfUploadFactory(factory.Factory):

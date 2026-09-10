@@ -17,14 +17,21 @@ from remediation.adapters.base import (
     LinkAdapter,
     MetadataAdapter,
     OCRAdapter,
+    ScoringAdapter,
     VerificationAdapter,
 )
 from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
+from remediation.adapters.scoring.pike_pdf import PikePdfAdapter as ScoringPikePdfAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
-from remediation.models import Remediation, RemediationArtifact
+from remediation.models import (
+    Remediation,
+    RemediationArtifact,
+    RemediationScore,
+    VerificationResult,
+)
 
 
 class RemediationService:
@@ -199,6 +206,9 @@ class VerificationService(ArtifactService):
             self.mark_failed(remediation, str(exc))
             raise
 
+        VerificationResult.objects.create(
+            remediation=remediation, step=self.step, is_compliant=is_compliant
+        )
         self.mark_completed(remediation, output_uri=pdf_uri)
         self.handle_result(is_compliant, report)
         return pdf_uri
@@ -394,3 +404,35 @@ class AltTextService(ArtifactService):
         output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
         return output_uri
+
+
+class ScoringService(ArtifactService):
+    """Non-blocking heuristic scoring (add_confidence_scoring experiment). Unlike every
+    other step, `run()` never re-raises — a failure here must never block postcheck.
+    """
+
+    step = RemediationArtifact.Step.SCORING
+
+    def __init__(self, adapter: ScoringAdapter | None = None) -> None:
+        self.adapter = adapter or ScoringPikePdfAdapter()
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        pdf_path = default_storage.path(pdf_uri)
+        try:
+            result = self.adapter.score(pdf_path)
+        except AdapterError as exc:
+            self.mark_failed(remediation, str(exc))
+            return pdf_uri
+        except Exception as exc:
+            # Belt-and-braces: non-blocking must hold even for a non-AdapterError bug.
+            self.mark_failed(remediation, f"unexpected scoring error: {exc}")
+            return pdf_uri
+
+        RemediationScore.objects.create(
+            remediation=remediation,
+            score=result.score,
+            grade=result.grade,
+            manual_review_items=result.manual_review_items,
+        )
+        self.mark_completed(remediation, output_uri=pdf_uri)
+        return pdf_uri
