@@ -7,6 +7,7 @@ from django.core.files.storage import default_storage
 from django.tasks import TaskResultStatus
 from django.test import TestCase, override_settings
 
+from remediation.adapters.base import AdapterError
 from remediation.models import Remediation, RemediationArtifact
 from remediation.tasks import process_remediation
 from remediation.tests.factories import RemediationFactory
@@ -20,9 +21,11 @@ class ProcessRemediationTaskTests(TestCase):
     @override_settings(
         RUN_PRECHECK=False,
         RUN_OCR=False,
+        RUN_FONT_REPAIR=False,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
         RUN_ALT_TEXT=False,
+        RUN_SCORING=False,
         RUN_POSTCHECK=False,
     )
     def test_marks_complete_when_all_steps_disabled(self) -> None:
@@ -40,12 +43,14 @@ class ProcessRemediationTaskTests(TestCase):
             {
                 (RemediationArtifact.Step.PRECHECK, RemediationArtifact.StepStatus.SKIPPED),
                 (RemediationArtifact.Step.OCR, RemediationArtifact.StepStatus.SKIPPED),
+                (RemediationArtifact.Step.FONT_REPAIR, RemediationArtifact.StepStatus.SKIPPED),
                 (
                     RemediationArtifact.Step.FINALIZE_METADATA,
                     RemediationArtifact.StepStatus.SKIPPED,
                 ),
                 (RemediationArtifact.Step.LINK_TAG, RemediationArtifact.StepStatus.SKIPPED),
                 (RemediationArtifact.Step.ALT_TEXT, RemediationArtifact.StepStatus.SKIPPED),
+                (RemediationArtifact.Step.SCORING, RemediationArtifact.StepStatus.SKIPPED),
                 (RemediationArtifact.Step.POSTCHECK, RemediationArtifact.StepStatus.SKIPPED),
             },
         )
@@ -58,9 +63,11 @@ class ProcessRemediationTaskTests(TestCase):
     @override_settings(
         RUN_PRECHECK=True,
         RUN_OCR=False,
+        RUN_FONT_REPAIR=False,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
         RUN_ALT_TEXT=False,
+        RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
@@ -87,9 +94,11 @@ class ProcessRemediationTaskTests(TestCase):
     @override_settings(
         RUN_PRECHECK=True,
         RUN_OCR=False,
+        RUN_FONT_REPAIR=False,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
         RUN_ALT_TEXT=False,
+        RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
@@ -119,9 +128,11 @@ class ProcessRemediationTaskTests(TestCase):
     @override_settings(
         RUN_PRECHECK=True,
         RUN_OCR=True,
+        RUN_FONT_REPAIR=False,
         RUN_FINALIZE_METADATA=False,
         RUN_LINK_TAG=False,
         RUN_ALT_TEXT=False,
+        RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
     @patch("remediation.services.OpenDataLoaderAdapter", autospec=True)
@@ -146,6 +157,46 @@ class ProcessRemediationTaskTests(TestCase):
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.OCR,
+                status=RemediationArtifact.StepStatus.COMPLETED,
+            ).exists()
+        )
+
+    @override_settings(
+        RUN_PRECHECK=True,
+        RUN_OCR=False,
+        RUN_FONT_REPAIR=False,
+        RUN_FINALIZE_METADATA=False,
+        RUN_LINK_TAG=False,
+        RUN_ALT_TEXT=False,
+        RUN_SCORING=True,
+        RUN_POSTCHECK=True,
+    )
+    @patch("remediation.services.ScoringPikePdfAdapter", autospec=True)
+    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    def test_scoring_failure_does_not_block_postcheck(
+        self, mock_vera_cls, mock_scoring_cls
+    ) -> None:
+        mock_vera_cls.return_value.validate.side_effect = [
+            (False, "<report/>"),
+            (True, "<report/>"),
+        ]
+        mock_scoring_cls.return_value.score.side_effect = AdapterError("boom")
+        remediation = RemediationFactory()
+
+        result = process_remediation.enqueue(str(remediation.id))
+
+        remediation.refresh_from_db()
+        self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertTrue(
+            remediation.artifacts.filter(
+                step=RemediationArtifact.Step.SCORING,
+                status=RemediationArtifact.StepStatus.FAILED,
+            ).exists()
+        )
+        self.assertTrue(
+            remediation.artifacts.filter(
+                step=RemediationArtifact.Step.POSTCHECK,
                 status=RemediationArtifact.StepStatus.COMPLETED,
             ).exists()
         )

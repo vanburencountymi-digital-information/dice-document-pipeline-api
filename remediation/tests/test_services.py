@@ -12,13 +12,19 @@ from parameterized import parameterized
 from accounts.tests.factories import ServiceAccountFactory
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
-from remediation.adapters.base import AdapterError, FigureCandidate
+from remediation.adapters.base import AdapterError, FigureCandidate, ScoringResult
 from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
+from remediation.adapters.scoring.pike_pdf import PikePdfAdapter as ScoringPikePdfAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
-from remediation.models import Remediation, RemediationArtifact
+from remediation.models import (
+    Remediation,
+    RemediationArtifact,
+    RemediationScore,
+    VerificationResult,
+)
 from remediation.services import (
     DEFAULT_TITLE,
     AlreadyCompliant,
@@ -32,6 +38,7 @@ from remediation.services import (
     PostCheckService,
     PrecheckService,
     RemediationService,
+    ScoringService,
 )
 from remediation.tests.factories import (
     PdfUploadFactory,
@@ -291,6 +298,9 @@ class VerificationServiceTests(TestCase):
         artifact = self.remediation.artifacts.get(step=service.step)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
         self.assertEqual(artifact.output_uri, "remediations/test.pdf")
+
+        result_row = VerificationResult.objects.get(remediation=self.remediation, step=service.step)
+        self.assertEqual(result_row.is_compliant, is_compliant)
 
     @parameterized.expand(
         [
@@ -683,3 +693,56 @@ class AltTextServiceTests(TestCase):
 
         self.assertIsInstance(service.adapter, AltTextPikePdfAdapter)
         self.assertIsInstance(service.client, ClaudeVisionClient)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class ScoringServiceTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
+
+    def setUp(self) -> None:
+        self.adapter = create_autospec(ScoringPikePdfAdapter, spec_set=True)
+
+    def test_run_returns_pdf_uri_and_records_completed_artifact_and_score(self) -> None:
+        self.adapter.score.return_value = ScoringResult(
+            score=82, grade="B", manual_review_items=["fix contrast"]
+        )
+
+        result = ScoringService(adapter=self.adapter).run(
+            self.remediation, pdf_uri="remediations/test.pdf"
+        )
+
+        self.assertEqual(result, "remediations/test.pdf")
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.SCORING)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        score = RemediationScore.objects.get(remediation=self.remediation)
+        self.assertEqual(score.score, 82)
+        self.assertEqual(score.grade, "B")
+        self.assertEqual(score.manual_review_items, ["fix contrast"])
+
+    @parameterized.expand(
+        [
+            ("adapter_error", AdapterError("boom"), "boom"),
+            ("unexpected_error", RuntimeError("boom"), "unexpected scoring error: boom"),
+        ]
+    )
+    def test_run_does_not_raise_and_records_failed_artifact_on_error(
+        self, _name, side_effect, expected_error
+    ) -> None:
+        self.adapter.score.side_effect = side_effect
+
+        result = ScoringService(adapter=self.adapter).run(
+            self.remediation, pdf_uri="remediations/test.pdf"
+        )
+
+        self.assertEqual(result, "remediations/test.pdf")
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.SCORING)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, expected_error)
+        self.assertFalse(RemediationScore.objects.filter(remediation=self.remediation).exists())
+
+    def test_default_adapter_is_scoring_pike_pdf_adapter(self) -> None:
+        service = ScoringService()
+
+        self.assertIsInstance(service.adapter, ScoringPikePdfAdapter)

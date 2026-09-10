@@ -21,6 +21,7 @@ from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepa
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
+from remediation.adapters.scoring.pike_pdf import PikePdfAdapter as ScoringPikePdfAdapter
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 
 COMPLIANT_REPORT = """<?xml version="1.0" encoding="utf-8"?>
@@ -910,3 +911,61 @@ class ClaudeVisionClientTests(SimpleTestCase):
         client = ClaudeVisionClient(api_key="test-key")
 
         self.assertEqual(client.model, "claude-sonnet-5")
+
+
+class ScoringPikePdfAdapterTests(SimpleTestCase):
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
+
+    def _write_blank_untagged_pdf(self, name: str = "blank.pdf") -> str:
+        path = os.path.join(self.input_dir, name)
+        pdf = pikepdf.new()
+        pdf.add_blank_page(page_size=(200, 200))
+        pdf.save(path)
+        return path
+
+    def _write_tagged_pdf_with_text(self, name: str = "tagged.pdf") -> str:
+        path = os.path.join(self.input_dir, name)
+        doc = fitz.open()
+        page = doc.new_page(width=300, height=300)
+        page.insert_text((50, 50), "Hello world " * 10)
+        doc.save(path)
+        doc.close()
+        with pikepdf.open(path, allow_overwriting_input=True) as pdf:
+            pdf.Root.StructTreeRoot = pdf.make_indirect(
+                pikepdf.Dictionary(Type=pikepdf.Name("/StructTreeRoot"), K=pikepdf.Array())
+            )
+            pdf.save(path)
+        return path
+
+    def test_score_deducts_structure_text_and_contrast_for_blank_pdf(self) -> None:
+        path = self._write_blank_untagged_pdf()
+
+        result = ScoringPikePdfAdapter().score(path)
+
+        self.assertEqual(result.score, 57)
+        self.assertEqual(result.grade, "D")
+        self.assertEqual(len(result.manual_review_items), 3)
+
+    def test_score_only_deducts_contrast_when_structure_and_text_present(self) -> None:
+        path = self._write_tagged_pdf_with_text()
+
+        result = ScoringPikePdfAdapter().score(path)
+
+        self.assertEqual(result.score, 95)
+        self.assertEqual(result.grade, "A")
+        self.assertEqual(len(result.manual_review_items), 1)
+
+    def test_score_degrades_gracefully_instead_of_raising_for_unopenable_pdf(self) -> None:
+        # Per-check try/except in _assess (ported from assess_document) swallows a
+        # corrupt file into an all-defaults issues dict rather than raising — same
+        # score as the blank-PDF case, not an AdapterError.
+        bad_path = os.path.join(self.input_dir, "not-a-pdf.pdf")
+        with open(bad_path, "w") as f:
+            f.write("not a pdf")
+
+        result = ScoringPikePdfAdapter().score(bad_path)
+
+        self.assertEqual(result.score, 57)
+        self.assertEqual(result.grade, "D")

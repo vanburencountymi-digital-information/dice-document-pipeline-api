@@ -53,6 +53,7 @@ class RemediationArtifact(models.Model):
         FINALIZE_METADATA = "finalize_metadata", "Finalize metadata"
         LINK_TAG = "link_tag", "Link tag"
         ALT_TEXT = "alt_text", "Alt text"
+        SCORING = "scoring", "Scoring"
         POSTCHECK = "postcheck", "Postcheck"
 
     class StepStatus(models.TextChoices):
@@ -75,3 +76,48 @@ class RemediationArtifact(models.Model):
 
     def __str__(self) -> str:
         return f"{self.remediation_id}: {self.step} ({self.status})"
+
+
+class VerificationResult(models.Model):
+    """Persisted veraPDF verdict for one remediation/step (add_confidence_scoring)."""
+
+    remediation = models.ForeignKey(
+        Remediation, on_delete=models.CASCADE, related_name="verification_results"
+    )
+    step = models.CharField(max_length=20, choices=RemediationArtifact.Step.choices)
+    is_compliant = models.BooleanField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["remediation", "step"], name="one_verification_result_per_step"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.remediation_id}: {self.step} ({self.is_compliant})"
+
+
+class RemediationScore(models.Model):
+    """Heuristic 0-100 compliance score, ported from ada-remediation-pipeline for
+    comparison against veraPDF (add_confidence_scoring). One row per successfully
+    scored Remediation; a scoring failure leaves no row here (see the SCORING
+    RemediationArtifact instead).
+    """
+
+    class Grade(models.TextChoices):
+        A = "A", "A"
+        B = "B", "B"
+        C = "C", "C"
+        D = "D", "D"
+        F = "F", "F"
+
+    remediation = models.OneToOneField(Remediation, on_delete=models.CASCADE, related_name="score")
+    score = models.PositiveSmallIntegerField()
+    grade = models.CharField(max_length=1, choices=Grade.choices)
+    manual_review_items = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"{self.remediation_id}: {self.score} ({self.grade})"

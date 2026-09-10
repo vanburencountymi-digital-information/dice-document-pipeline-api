@@ -112,3 +112,22 @@ class AltTextClient(Adapter):
         page_number: int,
     ) -> str:
         pass
+
+
+@dataclass(frozen=True)
+class ScoringResult:
+    """Heuristic compliance score for one PDF (add_confidence_scoring experiment)."""
+
+    score: int
+    grade: str
+    manual_review_items: list[str]
+
+
+class ScoringAdapter(Adapter):
+    """Base class for the optional, non-blocking scoring stage. Implementations must
+    never let a failure propagate past `ScoringService.run` — see services.py.
+    """
+
+    @abstractmethod
+    def score(self, pdf_path: str) -> ScoringResult:
+        pass

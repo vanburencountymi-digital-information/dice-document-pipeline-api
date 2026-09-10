@@ -154,6 +154,7 @@ RUN_FONT_REPAIR = env.bool("RUN_FONT_REPAIR", default=False)
 RUN_FINALIZE_METADATA = env.bool("RUN_FINALIZE_METADATA", default=False)
 RUN_LINK_TAG = env.bool("RUN_LINK_TAG", default=False)
 RUN_ALT_TEXT = env.bool("RUN_ALT_TEXT", default=False)
+RUN_SCORING = env.bool("RUN_SCORING", default=False)
 RUN_POSTCHECK = env.bool("RUN_POSTCHECK", default=False)
 
 # ADR 0004's OpenDataLoader hybrid AI backend — docker-compose.yml overrides this to the
