@@ -85,8 +85,13 @@ print(account.token)  # save this
 The response will contain an `id` field with the remediation job id and a `document_id` that is a hashed key for your document; save this if you want to check status later.
 
 #### Check a submitted document's status
+
+Submissions in the local environment process synchronously (and therefore don't return a response to postman until the document has finished processing). However, there is a known bug with postman where a long running POST waiting for a response (as would occur when OCR'ing a 150 page, complex document) can appear to hang--in other words, the POST never appears to return a response to PostMan, even though the job actually completed. If you suspect this may have happened (i.e., job running over an hour), you can check via the `document-status` endpoint:
+
 1. New request: `GET http://localhost:8000/api/document-status/<document_id>/`, using the `document_id` from the submit response.
 2. Same `Authorization` header as above.
+
+You should see `status` in the response. If the status is `running`, the job is still in progress.
 
 ---- Notes for later, ignore for now----
 
