@@ -18,6 +18,7 @@ from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
 from remediation.adapters.base import Adapter, AdapterError
 from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
+from remediation.adapters.font_repair.pike_pdf import _build_tounicode_cmap
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
@@ -412,19 +413,27 @@ class FontRepairAdapterTests(SimpleTestCase):
         self.addCleanup(shutil.rmtree, self.input_dir, ignore_errors=True)
         self.addCleanup(shutil.rmtree, self.output_dir, ignore_errors=True)
 
-    def _identity_h_font(self, pdf: pikepdf.Pdf, *, tounicode: bool = False) -> pikepdf.Object:
+    def _identity_h_font(
+        self,
+        pdf: pikepdf.Pdf,
+        *,
+        tounicode: bool = False,
+        descendant_subtype: str = "/CIDFontType2",
+        encoding: str = "/Identity-H",
+        base_font: str = "/Test+Synthetic",
+    ) -> pikepdf.Object:
         descendant = pikepdf.Dictionary(
             Type=pikepdf.Name("/Font"),
-            Subtype=pikepdf.Name("/CIDFontType2"),
-            BaseFont=pikepdf.Name("/Test+Synthetic"),
+            Subtype=pikepdf.Name(descendant_subtype),
+            BaseFont=pikepdf.Name(base_font),
             CIDSystemInfo=pikepdf.Dictionary(Registry="Adobe", Ordering="Identity", Supplement=0),
             CIDToGIDMap=pikepdf.Name("/Identity"),
         )
         font = pikepdf.Dictionary(
             Type=pikepdf.Name("/Font"),
             Subtype=pikepdf.Name("/Type0"),
-            BaseFont=pikepdf.Name("/Test+Synthetic"),
-            Encoding=pikepdf.Name("/Identity-H"),
+            BaseFont=pikepdf.Name(base_font),
+            Encoding=pikepdf.Name(encoding),
             DescendantFonts=pikepdf.Array([pdf.make_indirect(descendant)]),
         )
         if tounicode:
@@ -432,7 +441,13 @@ class FontRepairAdapterTests(SimpleTestCase):
         return pdf.make_indirect(font)
 
     def _write_pdf_with_font(
-        self, name: str, *, text: str, offset: int, tounicode: bool = False
+        self,
+        name: str,
+        *,
+        text: str,
+        offset: int,
+        tounicode: bool = False,
+        descendant_subtype: str = "/CIDFontType2",
     ) -> str:
         """Writes a page whose content stream shows `text` via a synthetic Identity-H font,
         with each character's code shifted by `-offset` — so the correct recovery offset for
@@ -442,7 +457,11 @@ class FontRepairAdapterTests(SimpleTestCase):
         pdf = pikepdf.new()
         page = pdf.add_blank_page(page_size=(400, 200))
         page["/Resources"] = pikepdf.Dictionary(
-            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf, tounicode=tounicode))
+            Font=pikepdf.Dictionary(
+                F1=self._identity_h_font(
+                    pdf, tounicode=tounicode, descendant_subtype=descendant_subtype
+                )
+            )
         )
         hex_codes = "".join(f"{ord(c) - offset:04X}" for c in text)
         content = f"BT /F1 12 Tf <{hex_codes}> Tj ET".encode("ascii")
@@ -544,6 +563,379 @@ class FontRepairAdapterTests(SimpleTestCase):
 
         with self.assertRaises(AdapterError):
             FontRepairPikePdfAdapter().repair(bad_path, output_dir=self.output_dir)
+
+    def test_repair_recovers_tounicode_for_cidfonttype0_descendant(self) -> None:
+        # _is_candidate explicitly accepts CFF-based CIDFontType0 too (confirmed real case:
+        # CANKNL+HelveticaNeueLTStd-Lt), not just the TrueType CIDFontType2 every other test
+        # here uses.
+        text = "please prepare the department form for the county board and file the request"
+        input_path = self._write_pdf_with_font(
+            "document.pdf", text=text, offset=29, descendant_subtype="/CIDFontType0"
+        )
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as pdf:
+            font = pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertIn("/ToUnicode", font)
+
+    def test_repair_recovers_tounicode_from_tj_array_operator(self) -> None:
+        # TJ (array show with kerning adjustments) is how most real PDFs render justified
+        # text — numeric kerning operands must be skipped, not mistaken for codes.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        page["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf))
+        )
+        text = "please prepare the department form for the county board and file the request"
+        offset = 29
+        mid = len(text) // 2
+        hex_first = "".join(f"{ord(c) - offset:04X}" for c in text[:mid])
+        hex_second = "".join(f"{ord(c) - offset:04X}" for c in text[mid:])
+        content = f"BT /F1 12 Tf [<{hex_first}> -120 <{hex_second}>] TJ ET".encode("ascii")
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, content))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertIn("/ToUnicode", font)
+            cmap_bytes = bytes(font["/ToUnicode"].read_bytes()).decode()
+            for char in text:
+                code = ord(char) - offset
+                self.assertIn(f"<{code:04X}> <{ord(char):04X}>".upper(), cmap_bytes)
+
+    def test_repair_recovers_wrong_case_when_words_are_split_across_show_operations(self) -> None:
+        # Real, confirmed finding: when text is shown via several separate Tj calls (the normal
+        # shape of a real content stream — one call per word/line) rather than one blob with
+        # literal encoded spaces, the adapter's `None`-as-space boundary marker is offset-
+        # invariant (it's always rendered as a literal space regardless of which offset is being
+        # scored). That removes the printable-ratio gate's only way to disambiguate the true
+        # offset from `offset - 32`, which decodes the same letters to their uppercase form —
+        # and since word-hit matching is case-insensitive, both score identically. The scan
+        # order (`range(-255, 256)`, ties won by the first/smaller candidate) then picks
+        # `offset - 32` over the true offset. The result: codes get mapped to the UPPERCASE of
+        # the character actually shown, not the lowercase original — silently wrong-case
+        # extracted text, not a rejection. This documents that real behavior.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        page["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf))
+        )
+        offset = 29
+        words = ["please", "prepare", "the", "department", "form", "for", "the", "county", "board"]
+
+        def hex_for(word: str) -> str:
+            return "".join(f"{ord(c) - offset:04X}" for c in word)
+
+        show_ops = " ".join(f"<{hex_for(w)}> Tj" for w in words)
+        content = f"BT /F1 12 Tf {show_ops} ET".encode("ascii")
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, content))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertIn("/ToUnicode", font)
+            cmap_bytes = bytes(font["/ToUnicode"].read_bytes()).decode()
+            for char in "".join(words):
+                code = ord(char) - offset
+                self.assertNotIn(f"<{code:04X}> <{ord(char):04X}>".upper(), cmap_bytes)
+                self.assertIn(f"<{code:04X}> <{ord(char.upper()):04X}>".upper(), cmap_bytes)
+
+    def test_repair_tounicode_coverage_for_font_shared_across_pages(self) -> None:
+        # Real, confirmed finding: a subsetted embedded font is normally referenced from many
+        # pages' /Resources (e.g. Arial-BoldMT on both page 9 and page 34 of the real BOC
+        # packet this adapter was built for). `_repair_page_fonts` mutates the font dict in
+        # place per page; once page 1's repair attaches /ToUnicode, `_is_candidate` rejects the
+        # SAME font object on page 2 (it now "already has" ToUnicode) — so page 2's codes are
+        # never looked at. This documents the actual result: page 1's codes are mapped
+        # correctly, but codes used only on page 2 get no /ToUnicode entry at all.
+        offset = 29
+        page1_text = "please prepare the department form for the county board"
+        page2_text = "the county resolution was approved and the motion passed"
+
+        def hex_for(text: str) -> str:
+            return "".join(f"{ord(c) - offset:04X}" for c in text)
+
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        shared_font = self._identity_h_font(pdf)
+
+        page1 = pdf.add_blank_page(page_size=(400, 200))
+        page1["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=shared_font))
+        page1["/Contents"] = pdf.make_indirect(
+            pikepdf.Stream(pdf, f"BT /F1 12 Tf <{hex_for(page1_text)}> Tj ET".encode("ascii"))
+        )
+
+        page2 = pdf.add_blank_page(page_size=(400, 200))
+        page2["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=shared_font))
+        page2["/Contents"] = pdf.make_indirect(
+            pikepdf.Stream(pdf, f"BT /F1 12 Tf <{hex_for(page2_text)}> Tj ET".encode("ascii"))
+        )
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            cmap_bytes = bytes(font["/ToUnicode"].read_bytes()).decode()
+            page1_chars = set(page1_text) - {" "}
+            page2_only_chars = (set(page2_text) - {" "}) - page1_chars
+            for char in page1_chars:
+                code = ord(char) - offset
+                self.assertIn(f"<{code:04X}> <{ord(char):04X}>".upper(), cmap_bytes)
+            for char in page2_only_chars:
+                code = ord(char) - offset
+                self.assertNotIn(f"<{code:04X}>".upper(), cmap_bytes)
+
+    def test_repair_recovers_two_distinct_fonts_on_one_page_independently(self) -> None:
+        offset1, offset2 = 29, 5
+        text1 = "please prepare the department form for the county board and file the request"
+        text2 = "the board approved the resolution and the motion for the county office today"
+
+        def hex_for(text: str, offset: int) -> str:
+            return "".join(f"{ord(c) - offset:04X}" for c in text)
+
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        page["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(
+                F1=self._identity_h_font(pdf, base_font="/FontA"),
+                F2=self._identity_h_font(pdf, base_font="/FontB"),
+            )
+        )
+        content = (
+            f"BT /F1 12 Tf <{hex_for(text1, offset1)}> Tj ET "
+            f"BT /F2 12 Tf <{hex_for(text2, offset2)}> Tj ET"
+        ).encode("ascii")
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, content))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font1 = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            font2 = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F2"]
+            cmap1 = bytes(font1["/ToUnicode"].read_bytes()).decode()
+            cmap2 = bytes(font2["/ToUnicode"].read_bytes()).decode()
+            for char in text1:
+                code = ord(char) - offset1
+                self.assertIn(f"<{code:04X}> <{ord(char):04X}>".upper(), cmap1)
+            for char in text2:
+                code = ord(char) - offset2
+                self.assertIn(f"<{code:04X}> <{ord(char):04X}>".upper(), cmap2)
+
+    def test_repair_ignores_type0_font_with_non_identity_encoding(self) -> None:
+        input_path = self._write_pdf_with_font(
+            "document.pdf",
+            text="please prepare the department form for the county board and file the request",
+            offset=29,
+        )
+        # Rewrite the candidate font's /Encoding to a named (non-Identity) CMap after the fact —
+        # simplest way to isolate just this one `_is_candidate` branch.
+        with pikepdf.open(input_path, allow_overwriting_input=True) as pdf:
+            font = pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            font["/Encoding"] = pikepdf.Name("/WinAnsiEncoding")
+            pdf.save(input_path)
+
+        result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertNotIn("/ToUnicode", font)
+
+    def test_repair_ignores_type0_font_with_missing_descendant_fonts(self) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/Type0"),
+                BaseFont=pikepdf.Name("/Test"),
+                Encoding=pikepdf.Name("/Identity-H"),
+            )
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=font))
+        text = "please prepare the department form for the county board and file the request"
+        hex_codes = "".join(f"{ord(c) - 29:04X}" for c in text)
+        page["/Contents"] = pdf.make_indirect(
+            pikepdf.Stream(pdf, f"BT /F1 12 Tf <{hex_codes}> Tj ET".encode("ascii"))
+        )
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertNotIn("/ToUnicode", font)
+
+    def test_repair_handles_page_with_no_resources(self) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        pdf.add_blank_page(page_size=(400, 200))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_handles_page_with_resources_but_no_font(self) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        page["/Resources"] = pikepdf.Dictionary()
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_returns_before_parsing_content_stream_when_no_candidates(self) -> None:
+        # No candidate fonts on the page — `_repair_page_fonts` should return before even
+        # attempting to parse the content stream, so a garbage stream here must not raise.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        simple_font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/TrueType"),
+                BaseFont=pikepdf.Name("/Helvetica"),
+            )
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=simple_font))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b"\xff\xfe garbage not valid"))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_raises_for_page_with_malformed_content_stream_even_when_other_pages_are_valid(
+        self,
+    ) -> None:
+        # Real, confirmed finding: `_repair_page_fonts`'s try/except only wraps the
+        # `parse_content_stream()` call itself (its own comment says "leave fonts untouched"),
+        # but `parse_content_stream` is lazy — the actual decode error surfaces while iterating
+        # tokens, outside that try/except. That exception propagates all the way out of
+        # `repair()`'s per-page loop and is converted to an AdapterError, aborting repair for
+        # the WHOLE document — not just skipping the one bad page, despite what the code's own
+        # comment says. This documents the actual (not the intended) behavior.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page1 = pdf.add_blank_page(page_size=(400, 200))
+        page1["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf, base_font="/FontC1"))
+        )
+        page1["/Contents"] = pdf.make_indirect(
+            pikepdf.Stream(pdf, b"\xff\xfe\x00garbage(not valid content")
+        )
+        page2 = pdf.add_blank_page(page_size=(400, 200))
+        page2["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf, base_font="/FontC2"))
+        )
+        text = "please prepare the department form for the county board and file the request"
+        hex_codes = "".join(f"{ord(c) - 29:04X}" for c in text)
+        page2["/Contents"] = pdf.make_indirect(
+            pikepdf.Stream(pdf, f"BT /F1 12 Tf <{hex_codes}> Tj ET".encode("ascii"))
+        )
+        pdf.save(path)
+
+        with self.assertRaises(AdapterError):
+            FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+    def test_repair_leaves_genuinely_unembedded_font_untouched(self) -> None:
+        # Ties back to the diagnosed production failure (remediation 554fcae2-...): a simple
+        # font with NO /FontFile, /FontFile2, or /FontFile3 at all is out of scope for this
+        # adapter by design — it only repairs metadata on already-embedded fonts. This is a
+        # living regression guard for that documented scope boundary, not an implicit side
+        # effect of another test.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        descriptor = pikepdf.Dictionary(
+            Type=pikepdf.Name("/FontDescriptor"), FontName=pikepdf.Name("/ArialMT")
+        )
+        simple_font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/TrueType"),
+                BaseFont=pikepdf.Name("/ArialMT"),
+                Encoding=pikepdf.Name("/WinAnsiEncoding"),
+                FontDescriptor=pdf.make_indirect(descriptor),
+            )
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=simple_font))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b"BT /F1 12 Tf (Hello) Tj ET"))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font_descriptor = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]["/FontDescriptor"]
+            self.assertNotIn("/FontFile", font_descriptor)
+            self.assertNotIn("/FontFile2", font_descriptor)
+            self.assertNotIn("/FontFile3", font_descriptor)
+
+    def test_repair_leaves_font_untouched_for_printable_but_non_word_codes(self) -> None:
+        # The closest unit-test analog to the real KEEFEM+SymbolMT production failure: codes
+        # that decode to printable characters under some offset (clearing the printable-ratio
+        # gate) but never form recognizable common words (failing the word-hit gate) — distinct
+        # from `test_repair_leaves_font_untouched_when_no_confident_offset`, which uses codes
+        # that aren't reliably printable under any offset at all.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        page["/Resources"] = pikepdf.Dictionary(
+            Font=pikepdf.Dictionary(F1=self._identity_h_font(pdf))
+        )
+        offset = 20
+        symbol_text = "zqx vbn wkl jft hrp myc"
+        hex_codes = "".join(f"{ord(c) - offset:04X}" for c in symbol_text)
+        content = f"BT /F1 12 Tf <{hex_codes}> Tj ET".encode("ascii")
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, content))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        with pikepdf.open(result) as out_pdf:
+            font = out_pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+            self.assertNotIn("/ToUnicode", font)
+
+
+class FontRepairToUnicodeCmapBuilderTests(SimpleTestCase):
+    """Direct unit tests of `_build_tounicode_cmap`, the pure CMap-building function — bypasses
+    `_best_offset`'s own printable/word-hit gates entirely, since those gates cap any single
+    real recovered font at well under 100 distinct codes (the codespace of printable output
+    characters), making the >100-code chunking path unreachable through the full `repair()`
+    pipeline in a realistic fixture.
+    """
+
+    def test_chunks_beyond_the_100_code_beginbfchar_block_limit(self) -> None:
+        codes = list(range(0x2000, 0x2000 + 150))
+
+        cmap_bytes = _build_tounicode_cmap(codes, offset=1)
+
+        cmap_text = cmap_bytes.decode()
+        self.assertEqual(cmap_text.count("beginbfchar"), 2)
+        self.assertEqual(cmap_text.count("endbfchar"), 2)
+        self.assertIn(f"<{codes[0]:04X}> <{codes[0] + 1:04X}>".upper(), cmap_text)
+        self.assertIn(f"<{codes[-1]:04X}> <{codes[-1] + 1:04X}>".upper(), cmap_text)
+
+    def test_filters_out_codes_whose_shifted_target_is_outside_the_bmp(self) -> None:
+        codes = [0xFFFE, 0xFFFF]
+
+        cmap_bytes = _build_tounicode_cmap(codes, offset=2)
+
+        cmap_text = cmap_bytes.decode()
+        self.assertNotIn("beginbfchar", cmap_text)
 
 
 def _minimal_ttf_bytes(num_glyphs: int) -> bytes:
@@ -689,6 +1081,161 @@ class FontRepairAdapterCidSetTests(SimpleTestCase):
         result = FontRepairPikePdfAdapter().repair(input_path, output_dir=self.output_dir)
 
         self.assertEqual(self._cidset_bytes(result), incomplete)
+
+    def test_repair_skips_font_with_non_type0_subtype_when_scanning_for_cidsets(self) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        simple_font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/TrueType"),
+                BaseFont=pikepdf.Name("/Helvetica"),
+            )
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=simple_font))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b""))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_skips_type0_font_with_missing_descendant_fonts_when_scanning_for_cidsets(
+        self,
+    ) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/Type0"),
+                BaseFont=pikepdf.Name("/Test"),
+                Encoding=pikepdf.Name("/Identity-H"),
+            )
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=font))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b""))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_skips_descendant_font_with_no_font_descriptor(self) -> None:
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        descendant = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/CIDFontType2"),
+            BaseFont=pikepdf.Name("/Test"),
+            CIDSystemInfo=pikepdf.Dictionary(Registry="Adobe", Ordering="Identity", Supplement=0),
+            CIDToGIDMap=pikepdf.Name("/Identity"),
+        )
+        font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/Type0"),
+                BaseFont=pikepdf.Name("/Test"),
+                Encoding=pikepdf.Name("/Identity-H"),
+                DescendantFonts=pikepdf.Array([pdf.make_indirect(descendant)]),
+            )
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=font))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b""))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        self.assertTrue(os.path.exists(result))
+
+    def test_repair_leaves_cidset_untouched_for_unparseable_fontfile2(self) -> None:
+        # A corrupt/garbage FontFile2 — fontTools can't read a glyph count from it, so the
+        # repair must decline (never guess) rather than crash the whole document.
+        incomplete = _pack_cidset({0}, num_bytes=1)
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        descriptor = pikepdf.Dictionary(
+            Type=pikepdf.Name("/FontDescriptor"), FontName=pikepdf.Name("/Test")
+        )
+        descriptor["/FontFile2"] = pdf.make_indirect(
+            pikepdf.Stream(pdf, b"not a real font file, just garbage bytes")
+        )
+        descriptor["/CIDSet"] = pdf.make_indirect(pikepdf.Stream(pdf, incomplete))
+        descendant = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/CIDFontType2"),
+            BaseFont=pikepdf.Name("/Test"),
+            CIDSystemInfo=pikepdf.Dictionary(Registry="Adobe", Ordering="Identity", Supplement=0),
+            CIDToGIDMap=pikepdf.Name("/Identity"),
+            FontDescriptor=pdf.make_indirect(descriptor),
+        )
+        font = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/Type0"),
+            BaseFont=pikepdf.Name("/Test"),
+            Encoding=pikepdf.Name("/Identity-H"),
+            DescendantFonts=pikepdf.Array([pdf.make_indirect(descendant)]),
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=pdf.make_indirect(font)))
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b""))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        self.assertEqual(self._cidset_bytes(result), incomplete)
+
+    def test_repair_deduplicates_cidset_repair_for_descriptor_shared_across_pages(self) -> None:
+        # Confirms `_repair_cidsets`'s documented dedup (`seen_descriptor_ids`) actually
+        # produces a fully and correctly repaired CIDSet on both pages, not just that the
+        # dedup bookkeeping exists in the code.
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf = pikepdf.new()
+        font_data = _minimal_ttf_bytes(5)
+        descriptor = pikepdf.Dictionary(
+            Type=pikepdf.Name("/FontDescriptor"), FontName=pikepdf.Name("/Test")
+        )
+        descriptor["/FontFile2"] = pdf.make_indirect(pikepdf.Stream(pdf, font_data))
+        descriptor["/CIDSet"] = pdf.make_indirect(
+            pikepdf.Stream(pdf, _pack_cidset({0, 1}, num_bytes=1))
+        )
+        descendant = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/CIDFontType2"),
+            BaseFont=pikepdf.Name("/Test"),
+            CIDSystemInfo=pikepdf.Dictionary(Registry="Adobe", Ordering="Identity", Supplement=0),
+            CIDToGIDMap=pikepdf.Name("/Identity"),
+            FontDescriptor=pdf.make_indirect(descriptor),
+        )
+        shared_font = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/Font"),
+                Subtype=pikepdf.Name("/Type0"),
+                BaseFont=pikepdf.Name("/Test"),
+                Encoding=pikepdf.Name("/Identity-H"),
+                DescendantFonts=pikepdf.Array([pdf.make_indirect(descendant)]),
+            )
+        )
+
+        page1 = pdf.add_blank_page(page_size=(400, 200))
+        page1["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=shared_font))
+        page1["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b""))
+        page2 = pdf.add_blank_page(page_size=(400, 200))
+        page2["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=shared_font))
+        page2["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, b""))
+        pdf.save(path)
+
+        result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+
+        expected = _pack_cidset({0, 1, 2, 3, 4}, num_bytes=1)
+        with pikepdf.open(result) as out_pdf:
+            for page in out_pdf.pages:
+                font = page.obj["/Resources"]["/Font"]["/F1"]
+                descriptor_out = font["/DescendantFonts"][0]["/FontDescriptor"]
+                self.assertEqual(bytes(descriptor_out["/CIDSet"].read_bytes()), expected)
 
 
 def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
