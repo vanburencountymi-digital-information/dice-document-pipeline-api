@@ -7,7 +7,8 @@ from django.core.files.storage import default_storage
 from django.tasks import TaskResultStatus
 from django.test import TestCase, override_settings
 
-from remediation.adapters.base import AdapterError
+from remediation.adapters.base import AdapterError, FailedRule, VerificationOutcome
+from remediation.adapters.verification.severity import Severity
 from remediation.models import Remediation, RemediationArtifact
 from remediation.tasks import process_remediation
 from remediation.tests.factories import RemediationFactory
@@ -72,7 +73,9 @@ class ProcessRemediationTaskTests(TestCase):
     )
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
     def test_completes_immediately_when_already_compliant(self, mock_adapter_cls) -> None:
-        mock_adapter_cls.return_value.validate.return_value = (True, "<report/>")
+        mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
+            is_compliant=True, failed_rules=[], verapdf_version="1.30.2"
+        )
         remediation = RemediationFactory()
 
         result = process_remediation.enqueue(str(remediation.id))
@@ -103,7 +106,16 @@ class ProcessRemediationTaskTests(TestCase):
     )
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
     def test_fails_when_postcheck_still_noncompliant(self, mock_adapter_cls) -> None:
-        mock_adapter_cls.return_value.validate.return_value = (False, "<report/>")
+        failed_rule = FailedRule(
+            clause="7.1",
+            test_number="11",
+            description="StructTreeRoot missing",
+            failed_checks=1,
+            severity=Severity.CRITICAL,
+        )
+        mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
+            is_compliant=False, failed_rules=[failed_rule], verapdf_version="1.30.2"
+        )
         remediation = RemediationFactory()
 
         result = process_remediation.enqueue(str(remediation.id))
@@ -111,7 +123,11 @@ class ProcessRemediationTaskTests(TestCase):
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
         self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
-        self.assertEqual(remediation.error, "postcheck: not PDF/UA-1 compliant: <report/>")
+        self.assertEqual(
+            remediation.error,
+            "postcheck: not PDF/UA-1 compliant: 1 rules failed, 1 checks\n"
+            "  - CRITICAL     7.1 StructTreeRoot missing (1 checks)",
+        )
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.PRECHECK,
@@ -141,8 +157,8 @@ class ProcessRemediationTaskTests(TestCase):
         self, mock_vera_cls, mock_ocr_cls
     ) -> None:
         mock_vera_cls.return_value.validate.side_effect = [
-            (False, "<report/>"),
-            (True, "<report/>"),
+            VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
+            VerificationOutcome(is_compliant=True, failed_rules=[], verapdf_version="1.30.2"),
         ]
         remediation = RemediationFactory()
         mock_ocr_cls.return_value.extract.return_value = default_storage.path(
@@ -177,8 +193,8 @@ class ProcessRemediationTaskTests(TestCase):
         self, mock_vera_cls, mock_scoring_cls
     ) -> None:
         mock_vera_cls.return_value.validate.side_effect = [
-            (False, "<report/>"),
-            (True, "<report/>"),
+            VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
+            VerificationOutcome(is_compliant=True, failed_rules=[], verapdf_version="1.30.2"),
         ]
         mock_scoring_cls.return_value.score.side_effect = AdapterError("boom")
         remediation = RemediationFactory()

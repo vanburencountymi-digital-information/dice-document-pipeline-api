@@ -11,13 +11,26 @@ from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
-from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
-from remediation.adapters.base import AdapterError, FigureCandidate, ScoringResult
-from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
+from remediation.adapters.alt_text.pike_pdf import (
+    PikePdfAdapter as AltTextPikePdfAdapter,
+)
+from remediation.adapters.base import (
+    AdapterError,
+    FailedRule,
+    FigureCandidate,
+    ScoringResult,
+    VerificationOutcome,
+)
+from remediation.adapters.font_repair.pike_pdf import (
+    PikePdfAdapter as FontRepairPikePdfAdapter,
+)
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
-from remediation.adapters.scoring.pike_pdf import PikePdfAdapter as ScoringPikePdfAdapter
+from remediation.adapters.scoring.pike_pdf import (
+    PikePdfAdapter as ScoringPikePdfAdapter,
+)
+from remediation.adapters.verification.severity import Severity
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import (
     Remediation,
@@ -285,7 +298,9 @@ class VerificationServiceTests(TestCase):
     def test_run_signals_based_on_compliance(
         self, _name, service_cls, is_compliant, expected_exception
     ) -> None:
-        self.adapter.validate.return_value = (is_compliant, "<report/>")
+        self.adapter.validate.return_value = VerificationOutcome(
+            is_compliant=is_compliant, failed_rules=[], verapdf_version="1.30.2"
+        )
         service = service_cls(adapter=self.adapter)
 
         if expected_exception is not None:
@@ -301,6 +316,9 @@ class VerificationServiceTests(TestCase):
 
         result_row = VerificationResult.objects.get(remediation=self.remediation, step=service.step)
         self.assertEqual(result_row.is_compliant, is_compliant)
+        self.assertEqual(result_row.failed_rules, [])
+        self.assertIsNone(result_row.worst_severity)
+        self.assertEqual(result_row.verapdf_version, "1.30.2")
 
     @parameterized.expand(
         [
@@ -320,6 +338,93 @@ class VerificationServiceTests(TestCase):
         artifact = self.remediation.artifacts.get(step=service.step)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
         self.assertEqual(artifact.error, "boom")
+
+    def test_run_stores_failed_rules_with_severity_on_verification_result(self) -> None:
+        failed_rules = [
+            FailedRule(
+                clause="7.4",
+                test_number="2",
+                description="heading levels skip",
+                failed_checks=3,
+                severity=Severity.CRITICAL,
+            ),
+            FailedRule(
+                clause="7.21",
+                test_number="7",
+                description="font missing CIDSet entries",
+                failed_checks=44,
+                severity=Severity.MINOR,
+            ),
+        ]
+        self.adapter.validate.return_value = VerificationOutcome(
+            is_compliant=False, failed_rules=failed_rules, verapdf_version="1.30.2"
+        )
+        service = PostCheckService(adapter=self.adapter)
+
+        with self.assertRaises(NotCompliant):
+            service.run(self.remediation, pdf_uri="remediations/test.pdf")
+
+        result_row = VerificationResult.objects.get(
+            remediation=self.remediation, step=RemediationArtifact.Step.POSTCHECK
+        )
+        self.assertEqual(result_row.verapdf_version, "1.30.2")
+        self.assertEqual(
+            result_row.failed_rules,
+            [
+                {
+                    "clause": "7.4",
+                    "test_number": "2",
+                    "description": "heading levels skip",
+                    "failed_checks": 3,
+                    "severity": "critical",
+                },
+                {
+                    "clause": "7.21",
+                    "test_number": "7",
+                    "description": "font missing CIDSet entries",
+                    "failed_checks": 44,
+                    "severity": "minor",
+                },
+            ],
+        )
+        self.assertEqual(result_row.worst_severity, Severity.CRITICAL)
+
+    def test_not_compliant_message_is_short_human_readable_summary_not_raw_xml(self) -> None:
+        # MINOR listed first here, deliberately out of severity order, so the assertion
+        # below actually exercises the worst-first sort rather than passing by coincidence.
+        failed_rules = [
+            FailedRule(
+                clause="7.21",
+                test_number="7",
+                description="font missing CIDSet entries",
+                failed_checks=44,
+                severity=Severity.MINOR,
+            ),
+            FailedRule(
+                clause="7.4",
+                test_number="2",
+                description="heading levels skip",
+                failed_checks=3,
+                severity=Severity.CRITICAL,
+            ),
+        ]
+        self.adapter.validate.return_value = VerificationOutcome(
+            is_compliant=False, failed_rules=failed_rules, verapdf_version="1.30.2"
+        )
+        service = PostCheckService(adapter=self.adapter)
+
+        with self.assertRaises(NotCompliant) as ctx:
+            service.run(self.remediation, pdf_uri="remediations/test.pdf")
+
+        message = str(ctx.exception)
+        self.assertIn("2 rules failed, 47 checks", message)
+        self.assertIn("CRITICAL", message)
+        self.assertIn("7.4", message)
+        self.assertIn("MINOR", message)
+        self.assertIn("7.21", message)
+        # Worst severity listed first, regardless of the adapter's own ordering.
+        self.assertLess(message.index("CRITICAL"), message.index("MINOR"))
+        self.assertNotIn("<", message)
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())

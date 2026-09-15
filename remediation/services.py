@@ -8,11 +8,15 @@ from django.utils import timezone
 
 from accounts.models import ServiceAccount
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
-from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
+from remediation.adapters.alt_text.pike_pdf import (
+    PikePdfAdapter as AltTextPikePdfAdapter,
+)
 from remediation.adapters.base import (
     AdapterError,
     AltTextAdapter,
     AltTextClient,
+    FailedRule,
+    FailedRuleDict,
     FontRepairAdapter,
     LinkAdapter,
     MetadataAdapter,
@@ -20,11 +24,16 @@ from remediation.adapters.base import (
     ScoringAdapter,
     VerificationAdapter,
 )
-from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
+from remediation.adapters.font_repair.pike_pdf import (
+    PikePdfAdapter as FontRepairPikePdfAdapter,
+)
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
-from remediation.adapters.scoring.pike_pdf import PikePdfAdapter as ScoringPikePdfAdapter
+from remediation.adapters.scoring.pike_pdf import (
+    PikePdfAdapter as ScoringPikePdfAdapter,
+)
+from remediation.adapters.verification.severity import SEVERITY_RANK
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import (
     Remediation,
@@ -172,6 +181,23 @@ class ArtifactService:
         return self._mark_status(remediation, RemediationArtifact.StepStatus.FAILED, error=error)
 
 
+def _format_failure_summary(failed_rules: list[FailedRule]) -> str:
+    """Short human-readable rendering of failed rules (simplify_vera_printouts), replacing
+    the raw veraPDF XML report that used to be dumped straight into `Remediation.error` —
+    worst severity first, so the most-blocking issue is always the first line under the
+    header.
+    """
+    total_checks = sum(rule.failed_checks for rule in failed_rules)
+    header = f"{len(failed_rules)} rules failed, {total_checks} checks"
+    ordered = sorted(failed_rules, key=lambda rule: SEVERITY_RANK.index(rule.severity))
+    lines = [
+        f"  - {rule.severity.label.upper():<12} {rule.clause} "
+        f"{rule.description} ({rule.failed_checks} checks)"
+        for rule in ordered
+    ]
+    return "\n".join([header, *lines])
+
+
 class AlreadyCompliant(Exception):
     """Not an error — raised by `PrecheckService` when the document already passes
     verification, signalling the pipeline to stop early and mark the job complete
@@ -180,7 +206,15 @@ class AlreadyCompliant(Exception):
 
 class NotCompliant(Exception):
     """Not an error — raised by `PostCheckService` when the document still isn't compliant
-    after remediation, signalling the job should be marked failed (ADR 0003)."""
+    after remediation, signalling the job should be marked failed (ADR 0003).
+
+    `str(exc)` is a short human-readable severity-ranked summary (simplify_vera_printouts) —
+    never the raw veraPDF XML report.
+    """
+
+    def __init__(self, failed_rules: list[FailedRule]) -> None:
+        self.failed_rules = failed_rules
+        super().__init__(_format_failure_summary(failed_rules))
 
 
 class VerificationService(ArtifactService):
@@ -201,26 +235,39 @@ class VerificationService(ArtifactService):
         # real local file path, not a storage-abstracted name/URL.
         pdf_path = default_storage.path(pdf_uri)
         try:
-            is_compliant, report = self.adapter.validate(pdf_path)
+            outcome = self.adapter.validate(pdf_path)
         except AdapterError as exc:
             self.mark_failed(remediation, str(exc))
             raise
 
         VerificationResult.objects.create(
-            remediation=remediation, step=self.step, is_compliant=is_compliant
+            remediation=remediation,
+            step=self.step,
+            is_compliant=outcome.is_compliant,
+            verapdf_version=outcome.verapdf_version,
+            failed_rules=[
+                FailedRuleDict(
+                    clause=rule.clause,
+                    test_number=rule.test_number,
+                    description=rule.description,
+                    failed_checks=rule.failed_checks,
+                    severity=rule.severity.value,
+                )
+                for rule in outcome.failed_rules
+            ],
         )
         self.mark_completed(remediation, output_uri=pdf_uri)
-        self.handle_result(is_compliant, report)
+        self.handle_result(outcome.is_compliant, outcome.failed_rules)
         return pdf_uri
 
-    def handle_result(self, is_compliant: bool, report: str) -> None:
+    def handle_result(self, is_compliant: bool, failed_rules: list[FailedRule]) -> None:
         raise NotImplementedError
 
 
 class PrecheckService(VerificationService):
     step = RemediationArtifact.Step.PRECHECK
 
-    def handle_result(self, is_compliant: bool, report: str) -> None:
+    def handle_result(self, is_compliant: bool, failed_rules: list[FailedRule]) -> None:
         if is_compliant:
             raise AlreadyCompliant
 
@@ -228,9 +275,9 @@ class PrecheckService(VerificationService):
 class PostCheckService(VerificationService):
     step = RemediationArtifact.Step.POSTCHECK
 
-    def handle_result(self, is_compliant: bool, report: str) -> None:
+    def handle_result(self, is_compliant: bool, failed_rules: list[FailedRule]) -> None:
         if not is_compliant:
-            raise NotCompliant(report)
+            raise NotCompliant(failed_rules)
 
 
 class OCRService(ArtifactService):
