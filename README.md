@@ -1,6 +1,8 @@
 # Dice Document Pipeline API
 
-A Django API that takes an uploaded PDF and checks it against accessibility standards (WCAG 2.1 AA / PDF/UA). Upon failure, it runs the document through an automated remediation pipeline (OCR, tagging, metadata fixes, alt text, link repair) before re-checking it.
+A Django API that takes an uploaded PDF and checks it against accessibility standards (WCAG 2.1 AA / PDF/UA-1). Upon failure, it runs the document through an automated remediation pipeline (OCR, tagging, metadata fixes, alt text, link repair) before re-checking it.
+
+We validate against PDF/UA-1, not the newer PDF/UA-2, because PDF/UA-2 targets PDF 2.0's structure model and none of the available tooling (OpenDataLoader, pikepdf) produces PDF 2.0 output yet.
 
 ## Setup
 
