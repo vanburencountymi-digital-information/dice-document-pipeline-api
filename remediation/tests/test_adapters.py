@@ -15,14 +15,21 @@ from parameterized import parameterized
 from PIL import Image
 
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
-from remediation.adapters.alt_text.pike_pdf import PikePdfAdapter as AltTextPikePdfAdapter
-from remediation.adapters.base import Adapter, AdapterError
-from remediation.adapters.font_repair.pike_pdf import PikePdfAdapter as FontRepairPikePdfAdapter
+from remediation.adapters.alt_text.pike_pdf import (
+    PikePdfAdapter as AltTextPikePdfAdapter,
+)
+from remediation.adapters.base import Adapter, AdapterError, FailedRule
+from remediation.adapters.font_repair.pike_pdf import (
+    PikePdfAdapter as FontRepairPikePdfAdapter,
+)
 from remediation.adapters.font_repair.pike_pdf import _build_tounicode_cmap
 from remediation.adapters.link.pike_pdf import PikePdfAdapter as LinkPikePdfAdapter
 from remediation.adapters.metadata.pike_pdf import PikePdfAdapter
 from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
-from remediation.adapters.scoring.pike_pdf import PikePdfAdapter as ScoringPikePdfAdapter
+from remediation.adapters.scoring.pike_pdf import (
+    PikePdfAdapter as ScoringPikePdfAdapter,
+)
+from remediation.adapters.verification.severity import Severity
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 
 COMPLIANT_REPORT = """<?xml version="1.0" encoding="utf-8"?>
@@ -40,6 +47,43 @@ NONCOMPLIANT_REPORT = """<?xml version="1.0" encoding="utf-8"?>
   <jobs>
     <job>
       <validationReport isCompliant="false"></validationReport>
+    </job>
+  </jobs>
+</report>
+"""
+
+# Trimmed from a real veraPDF 1.30.2 run against
+# docs/tests/example-files/edge-cases/page9-broken-tounicode-offset29.pdf — two failed rules
+# across different clauses, each with its own `failedChecks` count.
+MULTI_RULE_REPORT = """<?xml version="1.0" encoding="utf-8"?>
+<report>
+  <buildInformation>
+    <releaseDetails id="core" version="1.30.2" buildDate="2026-06-03T10:43:00Z"></releaseDetails>
+  </buildInformation>
+  <jobs>
+    <job>
+      <validationReport isCompliant="false">
+        <details passedRules="98" failedRules="2" passedChecks="829" failedChecks="45">
+          <rule specification="ISO 14289-1:2014" clause="7.1" testNumber="11" status="failed" failedChecks="1" tags="structure">
+            <description>StructTreeRoot entry is not present in the document catalog</description>
+            <object>PDDocument</object>
+            <test>containsStructTreeRoot == true</test>
+            <check status="failed">
+              <context>root/document[0]</context>
+              <errorMessage>StructTreeRoot entry is not present in the document catalog</errorMessage>
+            </check>
+          </rule>
+          <rule specification="ISO 14289-1:2014" clause="7.21.7" testNumber="1" status="failed" failedChecks="44" tags="font">
+            <description>The glyph can not be mapped to Unicode</description>
+            <object>Glyph</object>
+            <test>toUnicode != null</test>
+            <check status="failed">
+              <context>root/.../usedGlyphs[0]</context>
+              <errorMessage>The glyph can not be mapped to Unicode</errorMessage>
+            </check>
+          </rule>
+        </details>
+      </validationReport>
     </job>
   </jobs>
 </report>
@@ -82,10 +126,62 @@ class VeraPDFAdapterTests(SimpleTestCase):
     ) -> None:
         mock_run.return_value = _completed_process(returncode=0, stdout=report_xml)
 
-        is_compliant, report = VeraPDFAdapter().validate("/tmp/document.pdf")
+        outcome = VeraPDFAdapter().validate("/tmp/document.pdf")
 
-        self.assertEqual(is_compliant, expected)
-        self.assertEqual(report, report_xml)
+        self.assertEqual(outcome.is_compliant, expected)
+        self.assertEqual(outcome.failed_rules, [])
+
+    @patch("remediation.adapters.verification.vera_pdf.subprocess.run", autospec=True)
+    def test_validate_parses_failed_rules_across_different_clauses(self, mock_run) -> None:
+        mock_run.return_value = _completed_process(stdout=MULTI_RULE_REPORT)
+
+        outcome = VeraPDFAdapter().validate("/tmp/document.pdf")
+
+        self.assertEqual(
+            outcome.failed_rules,
+            [
+                FailedRule(
+                    clause="7.1",
+                    test_number="11",
+                    description="StructTreeRoot entry is not present in the document catalog",
+                    failed_checks=1,
+                    severity=Severity.CRITICAL,
+                ),
+                FailedRule(
+                    clause="7.21.7",
+                    test_number="1",
+                    description="The glyph can not be mapped to Unicode",
+                    failed_checks=44,
+                    severity=Severity.MINOR,
+                ),
+            ],
+        )
+
+    @patch("remediation.adapters.verification.vera_pdf.subprocess.run", autospec=True)
+    def test_validate_parses_verapdf_version_from_build_information(self, mock_run) -> None:
+        mock_run.return_value = _completed_process(stdout=MULTI_RULE_REPORT)
+
+        outcome = VeraPDFAdapter().validate("/tmp/document.pdf")
+
+        self.assertEqual(outcome.verapdf_version, "1.30.2")
+
+    @patch("remediation.adapters.verification.vera_pdf.subprocess.run", autospec=True)
+    def test_validate_defaults_verapdf_version_when_build_information_missing(
+        self, mock_run
+    ) -> None:
+        mock_run.return_value = _completed_process(stdout=COMPLIANT_REPORT)
+
+        outcome = VeraPDFAdapter().validate("/tmp/document.pdf")
+
+        self.assertEqual(outcome.verapdf_version, "")
+
+    @patch("remediation.adapters.verification.vera_pdf.subprocess.run", autospec=True)
+    def test_validate_returns_empty_failed_rules_when_no_details_element(self, mock_run) -> None:
+        mock_run.return_value = _completed_process(stdout=NONCOMPLIANT_REPORT)
+
+        outcome = VeraPDFAdapter().validate("/tmp/document.pdf")
+
+        self.assertEqual(outcome.failed_rules, [])
 
     @patch("remediation.adapters.verification.vera_pdf.subprocess.run", autospec=True)
     def test_validate_invokes_verapdf_with_flavour_and_xml_format(self, mock_run) -> None:

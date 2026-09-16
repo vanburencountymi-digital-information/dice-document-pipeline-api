@@ -2,7 +2,9 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal, NoReturn
+from typing import Literal, NoReturn, TypedDict
+
+from remediation.adapters.verification.severity import Severity
 
 # The only image formats Claude Vision (and the wider `anthropic` SDK) accepts.
 ImageMediaType = Literal["image/jpeg", "image/png", "image/gif", "image/webp"]
@@ -24,11 +26,58 @@ class Adapter(ABC):
         raise AdapterError(message)
 
 
+@dataclass(frozen=True)
+class FailedRule:
+    """One failed veraPDF PDF/UA-1 rule, from `VerificationAdapter.validate()`'s structured
+    report — replaces handing the raw XML report string around (simplify_vera_printouts).
+
+    `test_number` is kept alongside `clause` (not just for provenance) because `clause` alone
+    isn't always specific enough to classify severity from — clauses 7.1 and 7.2 each bundle
+    rules spanning every severity tier under one clause number (see
+    `verification/severity.py`'s `RULE_SEVERITY`), so `test_number` is what `classify()`
+    actually keys its exact overrides on for those two.
+    """
+
+    clause: str
+    test_number: str
+    description: str
+    failed_checks: int
+    severity: Severity
+
+
+class FailedRuleDict(TypedDict):
+    """The JSON shape one `FailedRule` becomes in `VerificationResult.failed_rules`
+    (a `JSONField`, so `severity` here is `Severity.value` — a plain string, not the enum).
+    """
+
+    clause: str
+    test_number: str
+    description: str
+    failed_checks: int
+    severity: str
+
+
+@dataclass(frozen=True)
+class VerificationOutcome:
+    """Result of one `VerificationAdapter.validate()` call. A dataclass rather than a tuple
+    now that there are three fields to return — matches `ScoringResult`'s precedent below.
+
+    `verapdf_version` comes straight from the tool's own report (`buildInformation/
+    releaseDetails[@id='core']`), not hardcoded — so a `VerificationResult` row always
+    records what actually ran, independent of `severity.BUILT_AGAINST_VERAPDF_VERSION`
+    (which is the version the severity *table* was last reviewed against).
+    """
+
+    is_compliant: bool
+    failed_rules: list[FailedRule]
+    verapdf_version: str
+
+
 class VerificationAdapter(Adapter):
     """Base class that wraps adapters for precheck and postcheck stages"""
 
     @abstractmethod
-    def validate(self, pdf_path: str) -> tuple[bool, str]:
+    def validate(self, pdf_path: str) -> VerificationOutcome:
         pass
 
 

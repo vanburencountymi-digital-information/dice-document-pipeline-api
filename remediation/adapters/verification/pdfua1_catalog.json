@@ -1,0 +1,856 @@
+{
+  "source_jar": "cli-1.30.2.jar",
+  "verapdf_version": "1.30.2",
+  "flavour": "PDFUA_1",
+  "rule_count": 106,
+  "rules": [
+    {
+      "clause": "5",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "MainXMPPackage",
+      "tags": "metadata",
+      "description": "The PDF/UA version and conformance level of a file shall be specified using the PDF/UA Identification extension schema"
+    },
+    {
+      "clause": "5",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDFUAIdentification",
+      "tags": "metadata",
+      "description": "The value of \"pdfuaid:part\" shall be the part number of the International Standard to which the file conforms"
+    },
+    {
+      "clause": "5",
+      "test_number": "3",
+      "specification": "ISO_14289_1",
+      "object": "PDFUAIdentification",
+      "tags": "metadata",
+      "description": "Property \"part\" of the PDF/UA Identification Schema shall have namespace prefix \"pdfuaid\""
+    },
+    {
+      "clause": "5",
+      "test_number": "4",
+      "specification": "ISO_14289_1",
+      "object": "PDFUAIdentification",
+      "tags": "metadata",
+      "description": "Property \"amd\" of the PDF/UA Identification Schema shall have namespace prefix \"pdfuaid\""
+    },
+    {
+      "clause": "5",
+      "test_number": "5",
+      "specification": "ISO_14289_1",
+      "object": "PDFUAIdentification",
+      "tags": "metadata",
+      "description": "Property \"corr\" of the PDF/UA Identification Schema shall have namespace prefix \"pdfuaid\""
+    },
+    {
+      "clause": "6.1",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "CosDocument",
+      "tags": "syntax",
+      "description": "The file header shall consist of \"%PDF-1.n\" followed by a single EOL marker, where 'n' is a single digit number between 0 (30h) and 7 (37h)"
+    },
+    {
+      "clause": "6.2",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "CosDocument",
+      "tags": "syntax",
+      "description": "The document catalog dictionary shall include a MarkInfo dictionary containing an entry, Marked, whose value shall be true"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "SEMarkedContent",
+      "tags": "artifact",
+      "description": "Content marked as Artifact should not be present inside tagged content"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "SEMarkedContent",
+      "tags": "artifact",
+      "description": "Tagged content should not be present inside content marked as Artifact"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "3",
+      "specification": "ISO_14289_1",
+      "object": "SESimpleContentItem",
+      "tags": "artifact",
+      "description": "Content shall be marked as Artifact or tagged as real content"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "4",
+      "specification": "ISO_14289_1",
+      "object": "CosDocument",
+      "tags": "syntax",
+      "description": "Files shall have a Suspects value of false(ISO 32000-1:2008, Table 321)"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "5",
+      "specification": "ISO_14289_1",
+      "object": "SENonStandard",
+      "tags": "structure",
+      "description": "All non-standard structure types shall be mapped to the nearest functionally equivalent standard type, as defined in ISO 32000-1:2008, 14.8.4, in the role map dictionary of the structure tree root. This mapping may be indirect; within the role map a non-standard type can map directly to another non-standard type, but eventually the mapping shall terminate at a standard type"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "6",
+      "specification": "ISO_14289_1",
+      "object": "PDStructElem",
+      "tags": "structure",
+      "description": "A circular mapping shall not exist"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "7",
+      "specification": "ISO_14289_1",
+      "object": "PDStructElem",
+      "tags": "structure",
+      "description": "Standard tags defined in ISO 32000-1:2008, 14.8.4, shall not be remapped"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "8",
+      "specification": "ISO_14289_1",
+      "object": "PDDocument",
+      "tags": "metadata",
+      "description": "The Catalog dictionary of a conforming file shall contain the Metadata key whose value is a metadata stream as defined in ISO 32000-1:2008, 14.3.2. The metadata stream dictionary shall contain entry Type with value /Metadata and entry Subtype with value /XML"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "9",
+      "specification": "ISO_14289_1",
+      "object": "MainXMPPackage",
+      "tags": "metadata",
+      "description": "The Metadata stream in the document's catalog dictionary shall contain a dc:title entry, where dc is the recommended prefix for the Dublin Core metadata schema as defined in the XMP specification, which clearly identifies the document"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "10",
+      "specification": "ISO_14289_1",
+      "object": "CosDocument",
+      "tags": "syntax",
+      "description": "The document catalog dictionary shall include a ViewerPreferences dictionary containing a DisplayDocTitle key, whose value shall be true"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "11",
+      "specification": "ISO_14289_1",
+      "object": "PDDocument",
+      "tags": "structure",
+      "description": "The logical structure of the conforming file shall be described by a structure hierarchy rooted in the StructTreeRoot entry of the document catalog dictionary, as described in ISO 32000-1:2008, 14.7"
+    },
+    {
+      "clause": "7.1",
+      "test_number": "12",
+      "specification": "ISO_14289_1",
+      "object": "PDStructElem",
+      "tags": "structure",
+      "description": "A structure element dictionary shall contain the P (parent) entry according to ISO 32000-1:2008, 14.7.2, Table 355"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDOutline",
+      "tags": "lang",
+      "description": "Natural language in the Outline entries shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "3",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table element may contain only TR, THead, TBody, TFoot and Caption elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "4",
+      "specification": "ISO_14289_1",
+      "object": "SETR",
+      "tags": "structure,table",
+      "description": "TR element should be contained in Table, THead, TBody or TFoot element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "5",
+      "specification": "ISO_14289_1",
+      "object": "SETHead",
+      "tags": "structure,table",
+      "description": "THead element should be contained in Table element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "6",
+      "specification": "ISO_14289_1",
+      "object": "SETBody",
+      "tags": "structure,table",
+      "description": "TBody element should be contained in Table element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "7",
+      "specification": "ISO_14289_1",
+      "object": "SETFoot",
+      "tags": "structure,table",
+      "description": "TFoot element should be contained in Table element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "8",
+      "specification": "ISO_14289_1",
+      "object": "SETH",
+      "tags": "structure,table",
+      "description": "TH element should be contained in TR element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "9",
+      "specification": "ISO_14289_1",
+      "object": "SETD",
+      "tags": "structure,table",
+      "description": "TD element should be contained in TR element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "10",
+      "specification": "ISO_14289_1",
+      "object": "SETR",
+      "tags": "structure,table",
+      "description": "TR element may contain only TH and TD elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "11",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table element should contain zero or one THead kid"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "12",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table element should contain zero or one TFoot kid"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "13",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "If Table element contains TFoot kid, Table element should contain one or more TBody kids"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "14",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "If Table element contains THead kid, Table element should contain one or more TBody kids"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "15",
+      "specification": "ISO_14289_1",
+      "object": "SETableCell",
+      "tags": "structure,table",
+      "description": "A table cell shall not have intersection with other cells"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "16",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table element may contain a Caption element as its first or last kid"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "17",
+      "specification": "ISO_14289_1",
+      "object": "SELI",
+      "tags": "structure,list",
+      "description": "LI element should be contained in L element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "18",
+      "specification": "ISO_14289_1",
+      "object": "SELBody",
+      "tags": "structure,list",
+      "description": "LBody element should be contained in LI element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "19",
+      "specification": "ISO_14289_1",
+      "object": "SEL",
+      "tags": "structure,list",
+      "description": "L element may contain only L, LI and Caption elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "20",
+      "specification": "ISO_14289_1",
+      "object": "SELI",
+      "tags": "structure,list",
+      "description": "LI element may contain only Lbl and LBody elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "21",
+      "specification": "ISO_14289_1",
+      "object": "PDStructElem",
+      "tags": "structure,lang",
+      "description": "Natural language for text in ActualText attribute shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "22",
+      "specification": "ISO_14289_1",
+      "object": "PDStructElem",
+      "tags": "structure,lang",
+      "description": "Natural language for text in Alt attribute shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "23",
+      "specification": "ISO_14289_1",
+      "object": "PDStructElem",
+      "tags": "structure,lang",
+      "description": "Natural language for text in E attribute shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "24",
+      "specification": "ISO_14289_1",
+      "object": "PDAnnot",
+      "tags": "lang,annotation,structure",
+      "description": "Natural language in the Contents entry for annotations shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "25",
+      "specification": "ISO_14289_1",
+      "object": "PDFormField",
+      "tags": "structure,lang",
+      "description": "Natural language in the TU key for form fields shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "26",
+      "specification": "ISO_14289_1",
+      "object": "SETOCI",
+      "tags": "structure,toc",
+      "description": "TOCI element should be contained in TOC element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "27",
+      "specification": "ISO_14289_1",
+      "object": "SETOC",
+      "tags": "structure,toc",
+      "description": "TOC element may contain only TOC, TOCI and Caption elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "28",
+      "specification": "ISO_14289_1",
+      "object": "SETOC",
+      "tags": "structure,toc",
+      "description": "TOC element may contain a Caption element only as its first kid"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "29",
+      "specification": "ISO_14289_1",
+      "object": "CosLang",
+      "tags": "lang",
+      "description": "If the Lang entry is present in the document's Catalog dictionary or in a structure element dictionary or property list, its value shall be a language identifier as described in ISO 32000-1:2008, 14.9.2. A language identifier shall be a Language-Tag as defined in RFC 3066, Tags for the Identification of Languages"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "30",
+      "specification": "ISO_14289_1",
+      "object": "SEMarkedContent",
+      "tags": "lang,alt-text",
+      "description": "Natural language for text in ActualText attribute in Span Marked Content shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "31",
+      "specification": "ISO_14289_1",
+      "object": "SEMarkedContent",
+      "tags": "lang,alt-text",
+      "description": "Natural language for text in Alt attribute in Span Marked Content shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "32",
+      "specification": "ISO_14289_1",
+      "object": "SEMarkedContent",
+      "tags": "lang,alt-text",
+      "description": "Natural language for text in E attribute in Span Marked Content shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "33",
+      "specification": "ISO_14289_1",
+      "object": "XMPLangAlt",
+      "tags": "lang,metadata",
+      "description": "Natural language for document metadata shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "34",
+      "specification": "ISO_14289_1",
+      "object": "SETextItem",
+      "tags": "lang,text",
+      "description": "Natural language for text in page content shall be determined"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "36",
+      "specification": "ISO_14289_1",
+      "object": "SETHead",
+      "tags": "structure,table",
+      "description": "THead element may contain only TR elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "37",
+      "specification": "ISO_14289_1",
+      "object": "SETBody",
+      "tags": "structure,table",
+      "description": "TBody element may contain only TR elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "38",
+      "specification": "ISO_14289_1",
+      "object": "SETFoot",
+      "tags": "structure,table",
+      "description": "TFoot element may contain only TR elements"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "39",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table element may contain only one Caption element"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "40",
+      "specification": "ISO_14289_1",
+      "object": "SEL",
+      "tags": "structure,list",
+      "description": "L element may contain a Caption element only as its first kid"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "41",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table columns shall have the same number of rows (taking into account row spans)"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "42",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table rows shall have the same number of columns (taking into account column spans)"
+    },
+    {
+      "clause": "7.2",
+      "test_number": "43",
+      "specification": "ISO_14289_1",
+      "object": "SETable",
+      "tags": "structure,table",
+      "description": "Table rows shall have the same number of columns (taking into account column spans)"
+    },
+    {
+      "clause": "7.3",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "SEFigure",
+      "tags": "alt-text,structure,figure",
+      "description": "Figure tags shall include an alternative representation or replacement text that represents the contents marked with the Figure tag as noted in ISO 32000-1:2008, 14.7.2, Table 323"
+    },
+    {
+      "clause": "7.4.2",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "SEHn",
+      "tags": "structure,heading",
+      "description": "For documents that are not strongly structured, as described in ISO 32000-1:2008, 14.8.4.3.5, heading tags shall be used as follows: (*) If any heading tags are used, H1 shall be the first. (*) A document may use more than one instance of any specific tag level. For example, a tag level may be repeated if document content requires it. (*) If document semantics require a descending sequence of headers, such a sequence shall proceed in strict numerical order and shall not skip an intervening heading level. (*) A document may increment its heading sequence without restarting at H1 if document semantics require it"
+    },
+    {
+      "clause": "7.4.4",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDStructElem",
+      "tags": "structure,heading",
+      "description": "Each node in the tag tree shall contain at most one child H tag"
+    },
+    {
+      "clause": "7.4.4",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "SEH",
+      "tags": "structure,heading",
+      "description": "All documents shall be either strongly or weakly structured, but not both"
+    },
+    {
+      "clause": "7.4.4",
+      "test_number": "3",
+      "specification": "ISO_14289_1",
+      "object": "SEHn",
+      "tags": "structure,heading",
+      "description": "All documents shall be either strongly or weakly structured, but not both"
+    },
+    {
+      "clause": "7.5",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "SETD",
+      "tags": "structure,table",
+      "description": "If the table's structure is not determinable via Headers and IDs, then structure elements of type TH shall have a Scope attribute"
+    },
+    {
+      "clause": "7.5",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "SETD",
+      "tags": "structure,table",
+      "description": "If the table's structure is not determinable via Headers and IDs, then structure elements of type TH shall have a Scope attribute"
+    },
+    {
+      "clause": "7.7",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "SEFormula",
+      "tags": "structure,alt-text",
+      "description": "All mathematical expressions shall be enclosed within a Formula tag as detailed in ISO 32000-1:2008, 14.8.4.5 and shall have Alt or ActualText attributes"
+    },
+    {
+      "clause": "7.9",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "SENote",
+      "tags": "structure,note",
+      "description": "Note tag shall have ID entry"
+    },
+    {
+      "clause": "7.9",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "SENote",
+      "tags": "structure,note",
+      "description": "Each Note tag shall have unique ID key"
+    },
+    {
+      "clause": "7.10",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDOCConfig",
+      "tags": "syntax",
+      "description": "Each optional content configuration dictionary that forms the value of the D key, or that is an element in the array that forms the value of the Configs key in the OCProperties dictionary, shall contain the Name key"
+    },
+    {
+      "clause": "7.10",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDOCConfig",
+      "tags": "syntax",
+      "description": "The AS key shall not appear in any optional content configuration dictionary"
+    },
+    {
+      "clause": "7.11",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "CosFileSpecification",
+      "tags": "syntax",
+      "description": "The file specification dictionary for an embedded file shall contain the non-empty F and UF keys"
+    },
+    {
+      "clause": "7.15",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDAcroForm",
+      "tags": "syntax",
+      "description": "Dynamic XFA forms shall not be used"
+    },
+    {
+      "clause": "7.16",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDEncryption",
+      "tags": "syntax",
+      "description": "An encrypted conforming file shall contain a P key in its encryption dictionary (ISO 32000-1:2008, 7.6.3.2, Table 21). The 10th bit position of the P key shall be true"
+    },
+    {
+      "clause": "7.18.1",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDAnnot",
+      "tags": "annotation",
+      "description": "An annotation, excluding annotations of subtype Widget, PrinterMark or Link, shall be nested within an Annot tag"
+    },
+    {
+      "clause": "7.18.1",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDAnnot",
+      "tags": "annotation,alt-text",
+      "description": "An annotation (except Widget annotations or hidden annotations, or those having rectangle outside the crop-box) shall have either Contents key or an Alt entry in the enclosing structure element"
+    },
+    {
+      "clause": "7.18.1",
+      "test_number": "3",
+      "specification": "ISO_14289_1",
+      "object": "PDWidgetAnnot",
+      "tags": "annotation,alt-text",
+      "description": "A form field shall have a TU key present or all its Widget annotations shall have alternative descriptions (in the form of an Alt entry in the enclosing structure elements)"
+    },
+    {
+      "clause": "7.18.2",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDTrapNetAnnot",
+      "tags": "annotation",
+      "description": "Annotations of subtype TrapNet shall not be permitted"
+    },
+    {
+      "clause": "7.18.3",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDPage",
+      "tags": "page",
+      "description": "Every page on which there is an annotation shall contain in its page dictionary the key Tabs, and its value shall be S"
+    },
+    {
+      "clause": "7.18.4",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDWidgetAnnot",
+      "tags": "annotation",
+      "description": "A Widget annotation shall be nested within a Form tag per ISO 32000-1:2008, 14.8.4.5, Table 340"
+    },
+    {
+      "clause": "7.18.4",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "SEForm",
+      "tags": "structure",
+      "description": "If the Form element omits a Role attribute (Table 348), it shall have only one child: an object reference (14.7.4.3) identifying the widget annotation per ISO 32000-1:2008, 14.8.4.5, Table 340"
+    },
+    {
+      "clause": "7.18.5",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDLinkAnnot",
+      "tags": "annotation",
+      "description": "Links shall be tagged according to ISO 32000-1:2008, 14.8.4.4.2, Link Element"
+    },
+    {
+      "clause": "7.18.5",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDLinkAnnot",
+      "tags": "structure,annotation,alt-text",
+      "description": "Links shall contain an alternate description via their Contents key as described in ISO 32000-1:2008, 14.9.3"
+    },
+    {
+      "clause": "7.18.6.2",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDMediaClip",
+      "tags": "syntax",
+      "description": "In the media clip data dictionary, the optional CT key (ISO 32000-1:2008, 13.2.4.2, Table 274) is required"
+    },
+    {
+      "clause": "7.18.6.2",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDMediaClip",
+      "tags": "alt-text",
+      "description": "In the media clip data dictionary, the optional Alt key (ISO 32000-1:2008, 13.2.4.2, Table 274) is required"
+    },
+    {
+      "clause": "7.18.8",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDPrinterMarkAnnot",
+      "tags": "annotation",
+      "description": "PrinterMark annotations, if present, shall be considered Incidental Artifacts, as if they are hidden page elements as defined in ISO 32000-1:2008, 14.8.2.2.3"
+    },
+    {
+      "clause": "7.20",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDXForm",
+      "tags": "syntax",
+      "description": "A conforming file shall not contain any reference XObjects"
+    },
+    {
+      "clause": "7.20",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDXForm",
+      "tags": "syntax",
+      "description": "The content of Form XObjects shall be incorporated into structure elements according to ISO 32000-1:2008, 14.7.2"
+    },
+    {
+      "clause": "7.21.3.1",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDType0Font",
+      "tags": "font",
+      "description": "For any given composite (Type 0) font within a conforming file, the CIDSystemInfo entry in its CIDFont dictionary and its Encoding dictionary shall have the following relationship: - If the Encoding key in the Type 0 font dictionary is Identity-H or Identity-V, any values of Registry, Ordering, and Supplement may be used in the CIDSystemInfo entry of the CIDFont. - Otherwise, the corresponding Registry and Ordering strings in both CIDSystemInfo dictionaries shall be identical, and the value of the Supplement key in the CIDSystemInfo dictionary of the CIDFont shall be less than or equal to the Supplement key in the CIDSystemInfo dictionary of the CMap"
+    },
+    {
+      "clause": "7.21.3.2",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDCIDFont",
+      "tags": "font",
+      "description": "ISO 32000-1:2008, 9.7.4, Table 117 requires that all embedded Type 2 CIDFonts in the CIDFont dictionary shall contain a CIDToGIDMap entry that shall be a stream mapping from CIDs to glyph indices or the name Identity, as described in ISO 32000-1:2008, 9.7.4, Table 117"
+    },
+    {
+      "clause": "7.21.3.3",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDCMap",
+      "tags": "font",
+      "description": "All CMaps used within a PDF/UA file, except those listed in ISO 32000-1:2008, 9.7.5.2, Table 118, shall be embedded in that file as described in ISO 32000-1:2008, 9.7.5"
+    },
+    {
+      "clause": "7.21.3.3",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "CMapFile",
+      "tags": "font",
+      "description": "For those CMaps that are embedded, the integer value of the WMode entry in the CMap dictionary shall be identical to the WMode value in the embedded CMap stream"
+    },
+    {
+      "clause": "7.21.3.3",
+      "test_number": "3",
+      "specification": "ISO_14289_1",
+      "object": "PDReferencedCMap",
+      "tags": "font",
+      "description": "A CMap shall not reference any other CMap except those listed in ISO 32000-1:2008, 9.7.5.2, Table 118"
+    },
+    {
+      "clause": "7.21.4.1",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDFont",
+      "tags": "font",
+      "description": "The font programs for all fonts used for rendering within a conforming file shall be embedded within that file, as defined in ISO 32000-1:2008, 9.9"
+    },
+    {
+      "clause": "7.21.4.1",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "Glyph",
+      "tags": "font",
+      "description": "Embedded fonts shall define all glyphs referenced for rendering within the conforming file. A font referenced solely in text rendering mode 3 is not rendered and is thus exempt from the requirements that impact the visual representation of the glyphs of a font. In all cases for TrueType fonts that are to be rendered, character codes shall be able to be mapped to glyphs according to ISO 32000-1:2008, 9.6.6.4 without the use of a non-standard mapping chosen by the conforming processor"
+    },
+    {
+      "clause": "7.21.4.2",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "PDType1Font",
+      "tags": "font",
+      "description": "If the FontDescriptor dictionary of an embedded Type 1 font contains a CharSet string, then it shall list the character names of all glyphs present in the font program, regardless of whether a glyph in the font is referenced or used by the PDF or not"
+    },
+    {
+      "clause": "7.21.4.2",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDCIDFont",
+      "tags": "font",
+      "description": "If the FontDescriptor dictionary of an embedded CID font contains a CIDSet stream, then it shall identify all CIDs which are present in the font program, regardless of whether a CID in the font is referenced or used by the PDF or not"
+    },
+    {
+      "clause": "7.21.5",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "Glyph",
+      "tags": "font",
+      "description": "For every font embedded in a conforming file and used for rendering, the glyph width information in the font dictionary and in the embedded font program shall be consistent"
+    },
+    {
+      "clause": "7.21.6",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "TrueTypeFontProgram",
+      "tags": "font",
+      "description": "For all non-symbolic TrueType fonts used for rendering, the embedded TrueType font program shall contain one or several non-symbolic cmap entries such that all necessary glyph lookups can be carried out"
+    },
+    {
+      "clause": "7.21.6",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "PDTrueTypeFont",
+      "tags": "font",
+      "description": "All non-symbolic TrueType fonts shall have either MacRomanEncoding or WinAnsiEncoding as the value for the Encoding key in the Font dictionary or as the value for the BaseEncoding key in the dictionary which is the value of the Encoding key in the Font dictionary. In addition, no non-symbolic TrueType font shall define a Differences array unless all of the glyph names in the Differences array are listed in the Adobe Glyph List and, if the font program is embedded, it shall contain at least the Microsoft Unicode (3,1 \u2013 Platform ID = 3, Encoding ID = 1) encoding in the 'cmap' table"
+    },
+    {
+      "clause": "7.21.6",
+      "test_number": "3",
+      "specification": "ISO_14289_1",
+      "object": "PDTrueTypeFont",
+      "tags": "font",
+      "description": "Symbolic TrueType fonts shall not contain an Encoding entry in the font dictionary"
+    },
+    {
+      "clause": "7.21.6",
+      "test_number": "4",
+      "specification": "ISO_14289_1",
+      "object": "TrueTypeFontProgram",
+      "tags": "font",
+      "description": "The 'cmap' table in the embedded font program for a symbolic TrueType font shall contain either exactly one encoding or it shall contain, at least, the Microsoft Symbol (3,0 - Platform ID=3, Encoding ID=0) encoding"
+    },
+    {
+      "clause": "7.21.7",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "Glyph",
+      "tags": "font",
+      "description": "The Font dictionary of all fonts shall define the map of all used character codes to Unicode values, either via a ToUnicode entry, or other mechanisms as defined in ISO 14289-1, 7.21.7"
+    },
+    {
+      "clause": "7.21.7",
+      "test_number": "2",
+      "specification": "ISO_14289_1",
+      "object": "Glyph",
+      "tags": "font",
+      "description": "The Unicode values specified in the ToUnicode CMap shall all be greater than zero (0), but not equal to either U+FEFF or U+FFFE"
+    },
+    {
+      "clause": "7.21.8",
+      "test_number": "1",
+      "specification": "ISO_14289_1",
+      "object": "Glyph",
+      "tags": "font",
+      "description": "A PDF/UA compliant document shall not contain a reference to the .notdef glyph from any of the text showing operators, regardless of text rendering mode, in any content stream"
+    }
+  ]
+}

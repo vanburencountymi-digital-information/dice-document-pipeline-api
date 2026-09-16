@@ -2,6 +2,8 @@ from uuid import uuid4
 
 from django.db import models
 
+from remediation.adapters.verification.severity import SEVERITY_RANK, Severity
+
 
 class Remediation(models.Model):
     class JobStatus(models.TextChoices):
@@ -86,6 +88,17 @@ class VerificationResult(models.Model):
     )
     step = models.CharField(max_length=20, choices=RemediationArtifact.Step.choices)
     is_compliant = models.BooleanField()
+    # The exact veraPDF version that produced this result (from the report's own
+    # `buildInformation` block, not hardcoded) — kept per-row since `severity.py`'s
+    # classification table is reviewed against one version at a time
+    # (`BUILT_AGAINST_VERAPDF_VERSION`); this is how an old row stays traceable to what
+    # actually ran even after that table moves on to a newer version.
+    verapdf_version = models.CharField(max_length=20, blank=True)
+    # List of `remediation.adapters.base.FailedRuleDict` dicts (simplify_vera_printouts) —
+    # replaces the raw veraPDF XML report that used to be dumped verbatim into
+    # `Remediation.error`. `severity` inside each dict is a `Severity.value` string (JSON has
+    # no enum type); every place that produces or reads it goes through `Severity`.
+    failed_rules = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -97,6 +110,17 @@ class VerificationResult(models.Model):
 
     def __str__(self) -> str:
         return f"{self.remediation_id}: {self.step} ({self.is_compliant})"
+
+    @property
+    def worst_severity(self) -> Severity | None:
+        """The worst `Severity` across `failed_rules`, or `None` if there are none (e.g. a
+        compliant result). CRITICAL outranks MAJOR outranks MINOR outranks UNCLASSIFIED.
+        """
+        present = {rule["severity"] for rule in self.failed_rules}
+        for severity in SEVERITY_RANK:
+            if severity.value in present:
+                return severity
+        return None
 
 
 class RemediationScore(models.Model):

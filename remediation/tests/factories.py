@@ -4,6 +4,7 @@ import factory
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 from accounts.tests.factories import ServiceAccountFactory
+from remediation.adapters.verification.severity import Severity
 from remediation.models import (
     Remediation,
     RemediationArtifact,
@@ -30,6 +31,20 @@ class RemediationArtifactFactory(factory.django.DjangoModelFactory):
     status = factory.Iterator(RemediationArtifact.StepStatus.values)
 
 
+class FailedRuleFactory(factory.DictFactory):
+    """One `VerificationResult.failed_rules` entry, matching the dict shape
+    `VerificationService.run` writes (simplify_vera_printouts). A plain `DictFactory` since
+    `failed_rules` is JSON data, not a model — `VerificationResultFactory(failed_rules=[
+    FailedRuleFactory(), FailedRuleFactory(severity=Severity.CRITICAL.value)])`.
+    """
+
+    clause = "7.21"
+    test_number = "7"
+    description = "font missing CIDSet entries"
+    failed_checks = 1
+    severity = Severity.MINOR.value
+
+
 class VerificationResultFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = VerificationResult
@@ -37,6 +52,8 @@ class VerificationResultFactory(factory.django.DjangoModelFactory):
     remediation = factory.SubFactory(RemediationFactory)
     step = factory.Iterator([RemediationArtifact.Step.PRECHECK, RemediationArtifact.Step.POSTCHECK])
     is_compliant = factory.Faker("boolean")
+    verapdf_version = "1.30.2"
+    failed_rules = factory.LazyFunction(list)
 
 
 class RemediationScoreFactory(factory.django.DjangoModelFactory):
