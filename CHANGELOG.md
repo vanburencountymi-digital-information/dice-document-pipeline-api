@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.1.0 (2026-09-16)
+
+### Features
+
+- Continue the remediation pipeline past a failed step
+  ([`957b1eb`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/957b1ebb0608c97fcece9d889e7fa7783da2137e))
+
+
 ## v1.0.0 (2026-09-16)
 
 - Initial Release
