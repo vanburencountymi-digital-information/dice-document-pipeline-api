@@ -1,7 +1,7 @@
 from django.core.files.uploadedfile import UploadedFile
 from rest_framework import serializers
 
-from remediation.models import Remediation
+from remediation.models import Remediation, VerificationResult
 
 
 class RemediationUploadSerializer(serializers.Serializer):
@@ -13,8 +13,16 @@ class RemediationUploadSerializer(serializers.Serializer):
         return value
 
 
+class VerificationResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = VerificationResult
+        fields = ["step", "is_compliant", "verapdf_version", "failed_rules"]
+        read_only_fields = fields
+
+
 class RemediationSerializer(serializers.ModelSerializer):
     document_id = serializers.CharField(source="content_hash", read_only=True)
+    verification_results = VerificationResultSerializer(many=True, read_only=True)
 
     class Meta:
         model = Remediation
@@ -27,6 +35,7 @@ class RemediationSerializer(serializers.ModelSerializer):
             "created_at",
             "started_at",
             "completed_at",
+            "verification_results",
         ]
         read_only_fields = [
             "id",
@@ -36,4 +45,5 @@ class RemediationSerializer(serializers.ModelSerializer):
             "created_at",
             "started_at",
             "completed_at",
+            "verification_results",
         ]
