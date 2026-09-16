@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.5.0 (2026-09-16)
+
+### Features
+
+- Add webhook support to notify callers when remediation is complete
+  ([`b52a881`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/b52a88184fd99d4f295c045117e12bf249d120c4))
+
+
 ## v1.4.1 (2026-09-16)
 
 ### Bug Fixes
