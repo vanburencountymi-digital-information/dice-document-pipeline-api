@@ -32,6 +32,11 @@ DEBUG = env.bool("DEBUG", default=False)
 
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
+# The nearest git tag at image build time (ADR 0012) — baked in by the Dockerfile's
+# PIPELINE_VERSION build arg, computed by `make build` via `git describe --tags --abbrev=0`.
+# "0.0.0" only shows up before this repo's very first tagged release ever ships.
+PIPELINE_VERSION = env.str("PIPELINE_VERSION", default="0.0.0")
+
 
 # Application definition
 

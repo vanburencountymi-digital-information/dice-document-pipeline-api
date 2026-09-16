@@ -40,11 +40,13 @@ now run `make build` and `make migrate`
 
 ### 2. Install the git hooks (if making changes)
 
-Linting and type checking (ruff + mypy) run automatically on commit via pre-commit. This runs on your host machine's `git commit`, not inside Docker:
+Linting and type checking (ruff + mypy) run automatically on commit via pre-commit, and commit messages are checked against [Conventional Commits](https://www.conventionalcommits.org/) (`fix:`/`feat:`/etc. — see ADR 0012, this is what drives automatic version tagging).
+
+Both run on your host machine's `git commit`, not inside Docker:
 
 ```bash
 pip install pre-commit
-pre-commit install
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
 ## Pipeline steps

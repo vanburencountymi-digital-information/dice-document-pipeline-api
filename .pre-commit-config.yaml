@@ -1,4 +1,10 @@
 repos:
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
@@ -30,6 +36,7 @@ repos:
           - pikepdf==10.11.0
           - anthropic==0.121.0
           - PyMuPDF==1.28.2
+          - packaging==26.3
         args: [--config-file=pyproject.toml, .]
         pass_filenames: false
         always_run: true

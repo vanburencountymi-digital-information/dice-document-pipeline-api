@@ -1,6 +1,8 @@
+from collections.abc import Iterable
 from uuid import uuid4
 
 from django.db import models
+from django.db.models.base import ModelBase
 
 from remediation.adapters.verification.severity import SEVERITY_RANK, Severity
 
@@ -22,6 +24,10 @@ class Remediation(models.Model):
     content_hash = models.CharField(max_length=64)  # sha256 hex digest
     original_filename = models.CharField(max_length=255, default="", blank=True)
     error = models.TextField(blank=True)
+    # `settings.PIPELINE_VERSION` at creation time (ADR 0012) — the git tag this attempt's
+    # pipeline logic actually ran under. Lets a retry decide whether a FAILED attempt is
+    # worth re-running: see `PipelineConfig.retry_floor_version` and ADR 0014.
+    pipeline_version = models.CharField(max_length=20, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
@@ -121,6 +127,38 @@ class VerificationResult(models.Model):
             if severity.value in present:
                 return severity
         return None
+
+
+class PipelineConfig(models.Model):
+    """Singleton admin-editable config (ADR 0012) — always the single row `pk=1`, enforced by
+    `save()` below and by `PipelineConfigAdmin.has_add_permission` (`remediation/admin.py`)
+    refusing a second row once one exists.
+
+    `retry_floor_version` gates ADR 0014's auto-retry: resubmitting a `FAILED` `Remediation`
+    whose `pipeline_version` is strictly older than this triggers a fresh attempt. Left blank
+    by default so nothing auto-retries until someone deliberately raises it in admin.
+    """
+
+    retry_floor_version = models.CharField(max_length=20, blank=True, default="")
+
+    def __str__(self) -> str:
+        return f"Pipeline config (retry floor: {self.retry_floor_version or 'none'})"
+
+    def save(
+        self,
+        *,
+        force_insert: bool | tuple[ModelBase, ...] = False,
+        force_update: bool = False,
+        using: str | None = None,
+        update_fields: Iterable[str] | None = None,
+    ) -> None:
+        self.pk = 1
+        super().save(
+            force_insert=force_insert,
+            force_update=force_update,
+            using=using,
+            update_fields=update_fields,
+        )
 
 
 class RemediationScore(models.Model):

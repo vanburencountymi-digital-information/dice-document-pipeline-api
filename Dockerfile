@@ -75,11 +75,16 @@ RUN mvn -pl opendataloader-pdf-core,opendataloader-pdf-cli -am package -DskipTes
 # stage avoids that mismatch.
 FROM python:3.12-alpine
 
+# ADR 0012 — the nearest git tag at build time, passed in by `make build`
+# (`git describe --tags --abbrev=0`). Read by config/settings.py as PIPELINE_VERSION.
+ARG PIPELINE_VERSION=0.0.0
+
 ENV JAVA_HOME=/opt/java/openjdk \
     PATH="/opt/java/openjdk/bin:/opt/verapdf:${PATH}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIPELINE_VERSION=${PIPELINE_VERSION}
 
 COPY --from=jre-builder /javaruntime $JAVA_HOME
 COPY --from=verapdf-installer /opt/verapdf /opt/verapdf

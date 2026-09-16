@@ -5,7 +5,9 @@ build:
 	# the app container's non-root user from writing to it — pre-create it
 	# ourselves so it's always owned by whoever runs `make`.
 	mkdir -p media
-	docker compose build
+	# ADR 0012 — bake the nearest git tag into the image as PIPELINE_VERSION.
+	# The fallback only matters before this repo's very first tagged release.
+	docker compose build --build-arg PIPELINE_VERSION=$$(git describe --tags --abbrev=0 2>/dev/null || echo 0.0.0)
 
 up:
 	docker compose up

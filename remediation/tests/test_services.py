@@ -83,6 +83,16 @@ class RemediationServiceTests(TestCase):
         self.assertEqual(remediation.source_pdf_uri, "local:///tmp/document.pdf")
         self.assertEqual(remediation.status, Remediation.JobStatus.QUEUED)
 
+    @override_settings(PIPELINE_VERSION="1.4.2")
+    def test_create_stamps_pipeline_version_from_settings(self) -> None:
+        remediation = RemediationService().create(
+            self.service_account,
+            source_pdf_uri="local:///tmp/document.pdf",
+            content_hash="abc123",
+        )
+
+        self.assertEqual(remediation.pipeline_version, "1.4.2")
+
     def test_latest_for_document_returns_most_recent_attempt(self) -> None:
         RemediationFactory(service_account=self.service_account, content_hash="abc123")
         newest = RemediationFactory(service_account=self.service_account, content_hash="abc123")

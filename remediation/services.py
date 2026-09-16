@@ -111,6 +111,7 @@ class RemediationService:
             source_pdf_uri=source_pdf_uri,
             content_hash=content_hash,
             original_filename=original_filename,
+            pipeline_version=settings.PIPELINE_VERSION,
         )
 
     def mark_running(self, remediation: Remediation) -> None:

@@ -1,0 +1,33 @@
+# ADR 0012 — this repo's first CI workflow. Computes the next version from Conventional
+# Commit messages since the last tag (see .pre-commit-config.yaml's conventional-pre-commit
+# hook, which enforces that format locally before a commit can even reach this) and pushes
+# a new vX.Y.Z git tag + GitHub Release. The tag is the only thing PIPELINE_VERSION is
+# sourced from (see Makefile's `build` target, Dockerfile, config/settings.py) — nothing
+# here writes a version string into any repo file.
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Semantic version release
+        uses: python-semantic-release/python-semantic-release@v10.6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}

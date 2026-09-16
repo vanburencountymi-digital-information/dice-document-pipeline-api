@@ -6,6 +6,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from accounts.tests.factories import ServiceAccountFactory
 from remediation.adapters.verification.severity import Severity
 from remediation.models import (
+    PipelineConfig,
     Remediation,
     RemediationArtifact,
     RemediationScore,
@@ -64,6 +65,13 @@ class RemediationScoreFactory(factory.django.DjangoModelFactory):
     score = factory.Faker("random_int", min=0, max=100)
     grade = factory.Iterator(RemediationScore.Grade.values)
     manual_review_items = factory.LazyFunction(list)
+
+
+class PipelineConfigFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = PipelineConfig
+
+    retry_floor_version = ""
 
 
 class PdfUploadFactory(factory.Factory):
