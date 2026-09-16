@@ -2,8 +2,6 @@
 
 A Django API that takes an uploaded PDF and checks it against accessibility standards (WCAG 2.1 AA / PDF/UA-1). Upon failure, it runs the document through an automated remediation pipeline (OCR, tagging, metadata fixes, alt text, link repair) before re-checking it.
 
-We validate against PDF/UA-1, not the newer PDF/UA-2, because PDF/UA-2 targets PDF 2.0's structure model and none of the available tooling (OpenDataLoader, pikepdf) produces PDF 2.0 output yet.
-
 ## Setup
 
 Docker only — the current implementation depends on Postgres, Java/veraPDF, and the OpenDataLoader hybrid server.
@@ -94,6 +92,19 @@ Submissions in the local environment process synchronously (and therefore don't 
 2. Same `Authorization` header as above.
 
 You should see `status` in the response. If the status is `running`, the job is still in progress.
+
+## Dependency Upgrades
+
+### OpenDataloader and Docling
+
+This repo is currently pinned to forked versions of OpenDataLoader and Docling due to the need for bug-fixes not present in the original files. We periodically check to see if the main images have been upgraded to include those bugfixes; once they have, we will pin to main branch.
+
+### VeraPDF
+
+This repo currently validates against PDF/UA-1, not the newer PDF/UA-2, because PDF/UA-2 targets PDF 2.0's structure model and none of the available tooling (OpenDataLoader, pikepdf) produces PDF 2.0 output yet.
+
+If the veraPDF version in the `Dockerfile` is ever upgraded, re-run `manage.py extract_verapdf_profile --jar-path <path to the new cli jar>` to refresh `remediation/adapters/verification/pdfua1_catalog.json`, then review `remediation/adapters/verification/severity.py`'s severity tables against whatever changed before bumping `BUILT_AGAINST_VERAPDF_VERSION`.
+
 
 ---- Notes for later, ignore for now----
 
