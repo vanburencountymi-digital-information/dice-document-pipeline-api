@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AnonymousUser
-from django.http import Http404
+from django.core.files.storage import default_storage
+from django.http import FileResponse, Http404
 from rest_framework import status
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
@@ -86,3 +87,30 @@ class DocumentStatusView(ServiceAccountRequiredMixin):
         if remediation is None:
             raise Http404
         return Response(RemediationSerializer(remediation).data)
+
+
+class DocumentDownloadView(ServiceAccountRequiredMixin):
+    """
+    Serves a document's most recent remediation attempt's finished output file.
+
+    Serves it regardless of `status` (ADR 0013/0015) — a FAILED attempt can still have a
+    partially-remediated file worth downloading — as long as one was actually produced.
+
+    Takes:
+        content_hash: the SHA-256 hex digest identifying the document.
+
+    Returns:
+        The PDF as an attachment. 404 if no remediation job for that file + that service
+        account, or if nothing has been produced yet (e.g. still QUEUED/RUNNING).
+    """
+
+    def get(self, request: Request, content_hash: str) -> FileResponse:
+        remediation = RemediationService().latest_for_document(self.service_account, content_hash)
+        if remediation is None or not remediation.final_output_uri:
+            raise Http404
+        return FileResponse(
+            default_storage.open(remediation.final_output_uri),
+            content_type="application/pdf",
+            filename=remediation.original_filename or "document.pdf",
+            as_attachment=True,
+        )

@@ -173,6 +173,11 @@ OPENDATALOADER_HYBRID_URL = env.str("OPENDATALOADER_HYBRID_URL", default="http:/
 ANTHROPIC_API_KEY = env.str("ANTHROPIC_API_KEY", default="")
 CLAUDE_VISION_MODEL = env.str("CLAUDE_VISION_MODEL", default="claude-sonnet-5")
 
+# ADR 0015 — builds absolute download_url links (webhook payloads + polling responses)
+# from outside a request/response cycle (a task has no `request` object to call
+# build_absolute_uri on).
+PUBLIC_BASE_URL = env.str("PUBLIC_BASE_URL", default="http://localhost:8000")
+
 # Without this, Python's logging module silently drops anything below WARNING on the root
 # logger — meaning remediation/tasks.py's per-step progress logging (which step is running,
 # how long it took) would never actually reach the console, the exact visibility gap that

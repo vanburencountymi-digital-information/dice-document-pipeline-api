@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import tempfile
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APIRequestFactory
 
 from accounts.tests.factories import ServiceAccountFactory
-from api.views import CreateRemediationView, DocumentStatusView
+from api.views import CreateRemediationView, DocumentDownloadView, DocumentStatusView
+from remediation.models import Remediation
 from remediation.tests.factories import PdfUploadFactory, RemediationFactory
 
 
@@ -135,6 +139,76 @@ class DocumentStatusViewTests(TestCase):
 
     @patch("api.views.RemediationService", autospec=True, spec_set=True)
     def test_returns_404_when_service_finds_nothing(self, mock_service_cls) -> None:
+        mock_service_cls.return_value.latest_for_document.return_value = None
+
+        response = self._get("abc123")
+
+        self.assertEqual(response.status_code, 404)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class DocumentDownloadViewTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.service_account = ServiceAccountFactory()
+
+    def setUp(self) -> None:
+        self.factory = APIRequestFactory()
+        self.view = DocumentDownloadView.as_view()
+
+    def _get(self, content_hash):
+        url = reverse("document-download", kwargs={"content_hash": content_hash})
+        request = self.factory.get(url, HTTP_AUTHORIZATION=f"Token {self.service_account.token}")
+        return self.view(request, content_hash=content_hash)
+
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_returns_the_file_for_a_complete_remediation(self, mock_service_cls) -> None:
+        output_path = default_storage.save("remediations/output.pdf", ContentFile(b"%PDF-1.4 done"))
+        remediation = RemediationFactory.build(
+            content_hash="abc123",
+            status=Remediation.JobStatus.COMPLETE,
+            final_output_uri=output_path,
+            original_filename="document.pdf",
+        )
+        mock_service_cls.return_value.latest_for_document.return_value = remediation
+
+        response = self._get("abc123")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), b"%PDF-1.4 done")
+        self.assertEqual(response["Content-Type"], "application/pdf")
+
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_returns_the_file_for_a_failed_but_partially_remediated_attempt(
+        self, mock_service_cls
+    ) -> None:
+        """ADR 0013/0015 — a FAILED attempt still has something downloadable."""
+        output_path = default_storage.save("remediations/partial.pdf", ContentFile(b"partial"))
+        remediation = RemediationFactory.build(
+            content_hash="abc123",
+            status=Remediation.JobStatus.FAILED,
+            final_output_uri=output_path,
+        )
+        mock_service_cls.return_value.latest_for_document.return_value = remediation
+
+        response = self._get("abc123")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), b"partial")
+
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_returns_404_when_nothing_produced_yet(self, mock_service_cls) -> None:
+        remediation = RemediationFactory.build(
+            content_hash="abc123", status=Remediation.JobStatus.QUEUED
+        )
+        mock_service_cls.return_value.latest_for_document.return_value = remediation
+
+        response = self._get("abc123")
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_returns_404_when_no_remediation_found(self, mock_service_cls) -> None:
         mock_service_cls.return_value.latest_for_document.return_value = None
 
         response = self._get("abc123")

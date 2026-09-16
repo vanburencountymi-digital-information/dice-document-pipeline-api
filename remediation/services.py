@@ -1,10 +1,12 @@
 import hashlib
 import logging
 import os
+from urllib.parse import urljoin
 
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
+from django.urls import reverse
 from django.utils import timezone
 from packaging.version import InvalidVersion, Version
 
@@ -56,6 +58,16 @@ def _parse_version(value: str) -> Version:
         return Version(value) if value else Version("0.0.0")
     except InvalidVersion:
         return Version("0.0.0")
+
+
+def build_download_url(remediation: Remediation) -> str:
+    """Absolute download URL for a `Remediation`'s `final_output_uri` (ADR 0015) — one call
+    site shared by `RemediationSerializer` (a polling caller) and `send_webhook_notification`
+    (a webhook payload) so the two can't drift into building it differently.
+    """
+    return urljoin(
+        settings.PUBLIC_BASE_URL, reverse("document-download", args=[remediation.content_hash])
+    )
 
 
 class RemediationService:
