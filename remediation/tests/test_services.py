@@ -55,6 +55,7 @@ from remediation.services import (
 )
 from remediation.tests.factories import (
     PdfUploadFactory,
+    PipelineConfigFactory,
     RemediationArtifactFactory,
     RemediationFactory,
 )
@@ -188,6 +189,70 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
         self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
         self.assertEqual(Remediation.objects.count(), 1)
         self.assertEqual(remediation.source_pdf_uri, original_path)
+
+    def test_force_retries_a_complete_remediation(self) -> None:
+        content = b"same bytes"
+        existing, _ = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+        existing.status = Remediation.JobStatus.COMPLETE
+        existing.save(update_fields=["status"])
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account,
+            PdfUploadFactory(name="test.pdf", content=content),
+            force=True,
+        )
+
+        self.assertTrue(created)
+        self.assertNotEqual(remediation, existing)
+        self.assertEqual(remediation.content_hash, existing.content_hash)
+        self.assertEqual(Remediation.objects.count(), 2)
+
+    def test_force_retries_a_failed_remediation(self) -> None:
+        content = b"same bytes"
+        failed, _ = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+        failed.status = Remediation.JobStatus.FAILED
+        failed.save(update_fields=["status"])
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account,
+            PdfUploadFactory(name="test.pdf", content=content),
+            force=True,
+        )
+
+        self.assertTrue(created)
+        self.assertNotEqual(remediation, failed)
+
+    @parameterized.expand(
+        [
+            ("stale_version_auto_retries", "0.9.0", "1.0.0", True),
+            ("version_exactly_at_floor_does_not_retry", "1.0.0", "1.0.0", False),
+            ("version_above_floor_does_not_retry", "1.1.0", "1.0.0", False),
+            ("blank_floor_does_not_retry", "1.0.0", "", False),
+        ]
+    )
+    def test_failed_remediation_retry_gated_by_floor_comparison(
+        self, _name, existing_version, floor_version, expected_created
+    ) -> None:
+        content = b"same bytes"
+        with override_settings(PIPELINE_VERSION=existing_version):
+            failed, _ = RemediationService().get_or_create_from_upload(
+                self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+            )
+        failed.status = Remediation.JobStatus.FAILED
+        failed.save(update_fields=["status"])
+        PipelineConfigFactory(retry_floor_version=floor_version)
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+
+        self.assertEqual(created, expected_created)
+        if not expected_created:
+            self.assertEqual(remediation, failed)
 
     def test_returns_existing_remediation_without_touching_storage_for_duplicate(self) -> None:
         content = b"same bytes"

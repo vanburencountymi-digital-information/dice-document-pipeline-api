@@ -79,12 +79,19 @@ print(account.token)  # save this
 ### With Postman
 
 #### Submit a document
+
 1. New request: `POST http://localhost:8000/api/submit-document/` (or whatever URL you've deployed to)
 2. Headers: Key: `Authorization`, Value: `Token <the token you printed above>`
 3. Body: Choose `form-data` radio button. Add key `file`, change its type (in next column) from "Text" to `File`, and pick a PDF.
 4. Send. The response is the remediation job — `status` will be `COMPLETE` or `FAILED` immediately, since the pipeline runs synchronously when deployed locally (via Django Tasks ImmediateBackend.)
 
 The response will contain an `id` field with the remediation job id and a `document_id` that is a hashed key for your document; save this if you want to check status later.
+
+#### Resubmit a document
+
+A document that has been processed by the pipeline is hashed, so that future attempts of the same file by the same organization return the previous result without re-running the whole pipeline.
+
+If you would like to force re-running the pipeline, such as during testing, click the radio button for `form-data` and next to the `file` key, add a second key, `force`, type Text, value `true`.
 
 #### Check a submitted document's status
 
@@ -96,6 +103,13 @@ Submissions in the local environment process synchronously (and therefore don't 
 You should see `status` in the response. If the status is `running`, the job is still in progress.
 
 ## Dependency Upgrades
+
+### Setting a Retry Floor
+
+By default, re-running the same document from the same organization returns the result from the previous run unless `force=True` has been passed in with the `POST`.
+
+However, upgrading a major dependency might mean that jobs that previously failed would now pass with the current pipeline. You can set the retry floor to
+any version of the pipeline that has previously run a remediation job via the admin panel. If a file from a previously failed job that was run on a version of the pipeline older than the floor is sent by the same organization, it will automatically be retried to see if the version change has corrected whatever previously caused the file to fail.
 
 ### OpenDataloader and Docling
 

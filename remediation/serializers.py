@@ -5,7 +5,10 @@ from remediation.models import Remediation, VerificationResult
 
 
 class RemediationUploadSerializer(serializers.Serializer):
+    """Checks for pdf file and if should force re-running job"""
+
     file = serializers.FileField()
+    force = serializers.BooleanField(required=False, default=False)
 
     def validate_file(self, value: UploadedFile) -> UploadedFile:
         if not value.name or not value.name.lower().endswith(".pdf"):

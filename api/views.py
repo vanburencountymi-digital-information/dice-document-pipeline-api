@@ -40,10 +40,12 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
     If the file (by content hash) is new for the service account, enqueues a new
     remediation job.
 
-    Otherwise finds the most recent existing job for that file.
+    Otherwise finds the most recent existing job for that file — unless `force=true` is
+    passed, or the existing job is FAILED and old enough to auto-retry (ADR 0014), in
+    which case a new attempt is enqueued instead.
 
     Takes:
-        a PDF document.
+        a PDF document, and optionally `force` (bool, default false).
 
     Returns:
         Response with the serialized remediation job (id, document_id, original_filename,
@@ -55,7 +57,9 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
         upload.is_valid(raise_exception=True)
 
         remediation, created = RemediationService().get_or_create_from_upload(
-            self.service_account, upload.validated_data["file"]
+            self.service_account,
+            upload.validated_data["file"],
+            force=upload.validated_data["force"],
         )
         if created:
             process_remediation.enqueue(str(remediation.id))

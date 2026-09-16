@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.utils import timezone
+from packaging.version import InvalidVersion, Version
 
 from accounts.models import ServiceAccount
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
@@ -36,6 +37,7 @@ from remediation.adapters.scoring.pike_pdf import (
 from remediation.adapters.verification.severity import SEVERITY_RANK
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import (
+    PipelineConfig,
     Remediation,
     RemediationArtifact,
     RemediationScore,
@@ -43,6 +45,17 @@ from remediation.models import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _parse_version(value: str) -> Version:
+    """Best-effort semver parse for retry-eligibility comparisons (ADR 0014) — a blank or
+    otherwise unparseable `pipeline_version` (e.g. a pre-ADR-0012 row) is treated as older
+    than anything real, not as an error.
+    """
+    try:
+        return Version(value) if value else Version("0.0.0")
+    except InvalidVersion:
+        return Version("0.0.0")
 
 
 class RemediationService:
@@ -57,29 +70,32 @@ class RemediationService:
         return Remediation.objects.get(pk=remediation_id)
 
     def get_or_create_from_upload(
-        self, service_account: ServiceAccount, uploaded_file: UploadedFile
+        self, service_account: ServiceAccount, uploaded_file: UploadedFile, force: bool = False
     ) -> tuple[Remediation, bool]:
         """Submits an uploaded PDF for remediation, deduplicating by content hash.
 
-        Returns `(remediation, created)` — `created` is `False` whenever *any* attempt
-        already exists for this document, including a `FAILED` one: resubmitting the same
-        file never auto-retriggers a job, it just reports that attempt's current state.
-        There is deliberately no retry mechanism yet (a document stuck on `FAILED` stays
-        `FAILED` until one exists) — see ADR 0009.
+        If `force` is `True`, always creates a new attempt, regardless of previous
+        remediations status.
+
+        If existing attempt is `Failed` and pipeline version from attempt is older than
+        floor, auto-retries with the newer version of the pipeline.
+
+        Returns `(remediation, created)` — `created` is `False` when an existing attempt
+        is reused as-is.
         """
         content_hash = self._hash_file(uploaded_file)
         existing = self.latest_for_document(service_account, content_hash)
-        if existing is not None:
+        if existing is not None and not self._should_retry(existing, force=force):
             return existing, False
 
-        # RemediationUploadSerializer.validate_file already guarantees a non-empty ".pdf"
-        # name by the time an upload reaches here — `or ""` is only to satisfy the type
-        # checker against UploadedFile.name's `str | None` stub, not a real fallback path.
-        original_filename = uploaded_file.name or ""
+        # RemediationUploadSerializer.validate_file has already checked for non-empty pdf name
+        original_filename = uploaded_file.name
+        assert original_filename, "uploaded_file.name must be set"
 
         # Keyed by (service_account, content_hash) rather than upload-time filename —
-        # deterministic, so the same document never occupies more than one path even if
-        # something upstream (e.g. a future retry mechanism) re-saves it.
+        # deterministic, so the same original document never occupies more than one path even on
+        # retry (ADR 0014): `default_storage.exists()` below just finds it already there
+        # and skips re-saving the original.
         original_path = f"remediations/{service_account.id}/{content_hash}/{original_filename}"
         if not default_storage.exists(original_path):
             default_storage.save(original_path, uploaded_file)
@@ -90,6 +106,20 @@ class RemediationService:
             original_filename=original_filename,
         )
         return remediation, True
+
+    def _should_retry(self, existing: Remediation, *, force: bool) -> bool:
+        if force:
+            return True
+        if existing.status != Remediation.JobStatus.FAILED:
+            return False
+        floor = self._retry_floor_version()
+        if not floor:
+            return False
+        return _parse_version(existing.pipeline_version) < _parse_version(floor)
+
+    def _retry_floor_version(self) -> str:
+        config = PipelineConfig.objects.first()
+        return config.retry_floor_version if config else ""
 
     def latest_for_document(
         self, service_account: ServiceAccount, content_hash: str

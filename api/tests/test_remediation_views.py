@@ -73,6 +73,23 @@ class CreateRemediationViewTests(TestCase):
 
     @patch("api.views.process_remediation", autospec=True, spec_set=True)
     @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_force_flag_is_passed_through_to_the_service(
+        self, mock_service_cls, mock_process_remediation
+    ) -> None:
+        remediation = RemediationFactory()
+        mock_service_cls.return_value.get_or_create_from_upload.return_value = (
+            remediation,
+            True,
+        )
+
+        self._post({"file": PdfUploadFactory(), "force": "true"})
+
+        self.assertTrue(
+            mock_service_cls.return_value.get_or_create_from_upload.call_args.kwargs["force"]
+        )
+
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
     def test_existing_upload_skips_enqueue_and_returns_200(
         self, mock_service_cls, mock_process_remediation
     ) -> None:
