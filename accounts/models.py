@@ -14,6 +14,9 @@ class ServiceAccount(models.Model):
     organization = models.ForeignKey("accounts.Organization", on_delete=models.CASCADE)
     name = models.CharField(max_length=50)
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    # HMAC key for signing outgoing webhook payloads (ADR 0015) — generated once in
+    # ServiceAccountService.create()
+    webhook_secret = models.CharField(max_length=64, blank=True, default="")
 
     def __str__(self) -> str:
         return f"{self.organization}: {self.name}"

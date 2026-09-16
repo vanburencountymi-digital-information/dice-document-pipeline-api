@@ -1,3 +1,5 @@
+import secrets
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework.authtoken.models import Token
@@ -14,6 +16,9 @@ class ServiceAccountService:
         user = User.objects.create_user(username=service_name, password=None)
         Token.objects.get_or_create(user=user)
         service_account = ServiceAccount.objects.create(
-            organization=organization, user=user, name=service_name
+            organization=organization,
+            user=user,
+            name=service_name,
+            webhook_secret=secrets.token_hex(32),
         )
         return service_account

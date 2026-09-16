@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import secrets
+
 import factory
 from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
@@ -38,6 +40,7 @@ class ServiceAccountFactory(factory.django.DjangoModelFactory):
     organization = factory.SubFactory(OrganizationFactory)
     user = factory.SubFactory(UserFactory)
     name = factory.Sequence(lambda n: f"service-account-{n}")
+    webhook_secret = factory.LazyFunction(lambda: secrets.token_hex(32))
 
     @factory.post_generation
     def token(self, create, extracted, **kwargs):
