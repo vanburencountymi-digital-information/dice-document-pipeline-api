@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.2.0 (2026-09-16)
+
+### Features
+
+- Add versioned retry for failed remediations
+  ([`33a2961`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/33a2961b184ec0e438a14310d5d9ac9b3f64e480))
+
+
 ## v1.1.0 (2026-09-16)
 
 ### Features
