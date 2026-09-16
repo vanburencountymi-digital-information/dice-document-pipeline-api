@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.4.1 (2026-09-16)
+
+### Bug Fixes
+
+- Add a webhook secret to service accounts
+  ([`f4b0533`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/f4b0533c8967420e8a087929498d5f5a0c516bf0))
+
+
 ## v1.4.0 (2026-09-16)
 
 ### Features
