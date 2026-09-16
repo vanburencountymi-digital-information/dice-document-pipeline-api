@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 
 from django.conf import settings
@@ -12,7 +13,6 @@ from remediation.adapters.alt_text.pike_pdf import (
     PikePdfAdapter as AltTextPikePdfAdapter,
 )
 from remediation.adapters.base import (
-    AdapterError,
     AltTextAdapter,
     AltTextClient,
     FailedRule,
@@ -41,6 +41,8 @@ from remediation.models import (
     RemediationScore,
     VerificationResult,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class RemediationService:
@@ -210,12 +212,17 @@ class NotCompliant(Exception):
     after remediation, signalling the job should be marked failed (ADR 0003).
 
     `str(exc)` is a short human-readable severity-ranked summary (simplify_vera_printouts) —
-    never the raw veraPDF XML report.
+    never the raw veraPDF XML report. `message` overrides that summary for the case where
+    there's no `failed_rules` to summarize at all — postcheck's own adapter crashed rather
+    than producing a real verdict (ADR 0013's `handle_verification_error`) — so the job still
+    reads as an honest "not confirmed compliant" instead of a misleading "0 rules failed".
     """
 
-    def __init__(self, failed_rules: list[FailedRule]) -> None:
-        self.failed_rules = failed_rules
-        super().__init__(_format_failure_summary(failed_rules))
+    def __init__(
+        self, failed_rules: list[FailedRule] | None = None, *, message: str | None = None
+    ) -> None:
+        self.failed_rules = failed_rules or []
+        super().__init__(message or _format_failure_summary(self.failed_rules))
 
 
 class VerificationService(ArtifactService):
@@ -237,9 +244,11 @@ class VerificationService(ArtifactService):
         pdf_path = default_storage.path(pdf_uri)
         try:
             outcome = self.adapter.validate(pdf_path)
-        except AdapterError as exc:
+        except Exception as exc:
+            LOGGER.exception("remediation %s: %s adapter failed", remediation.id, self.step)
             self.mark_failed(remediation, str(exc))
-            raise
+            self.handle_verification_error(str(exc))
+            return pdf_uri
 
         VerificationResult.objects.create(
             remediation=remediation,
@@ -264,6 +273,15 @@ class VerificationService(ArtifactService):
     def handle_result(self, is_compliant: bool, failed_rules: list[FailedRule]) -> None:
         raise NotImplementedError
 
+    def handle_verification_error(self, error: str) -> None:
+        """Called instead of `handle_result` when the adapter itself couldn't produce a
+        verdict at all (ADR 0013) — e.g. veraPDF crashed, as opposed to running and finding
+        the document non-compliant. Default: treat as inconclusive and let the pipeline
+        continue — `PrecheckService` doesn't need this to mean "already compliant" any more
+        than it needs a real non-compliant verdict to. `PostCheckService` overrides this,
+        since there's no later check for it to fall back on.
+        """
+
 
 class PrecheckService(VerificationService):
     step = RemediationArtifact.Step.PRECHECK
@@ -279,6 +297,9 @@ class PostCheckService(VerificationService):
     def handle_result(self, is_compliant: bool, failed_rules: list[FailedRule]) -> None:
         if not is_compliant:
             raise NotCompliant(failed_rules)
+
+    def handle_verification_error(self, error: str) -> None:
+        raise NotCompliant(message=f"postcheck could not run: {error}")
 
 
 class OCRService(ArtifactService):
@@ -300,9 +321,10 @@ class OCRService(ArtifactService):
 
         try:
             output_path = self.adapter.extract(pdf_path, output_dir=output_dir)
-        except AdapterError as exc:
+        except Exception as exc:
+            LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.mark_failed(remediation, str(exc))
-            raise
+            return pdf_uri
 
         output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
@@ -327,9 +349,10 @@ class FontRepairService(ArtifactService):
 
         try:
             output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
-        except AdapterError as exc:
+        except Exception as exc:
+            LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.mark_failed(remediation, str(exc))
-            raise
+            return pdf_uri
 
         output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
@@ -371,9 +394,10 @@ class MetadataService(ArtifactService):
                 title=_derive_title(remediation),
                 lang=settings.LANGUAGE_CODE,
             )
-        except AdapterError as exc:
+        except Exception as exc:
+            LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.mark_failed(remediation, str(exc))
-            raise
+            return pdf_uri
 
         output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
@@ -397,9 +421,10 @@ class LinkService(ArtifactService):
 
         try:
             output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
-        except AdapterError as exc:
+        except Exception as exc:
+            LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.mark_failed(remediation, str(exc))
-            raise
+            return pdf_uri
 
         output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
@@ -445,9 +470,10 @@ class AltTextService(ArtifactService):
             output_path = self.adapter.write_alt_text(
                 pdf_path, output_dir=output_dir, alt_by_ref=alt_by_ref
             )
-        except AdapterError as exc:
+        except Exception as exc:
+            LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.mark_failed(remediation, str(exc))
-            raise
+            return pdf_uri
 
         output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
@@ -455,8 +481,9 @@ class AltTextService(ArtifactService):
 
 
 class ScoringService(ArtifactService):
-    """Non-blocking heuristic scoring (add_confidence_scoring experiment). Unlike every
-    other step, `run()` never re-raises — a failure here must never block postcheck.
+    """Heuristic scoring (add_confidence_scoring experiment) — non-blocking even before
+    ADR 0013 made that the norm for every step, since a score is advisory, never a
+    compliance determination.
     """
 
     step = RemediationArtifact.Step.SCORING
@@ -468,12 +495,9 @@ class ScoringService(ArtifactService):
         pdf_path = default_storage.path(pdf_uri)
         try:
             result = self.adapter.score(pdf_path)
-        except AdapterError as exc:
-            self.mark_failed(remediation, str(exc))
-            return pdf_uri
         except Exception as exc:
-            # Belt-and-braces: non-blocking must hold even for a non-AdapterError bug.
-            self.mark_failed(remediation, f"unexpected scoring error: {exc}")
+            LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
+            self.mark_failed(remediation, str(exc))
             return pdf_uri
 
         RemediationScore.objects.create(

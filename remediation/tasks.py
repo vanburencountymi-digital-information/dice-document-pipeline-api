@@ -36,9 +36,13 @@ LOGGER = logging.getLogger(__name__)
 
 @task()
 def process_remediation(remediation_id: str) -> None:
-    """Runs a `Remediation` job to completion, per ADR 0003's pipeline shape.
+    """Runs a `Remediation` job to completion, per ADR 0003's pipeline shape (amended by
+    ADR 0013).
 
-    Each step in `PIPELINE_STEPS` takes the current PDF's URI and hands back the URI to pass to the next step (verification steps pass it through unchanged). Precheck and postcheck are the two steps that can end the job early — they signal that by raising `AlreadyCompliant`/`NotCompliant` instead of returning normally, so this loop doesn't need special-case branching around every step to know when to stop.
+    Each step in `PIPELINE_STEPS` catches its own exceptions, records them on its own `RemediationArtifact`,
+    and returns the input `pdf_uri` unchanged, so the pipeline always reaches `PostCheckService`.
+
+    Jobs are ended early if precheck marks `AlreadyCompliant`.
     """
     service = RemediationService()
     remediation = service.get(remediation_id)
@@ -75,8 +79,8 @@ def process_remediation(remediation_id: str) -> None:
         service.mark_complete(remediation)
 
     except NotCompliant as exc:
-        LOGGER.info("remediation %s: postcheck failed, not PDF/UA-1 compliant", remediation_id)
-        service.mark_failed(remediation, f"postcheck: not PDF/UA-1 compliant: {exc}")
+        LOGGER.info("remediation %s: postcheck did not pass", remediation_id)
+        service.mark_failed(remediation, f"postcheck: {exc}")
 
     except Exception as exc:
         LOGGER.exception("remediation %s: pipeline step raised", remediation_id)

@@ -58,6 +58,7 @@ from remediation.tests.factories import (
     RemediationArtifactFactory,
     RemediationFactory,
 )
+from remediation.tests.helpers import assert_step_continues_on_adapter_error
 
 
 class RemediationServiceTests(TestCase):
@@ -332,19 +333,44 @@ class VerificationServiceTests(TestCase):
 
     @parameterized.expand(
         [
-            ("precheck", PrecheckService),
-            ("postcheck", PostCheckService),
+            ("adapter_error", AdapterError("boom")),
+            ("unexpected_error", RuntimeError("boom")),
         ]
     )
-    def test_run_records_failed_artifact_and_reraises_on_adapter_error(
-        self, _name, service_cls
+    def test_precheck_records_failed_artifact_and_continues_on_adapter_error(
+        self, _name, side_effect
     ) -> None:
-        self.adapter.validate.side_effect = AdapterError("boom")
-        service = service_cls(adapter=self.adapter)
+        self.adapter.validate.side_effect = side_effect
+        service = PrecheckService(adapter=self.adapter)
 
-        with self.assertRaises(AdapterError):
+        result = service.run(self.remediation, pdf_uri="remediations/test.pdf")
+
+        self.assertEqual(result, "remediations/test.pdf")
+        artifact = self.remediation.artifacts.get(step=service.step)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
+        self.assertEqual(artifact.error, "boom")
+        self.assertFalse(
+            VerificationResult.objects.filter(
+                remediation=self.remediation, step=service.step
+            ).exists()
+        )
+
+    @parameterized.expand(
+        [
+            ("adapter_error", AdapterError("boom")),
+            ("unexpected_error", RuntimeError("boom")),
+        ]
+    )
+    def test_postcheck_records_failed_artifact_and_raises_not_compliant_on_adapter_error(
+        self, _name, side_effect
+    ) -> None:
+        self.adapter.validate.side_effect = side_effect
+        service = PostCheckService(adapter=self.adapter)
+
+        with self.assertRaises(NotCompliant) as ctx:
             service.run(self.remediation, pdf_uri="remediations/test.pdf")
 
+        self.assertEqual(str(ctx.exception), "postcheck could not run: boom")
         artifact = self.remediation.artifacts.get(step=service.step)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
         self.assertEqual(artifact.error, "boom")
@@ -474,25 +500,6 @@ class OCRServiceTests(TestCase):
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
         self.assertEqual(artifact.output_uri, expected_uri)
 
-    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
-        self.adapter.extract.side_effect = AdapterError("boom")
-
-        with self.assertRaises(AdapterError):
-            OCRService(adapter=self.adapter).run(
-                self.remediation, pdf_uri=self.remediation.source_pdf_uri
-            )
-
-        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
-        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
-        self.assertEqual(artifact.error, "boom")
-
-    def test_default_adapter_uses_hybrid_url_setting(self) -> None:
-        with override_settings(OPENDATALOADER_HYBRID_URL="http://opendataloader-hybrid:5002"):
-            service = OCRService()
-
-        self.assertIsInstance(service.adapter, OpenDataLoaderAdapter)
-        self.assertEqual(service.adapter.hybrid_url, "http://opendataloader-hybrid:5002")
-
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class MetadataServiceTests(TestCase):
@@ -556,23 +563,6 @@ class MetadataServiceTests(TestCase):
 
         self.assertEqual(self.adapter.finalize.call_args.kwargs["title"], DEFAULT_TITLE)
 
-    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
-        self.adapter.finalize.side_effect = AdapterError("boom")
-
-        with self.assertRaises(AdapterError):
-            MetadataService(adapter=self.adapter).run(
-                self.remediation, pdf_uri=self.remediation.source_pdf_uri
-            )
-
-        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.FINALIZE_METADATA)
-        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
-        self.assertEqual(artifact.error, "boom")
-
-    def test_default_adapter_is_pike_pdf_adapter(self) -> None:
-        service = MetadataService()
-
-        self.assertIsInstance(service.adapter, PikePdfAdapter)
-
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class FontRepairServiceTests(TestCase):
@@ -621,23 +611,6 @@ class FontRepairServiceTests(TestCase):
             default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
         )
 
-    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
-        self.adapter.repair.side_effect = AdapterError("boom")
-
-        with self.assertRaises(AdapterError):
-            FontRepairService(adapter=self.adapter).run(
-                self.remediation, pdf_uri=self.remediation.source_pdf_uri
-            )
-
-        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.FONT_REPAIR)
-        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
-        self.assertEqual(artifact.error, "boom")
-
-    def test_default_adapter_is_font_repair_pike_pdf_adapter(self) -> None:
-        service = FontRepairService()
-
-        self.assertIsInstance(service.adapter, FontRepairPikePdfAdapter)
-
 
 class LinkServiceTests(TestCase):
     @classmethod
@@ -683,23 +656,6 @@ class LinkServiceTests(TestCase):
         self.adapter.repair.assert_called_once_with(
             default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
         )
-
-    def test_run_records_failed_artifact_and_reraises_on_adapter_error(self) -> None:
-        self.adapter.repair.side_effect = AdapterError("boom")
-
-        with self.assertRaises(AdapterError):
-            LinkService(adapter=self.adapter).run(
-                self.remediation, pdf_uri=self.remediation.source_pdf_uri
-            )
-
-        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.LINK_TAG)
-        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
-        self.assertEqual(artifact.error, "boom")
-
-    def test_default_adapter_is_link_pike_pdf_adapter(self) -> None:
-        service = LinkService()
-
-        self.assertIsInstance(service.adapter, LinkPikePdfAdapter)
 
 
 class AltTextServiceTests(TestCase):
@@ -770,19 +726,19 @@ class AltTextServiceTests(TestCase):
             alt_by_ref={(0, 0): "a red square", (0, 1): ""},
         )
 
-    def test_run_records_failed_artifact_and_reraises_on_collect_figures_error(self) -> None:
+    def test_run_records_failed_artifact_and_continues_on_collect_figures_error(self) -> None:
         self.adapter.collect_figures.side_effect = AdapterError("boom")
 
-        with self.assertRaises(AdapterError):
-            AltTextService(adapter=self.adapter, client=self.client).run(
-                self.remediation, pdf_uri=self.remediation.source_pdf_uri
-            )
+        result = AltTextService(adapter=self.adapter, client=self.client).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
 
+        self.assertEqual(result, self.remediation.source_pdf_uri)
         artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.ALT_TEXT)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
         self.assertEqual(artifact.error, "boom")
 
-    def test_run_records_failed_artifact_and_reraises_on_describe_error(self) -> None:
+    def test_run_records_failed_artifact_and_continues_on_describe_error(self) -> None:
         self.adapter.collect_figures.return_value = [
             FigureCandidate(
                 ref=(0, 0),
@@ -794,20 +750,14 @@ class AltTextServiceTests(TestCase):
         ]
         self.client.describe.side_effect = AdapterError("rate limited")
 
-        with self.assertRaises(AdapterError):
-            AltTextService(adapter=self.adapter, client=self.client).run(
-                self.remediation, pdf_uri=self.remediation.source_pdf_uri
-            )
+        result = AltTextService(adapter=self.adapter, client=self.client).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
 
+        self.assertEqual(result, self.remediation.source_pdf_uri)
         artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.ALT_TEXT)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
         self.assertEqual(artifact.error, "rate limited")
-
-    def test_default_adapter_and_client(self) -> None:
-        service = AltTextService()
-
-        self.assertIsInstance(service.adapter, AltTextPikePdfAdapter)
-        self.assertIsInstance(service.client, ClaudeVisionClient)
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
@@ -836,28 +786,68 @@ class ScoringServiceTests(TestCase):
         self.assertEqual(score.grade, "B")
         self.assertEqual(score.manual_review_items, ["fix contrast"])
 
-    @parameterized.expand(
-        [
-            ("adapter_error", AdapterError("boom"), "boom"),
-            ("unexpected_error", RuntimeError("boom"), "unexpected scoring error: boom"),
-        ]
-    )
-    def test_run_does_not_raise_and_records_failed_artifact_on_error(
-        self, _name, side_effect, expected_error
-    ) -> None:
-        self.adapter.score.side_effect = side_effect
+    def test_run_on_adapter_error_does_not_create_a_score_row(self) -> None:
+        adapter = create_autospec(ScoringPikePdfAdapter, spec_set=True)
+        adapter.score.side_effect = AdapterError("boom")
 
-        result = ScoringService(adapter=self.adapter).run(
-            self.remediation, pdf_uri="remediations/test.pdf"
-        )
+        ScoringService(adapter=adapter).run(self.remediation, pdf_uri="remediations/test.pdf")
 
-        self.assertEqual(result, "remediations/test.pdf")
-        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.SCORING)
-        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.FAILED)
-        self.assertEqual(artifact.error, expected_error)
         self.assertFalse(RemediationScore.objects.filter(remediation=self.remediation).exists())
 
-    def test_default_adapter_is_scoring_pike_pdf_adapter(self) -> None:
-        service = ScoringService()
 
-        self.assertIsInstance(service.adapter, ScoringPikePdfAdapter)
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class StepContinuesOnAdapterErrorTests(TestCase):
+    """One shared proof of ADR 0013's "a failed step doesn't abort the pipeline" contract,
+    for every step whose `run()` is "call one adapter method, hand back `pdf_uri` unchanged
+    on failure"
+    """
+
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
+
+    @parameterized.expand(
+        [
+            ("ocr", OCRService, OpenDataLoaderAdapter, "extract", RemediationArtifact.Step.OCR),
+            (
+                "font_repair",
+                FontRepairService,
+                FontRepairPikePdfAdapter,
+                "repair",
+                RemediationArtifact.Step.FONT_REPAIR,
+            ),
+            (
+                "metadata",
+                MetadataService,
+                PikePdfAdapter,
+                "finalize",
+                RemediationArtifact.Step.FINALIZE_METADATA,
+            ),
+            (
+                "link",
+                LinkService,
+                LinkPikePdfAdapter,
+                "repair",
+                RemediationArtifact.Step.LINK_TAG,
+            ),
+            (
+                "scoring",
+                ScoringService,
+                ScoringPikePdfAdapter,
+                "score",
+                RemediationArtifact.Step.SCORING,
+            ),
+        ]
+    )
+    def test_run_continues_on_adapter_error(
+        self, _name, service_cls, adapter_cls, mock_method_name, step
+    ) -> None:
+        assert_step_continues_on_adapter_error(
+            self,
+            service_cls=service_cls,
+            adapter_cls=adapter_cls,
+            mock_method_name=mock_method_name,
+            step=step,
+            remediation=self.remediation,
+            pdf_uri="remediations/test.pdf",
+        )
