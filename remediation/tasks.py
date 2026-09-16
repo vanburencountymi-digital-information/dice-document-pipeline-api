@@ -1,8 +1,11 @@
 import logging
 import time
+from datetime import timedelta
 
 from django.tasks import task
+from django.utils import timezone
 
+from remediation.models import Remediation, RemediationCallback
 from remediation.services import (
     AlreadyCompliant,
     AltTextService,
@@ -15,7 +18,9 @@ from remediation.services import (
     PrecheckService,
     RemediationService,
     ScoringService,
+    build_download_url,
 )
+from remediation.webhook_client import WebhookClient, WebhookDeliveryError
 
 # ScoringService is non-blocking (add_confidence_scoring) — placed last before
 # PostCheckService so it scores the same file veraPDF is about to validate. If
@@ -33,6 +38,53 @@ PIPELINE_STEPS = [
 
 LOGGER = logging.getLogger(__name__)
 
+MAX_WEBHOOK_ATTEMPTS = 5
+WEBHOOK_BACKOFF_BASE_SECONDS = 30
+
+
+@task()
+def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
+    """Delivers one webhook subscriber's notification for its `Remediation` (ADR 0015).
+
+    Keyed by `RemediationCallback.id`, not `remediation_id` — each subscriber on the same
+    attempt retries independently of any others registered on it.
+
+    Real timed backoff only takes effect once a `run_after`-honoring task backend is in use
+    — `ImmediateBackend` (this project's only backend today) ignores `run_after` entirely,
+    so locally this retries up to `MAX_WEBHOOK_ATTEMPTS` back-to-back with no real delay.
+    Still useful for a truly transient blip; genuine exponential backoff is a Cloud Tasks
+    concern (ADR 0002), not something `ImmediateBackend` can offer.
+    """
+    callback = RemediationCallback.objects.select_related("remediation__service_account").get(
+        pk=callback_id
+    )
+    remediation = callback.remediation
+
+    payload: dict[str, str] = {
+        "remediation_id": str(remediation.id),
+        "document_id": remediation.content_hash,
+        "status": remediation.status,
+    }
+    if remediation.final_output_uri:
+        payload["download_url"] = build_download_url(remediation)
+    if remediation.status == Remediation.JobStatus.FAILED:
+        payload["error"] = remediation.error
+
+    try:
+        WebhookClient().notify(
+            callback.callback_url,
+            secret=remediation.service_account.webhook_secret,
+            payload=payload,
+        )
+    except WebhookDeliveryError:
+        LOGGER.exception("callback %s: webhook delivery failed (attempt %s)", callback_id, attempt)
+        if attempt >= MAX_WEBHOOK_ATTEMPTS:
+            raise
+        delay = WEBHOOK_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+        send_webhook_notification.using(
+            run_after=timezone.now() + timedelta(seconds=delay)
+        ).enqueue(callback_id, attempt=attempt + 1)
+
 
 @task()
 def process_remediation(remediation_id: str) -> None:
@@ -45,7 +97,10 @@ def process_remediation(remediation_id: str) -> None:
     Jobs are ended early if precheck marks `AlreadyCompliant`.
 
     Every terminal branch records `final_output_uri` (ADR 0015) — success or failure alike,
-    since a partially remediated document is still worth serving (ADR 0013).
+    since a partially remediated document is still worth serving (ADR 0013). `finally`
+    (not a line after the try/except/else, since the generic `except Exception` branch
+    re-raises) enqueues `send_webhook_notification` for every `RemediationCallback`
+    registered on this attempt, once the row's final status is already committed.
     """
     service = RemediationService()
     remediation = service.get(remediation_id)
@@ -97,3 +152,7 @@ def process_remediation(remediation_id: str) -> None:
             time.monotonic() - job_start,
         )
         service.mark_complete(remediation, final_output_uri=pdf_uri)
+
+    finally:
+        for callback_id in remediation.callbacks.values_list("id", flat=True):
+            send_webhook_notification.enqueue(str(callback_id))

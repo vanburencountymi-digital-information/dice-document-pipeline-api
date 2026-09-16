@@ -155,6 +155,37 @@ class RemediationServiceTests(TestCase):
         self.assertIsNotNone(remediation.completed_at)
         self.assertEqual(remediation.final_output_uri, "remediations/partial.pdf")
 
+    def test_register_callback_creates_a_new_row(self) -> None:
+        remediation = RemediationFactory()
+
+        callback, created = RemediationService().register_callback(
+            remediation, "https://example.com/webhook"
+        )
+
+        self.assertTrue(created)
+        self.assertEqual(callback.remediation, remediation)
+        self.assertEqual(callback.callback_url, "https://example.com/webhook")
+
+    def test_register_callback_is_idempotent_for_the_same_url(self) -> None:
+        remediation = RemediationFactory()
+        service = RemediationService()
+        first, _ = service.register_callback(remediation, "https://example.com/webhook")
+
+        second, created = service.register_callback(remediation, "https://example.com/webhook")
+
+        self.assertFalse(created)
+        self.assertEqual(second, first)
+        self.assertEqual(remediation.callbacks.count(), 1)
+
+    def test_register_callback_allows_multiple_distinct_subscribers(self) -> None:
+        remediation = RemediationFactory()
+        service = RemediationService()
+
+        service.register_callback(remediation, "https://example.com/webhook-a")
+        service.register_callback(remediation, "https://example.com/webhook-b")
+
+        self.assertEqual(remediation.callbacks.count(), 2)
+
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class RemediationServiceGetOrCreateFromUploadTests(TestCase):

@@ -9,6 +9,7 @@ from remediation.models import (
     PipelineConfig,
     Remediation,
     RemediationArtifact,
+    RemediationCallback,
     RemediationScore,
     VerificationResult,
 )
@@ -65,6 +66,14 @@ class RemediationScoreFactory(factory.django.DjangoModelFactory):
     score = factory.Faker("random_int", min=0, max=100)
     grade = factory.Iterator(RemediationScore.Grade.values)
     manual_review_items = factory.LazyFunction(list)
+
+
+class RemediationCallbackFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = RemediationCallback
+
+    remediation = factory.SubFactory(RemediationFactory)
+    callback_url = factory.Sequence(lambda n: f"https://example.com/webhook/{n}")
 
 
 class PipelineConfigFactory(factory.django.DjangoModelFactory):

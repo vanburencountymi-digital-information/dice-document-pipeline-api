@@ -102,6 +102,17 @@ Submissions in the local environment process synchronously (and therefore don't 
 
 You should see `status` in the response. If the status is `running`, the job is still in progress.
 
+#### Download the finished document
+
+1. New request: `GET http://localhost:8000/api/document-download/<document_id>/`, using the `document_id` from the submit response.
+2. Same `Authorization` header as above.
+
+This returns the actual PDF file, not JSON. It works even if the job `FAILED` — a partially-fixed document is still returned if any remediation happened before the failure.
+
+#### Get a webhook instead of polling
+
+Add a `callback_url` key (type Text) to the submit request's `form-data` body. When the job finishes, we'll POST a small JSON notice to that URL (with a `download_url` you can `GET` right away) instead of you having to poll `document-status`. Multiple different callers can each submit the same document with their own `callback_url` and all get notified independently.
+
 ## Dependency Upgrades
 
 ### Setting a Retry Floor

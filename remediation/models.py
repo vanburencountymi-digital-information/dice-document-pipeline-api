@@ -162,6 +162,26 @@ class PipelineConfig(models.Model):
         )
 
 
+class RemediationCallback(models.Model):
+    """Registers a callback url to a Remediation attempt to notify callers
+    when the job is finished. Any number of callers.
+    """
+
+    remediation = models.ForeignKey(Remediation, on_delete=models.CASCADE, related_name="callbacks")
+    callback_url = models.URLField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["remediation", "callback_url"], name="one_callback_per_url_per_remediation"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.remediation_id}: {self.callback_url}"
+
+
 class RemediationScore(models.Model):
     """Heuristic 0-100 compliance score, ported from ada-remediation-pipeline for
     comparison against veraPDF (add_confidence_scoring). One row per successfully

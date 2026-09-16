@@ -12,7 +12,11 @@ from rest_framework.test import APIRequestFactory
 from accounts.tests.factories import ServiceAccountFactory
 from api.views import CreateRemediationView, DocumentDownloadView, DocumentStatusView
 from remediation.models import Remediation
-from remediation.tests.factories import PdfUploadFactory, RemediationFactory
+from remediation.tests.factories import (
+    PdfUploadFactory,
+    RemediationCallbackFactory,
+    RemediationFactory,
+)
 
 
 class CreateRemediationViewTests(TestCase):
@@ -91,6 +95,69 @@ class CreateRemediationViewTests(TestCase):
         self.assertTrue(
             mock_service_cls.return_value.get_or_create_from_upload.call_args.kwargs["force"]
         )
+
+    @patch("api.views.send_webhook_notification", autospec=True, spec_set=True)
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_omitting_callback_url_does_not_register_one(
+        self, mock_service_cls, mock_process_remediation, mock_send_webhook
+    ) -> None:
+        remediation = RemediationFactory()
+        mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, True)
+
+        self._post({"file": PdfUploadFactory()})
+
+        mock_service_cls.return_value.register_callback.assert_not_called()
+        mock_send_webhook.enqueue.assert_not_called()
+
+    @patch("api.views.send_webhook_notification", autospec=True, spec_set=True)
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_callback_url_registers_a_callback_on_the_resolved_remediation(
+        self, mock_service_cls, mock_process_remediation, mock_send_webhook
+    ) -> None:
+        remediation = RemediationFactory(status=Remediation.JobStatus.QUEUED)
+        mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, True)
+        callback = RemediationCallbackFactory.build(remediation=remediation)
+        mock_service_cls.return_value.register_callback.return_value = (callback, True)
+
+        self._post({"file": PdfUploadFactory(), "callback_url": "https://example.com/webhook"})
+
+        mock_service_cls.return_value.register_callback.assert_called_once_with(
+            remediation, "https://example.com/webhook"
+        )
+        # Not yet terminal — no reason to fire immediately; process_remediation will run it.
+        mock_send_webhook.enqueue.assert_not_called()
+
+    @patch("api.views.send_webhook_notification", autospec=True, spec_set=True)
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_callback_url_on_an_already_terminal_attempt_fires_immediately(
+        self, mock_service_cls, mock_process_remediation, mock_send_webhook
+    ) -> None:
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, False)
+        callback = RemediationCallbackFactory.build(remediation=remediation)
+        mock_service_cls.return_value.register_callback.return_value = (callback, True)
+
+        self._post({"file": PdfUploadFactory(), "callback_url": "https://example.com/webhook"})
+
+        mock_send_webhook.enqueue.assert_called_once_with(str(callback.id))
+
+    @patch("api.views.send_webhook_notification", autospec=True, spec_set=True)
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_reregistering_an_existing_callback_on_a_terminal_attempt_does_not_refire(
+        self, mock_service_cls, mock_process_remediation, mock_send_webhook
+    ) -> None:
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, False)
+        callback = RemediationCallbackFactory.build(remediation=remediation)
+        mock_service_cls.return_value.register_callback.return_value = (callback, False)
+
+        self._post({"file": PdfUploadFactory(), "callback_url": "https://example.com/webhook"})
+
+        mock_send_webhook.enqueue.assert_not_called()
 
     @patch("api.views.process_remediation", autospec=True, spec_set=True)
     @patch("api.views.RemediationService", autospec=True, spec_set=True)

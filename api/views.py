@@ -9,9 +9,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import ServiceAccount
+from remediation.models import Remediation
 from remediation.serializers import RemediationSerializer, RemediationUploadSerializer
 from remediation.services import RemediationService
-from remediation.tasks import process_remediation
+from remediation.tasks import process_remediation, send_webhook_notification
 
 
 class ServiceAccountRequiredMixin(APIView):
@@ -45,23 +46,43 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
     passed, or the existing job is FAILED and old enough to auto-retry (ADR 0014), in
     which case a new attempt is enqueued instead.
 
+    An optional `callback_url` registers a webhook subscription (ADR 0015) on whichever
+    attempt the request resolved to, new or deduped — any number of callers can each
+    register their own callback on the same attempt. If that attempt is already terminal
+    (COMPLETE/FAILED) at submission time — i.e. subscribing after the fact — the
+    notification is enqueued immediately rather than waiting for a pipeline run that isn't
+    going to happen.
+
     Takes:
-        a PDF document, and optionally `force` (bool, default false).
+        a PDF document, and optionally `force` (bool, default false) and `callback_url`.
 
     Returns:
         Response with the serialized remediation job (id, document_id, original_filename,
-        status, error, created_at, started_at, completed_at).
+        status, error, created_at, started_at, completed_at, verification_results,
+        download_url).
     """
 
     def post(self, request: Request) -> Response:
         upload = RemediationUploadSerializer(data=request.data)
         upload.is_valid(raise_exception=True)
 
-        remediation, created = RemediationService().get_or_create_from_upload(
+        service = RemediationService()
+        remediation, created = service.get_or_create_from_upload(
             self.service_account,
             upload.validated_data["file"],
             force=upload.validated_data["force"],
         )
+
+        callback_url = upload.validated_data["callback_url"]
+        if callback_url:
+            callback, callback_created = service.register_callback(remediation, callback_url)
+            # If job is already completed, post to webhook now.
+            if callback_created and remediation.status in (
+                Remediation.JobStatus.COMPLETE,
+                Remediation.JobStatus.FAILED,
+            ):
+                send_webhook_notification.enqueue(str(callback.id))
+
         if created:
             process_remediation.enqueue(str(remediation.id))
             remediation.refresh_from_db()

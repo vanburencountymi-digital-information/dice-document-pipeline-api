@@ -10,8 +10,13 @@ from django.test import TestCase, override_settings
 from remediation.adapters.base import AdapterError, FailedRule, VerificationOutcome
 from remediation.adapters.verification.severity import Severity
 from remediation.models import Remediation, RemediationArtifact
-from remediation.tasks import process_remediation
-from remediation.tests.factories import RemediationFactory
+from remediation.tasks import (
+    MAX_WEBHOOK_ATTEMPTS,
+    process_remediation,
+    send_webhook_notification,
+)
+from remediation.tests.factories import RemediationCallbackFactory, RemediationFactory
+from remediation.webhook_client import WebhookDeliveryError
 
 
 @override_settings(
@@ -331,3 +336,166 @@ class ProcessRemediationTaskTests(TestCase):
                 error="verapdf crashed",
             ).exists()
         )
+
+
+@override_settings(
+    TASKS={"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}},
+    MEDIA_ROOT=tempfile.mkdtemp(),
+    RUN_PRECHECK=False,
+    RUN_OCR=False,
+    RUN_FONT_REPAIR=False,
+    RUN_FINALIZE_METADATA=False,
+    RUN_LINK_TAG=False,
+    RUN_ALT_TEXT=False,
+    RUN_SCORING=False,
+    RUN_POSTCHECK=False,
+)
+class ProcessRemediationWebhookTests(TestCase):
+    """ADR 0015 — `process_remediation`'s `finally` block enqueues `send_webhook_notification`
+    for every `RemediationCallback` registered on the attempt, on every terminal path.
+    """
+
+    @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
+    def test_enqueues_every_registered_callback_on_success(self, mock_send) -> None:
+        remediation = RemediationFactory()
+        callback_a = RemediationCallbackFactory(remediation=remediation)
+        callback_b = RemediationCallbackFactory(remediation=remediation)
+
+        process_remediation.enqueue(str(remediation.id))
+
+        enqueued_ids = {call.args[0] for call in mock_send.enqueue.call_args_list}
+        self.assertEqual(enqueued_ids, {str(callback_a.id), str(callback_b.id)})
+
+    @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
+    def test_does_not_enqueue_when_no_callbacks_registered(self, mock_send) -> None:
+        remediation = RemediationFactory()
+
+        process_remediation.enqueue(str(remediation.id))
+
+        mock_send.enqueue.assert_not_called()
+
+    @override_settings(RUN_PRECHECK=True, RUN_POSTCHECK=True)
+    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
+    def test_enqueues_callback_when_already_compliant(self, mock_send, mock_adapter_cls) -> None:
+        mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
+            is_compliant=True, failed_rules=[], verapdf_version="1.30.2"
+        )
+        remediation = RemediationFactory()
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        process_remediation.enqueue(str(remediation.id))
+
+        mock_send.enqueue.assert_called_once_with(str(callback.id))
+
+    @override_settings(RUN_PRECHECK=True, RUN_POSTCHECK=True)
+    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
+    def test_enqueues_callback_when_not_compliant(self, mock_send, mock_adapter_cls) -> None:
+        mock_adapter_cls.return_value.validate.side_effect = [
+            VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
+            VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
+        ]
+        remediation = RemediationFactory()
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        process_remediation.enqueue(str(remediation.id))
+
+        mock_send.enqueue.assert_called_once_with(str(callback.id))
+
+    @override_settings(RUN_PRECHECK=True)
+    @patch("remediation.tasks.PrecheckService.run", side_effect=RuntimeError("db exploded"))
+    @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
+    def test_enqueues_callback_even_when_the_task_itself_fails(self, mock_send, mock_run) -> None:
+        """The generic `except Exception` branch re-raises after `mark_failed` — `finally`
+        still has to fire and enqueue every registered callback before that re-raise
+        propagates out of the task.
+        """
+        remediation = RemediationFactory()
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        result = process_remediation.enqueue(str(remediation.id))
+
+        self.assertEqual(result.status, TaskResultStatus.FAILED)
+        mock_send.enqueue.assert_called_once_with(str(callback.id))
+
+
+@override_settings(
+    TASKS={"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}},
+    MEDIA_ROOT=tempfile.mkdtemp(),
+)
+class SendWebhookNotificationTaskTests(TestCase):
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_builds_payload_with_download_url_when_final_output_uri_set(
+        self, mock_client_cls
+    ) -> None:
+        remediation = RemediationFactory(
+            status=Remediation.JobStatus.COMPLETE, final_output_uri="remediations/final.pdf"
+        )
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        send_webhook_notification.enqueue(str(callback.id))
+
+        mock_client_cls.return_value.notify.assert_called_once()
+        call = mock_client_cls.return_value.notify.call_args
+        self.assertEqual(call.args[0], callback.callback_url)
+        self.assertEqual(call.kwargs["secret"], remediation.service_account.webhook_secret)
+        payload = call.kwargs["payload"]
+        self.assertEqual(payload["remediation_id"], str(remediation.id))
+        self.assertEqual(payload["document_id"], remediation.content_hash)
+        self.assertEqual(payload["status"], Remediation.JobStatus.COMPLETE)
+        self.assertIn("download_url", payload)
+        self.assertNotIn("error", payload)
+
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_builds_payload_with_error_when_failed(self, mock_client_cls) -> None:
+        remediation = RemediationFactory(
+            status=Remediation.JobStatus.FAILED, error="postcheck: not compliant"
+        )
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        send_webhook_notification.enqueue(str(callback.id))
+
+        payload = mock_client_cls.return_value.notify.call_args.kwargs["payload"]
+        self.assertEqual(payload["error"], "postcheck: not compliant")
+        self.assertNotIn("download_url", payload)
+
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_no_download_url_when_final_output_uri_blank(self, mock_client_cls) -> None:
+        remediation = RemediationFactory(status=Remediation.JobStatus.QUEUED)
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        send_webhook_notification.enqueue(str(callback.id))
+
+        payload = mock_client_cls.return_value.notify.call_args.kwargs["payload"]
+        self.assertNotIn("download_url", payload)
+
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_delivery_failure_retries_until_max_attempts_then_gives_up(
+        self, mock_client_cls
+    ) -> None:
+        """ImmediateBackend ignores `run_after` and executes a re-enqueued attempt
+        synchronously right here (see the caveat in `send_webhook_notification`'s
+        docstring), so one top-level call exhausts every attempt before returning —
+        `WebhookClient.notify` ends up called once per attempt, `MAX_WEBHOOK_ATTEMPTS`
+        times in total.
+        """
+        mock_client_cls.return_value.notify.side_effect = WebhookDeliveryError("boom")
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        send_webhook_notification.enqueue(str(callback.id))
+
+        self.assertEqual(mock_client_cls.return_value.notify.call_count, MAX_WEBHOOK_ATTEMPTS)
+
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_raises_once_max_attempts_reached_instead_of_reenqueueing(
+        self, mock_client_cls
+    ) -> None:
+        mock_client_cls.return_value.notify.side_effect = WebhookDeliveryError("boom")
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        result = send_webhook_notification.enqueue(str(callback.id), attempt=5)
+
+        self.assertEqual(result.status, TaskResultStatus.FAILED)

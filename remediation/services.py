@@ -42,6 +42,7 @@ from remediation.models import (
     PipelineConfig,
     Remediation,
     RemediationArtifact,
+    RemediationCallback,
     RemediationScore,
     VerificationResult,
 )
@@ -175,6 +176,19 @@ class RemediationService:
         remediation.completed_at = timezone.now()
         remediation.final_output_uri = final_output_uri
         remediation.save(update_fields=["status", "error", "completed_at", "final_output_uri"])
+
+    def register_callback(
+        self, remediation: Remediation, callback_url: str
+    ) -> tuple[RemediationCallback, bool]:
+        """Registers a webhook subscriber for this attempt (ADR 0015). Idempotent — a caller
+        registering the same `(remediation, callback_url)` pair twice (e.g. a retried
+        request) reuses the existing row rather than erroring or duplicating delivery.
+
+        Returns `(callback, created)`.
+        """
+        return RemediationCallback.objects.get_or_create(
+            remediation=remediation, callback_url=callback_url
+        )
 
 
 class ArtifactService:

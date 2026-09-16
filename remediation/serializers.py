@@ -10,6 +10,9 @@ class RemediationUploadSerializer(serializers.Serializer):
 
     file = serializers.FileField()
     force = serializers.BooleanField(required=False, default=False)
+    # Optional — `document-status`/`download_url` still
+    # work regardless, for callers that prefer to poll.
+    callback_url = serializers.URLField(required=False, allow_blank=True, default="")
 
     def validate_file(self, value: UploadedFile) -> UploadedFile:
         if not value.name or not value.name.lower().endswith(".pdf"):
