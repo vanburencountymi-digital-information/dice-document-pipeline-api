@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-09-16)
+
+### Features
+
+- Add final output uri to Remediation model
+  ([`aede6a4`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/aede6a4828c83513d9e6090eb7d3858cf3db5ffe))
+
+
 ## v1.2.0 (2026-09-16)
 
 ### Features
