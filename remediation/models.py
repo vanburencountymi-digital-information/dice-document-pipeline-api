@@ -24,6 +24,7 @@ class Remediation(models.Model):
     content_hash = models.CharField(max_length=64)  # sha256 hex digest
     original_filename = models.CharField(max_length=255, default="", blank=True)
     error = models.TextField(blank=True)
+    final_output_uri = models.CharField(max_length=500, blank=True, default="")
     # `settings.PIPELINE_VERSION` at creation time (ADR 0012) — the git tag this attempt's
     # pipeline logic actually ran under. Lets a retry decide whether a FAILED attempt is
     # worth re-running: see `PipelineConfig.retry_floor_version` and ADR 0014.

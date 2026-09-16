@@ -134,22 +134,26 @@ class RemediationServiceTests(TestCase):
         self.assertEqual(remediation.status, Remediation.JobStatus.RUNNING)
         self.assertIsNotNone(remediation.started_at)
 
-    def test_mark_complete_sets_status_and_completed_at(self) -> None:
+    def test_mark_complete_sets_status_completed_at_and_final_output_uri(self) -> None:
         remediation = RemediationFactory()
 
-        RemediationService().mark_complete(remediation)
+        RemediationService().mark_complete(remediation, final_output_uri="remediations/final.pdf")
 
         self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
         self.assertIsNotNone(remediation.completed_at)
+        self.assertEqual(remediation.final_output_uri, "remediations/final.pdf")
 
-    def test_mark_failed_sets_status_error_and_completed_at(self) -> None:
+    def test_mark_failed_sets_status_error_completed_at_and_final_output_uri(self) -> None:
         remediation = RemediationFactory()
 
-        RemediationService().mark_failed(remediation, "Timeout error during OCR")
+        RemediationService().mark_failed(
+            remediation, "Timeout error during OCR", final_output_uri="remediations/partial.pdf"
+        )
 
         self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
         self.assertEqual(remediation.error, "Timeout error during OCR")
         self.assertIsNotNone(remediation.completed_at)
+        self.assertEqual(remediation.final_output_uri, "remediations/partial.pdf")
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())

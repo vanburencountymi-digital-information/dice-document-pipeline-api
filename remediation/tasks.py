@@ -43,6 +43,9 @@ def process_remediation(remediation_id: str) -> None:
     and returns the input `pdf_uri` unchanged, so the pipeline always reaches `PostCheckService`.
 
     Jobs are ended early if precheck marks `AlreadyCompliant`.
+
+    Every terminal branch records `final_output_uri` (ADR 0015) — success or failure alike,
+    since a partially remediated document is still worth serving (ADR 0013).
     """
     service = RemediationService()
     remediation = service.get(remediation_id)
@@ -76,15 +79,15 @@ def process_remediation(remediation_id: str) -> None:
 
     except AlreadyCompliant:
         LOGGER.info("remediation %s: already compliant, marking complete", remediation_id)
-        service.mark_complete(remediation)
+        service.mark_complete(remediation, final_output_uri=remediation.source_pdf_uri)
 
     except NotCompliant as exc:
         LOGGER.info("remediation %s: postcheck did not pass", remediation_id)
-        service.mark_failed(remediation, f"postcheck: {exc}")
+        service.mark_failed(remediation, f"postcheck: {exc}", final_output_uri=pdf_uri)
 
     except Exception as exc:
         LOGGER.exception("remediation %s: pipeline step raised", remediation_id)
-        service.mark_failed(remediation, str(exc))
+        service.mark_failed(remediation, str(exc), final_output_uri=pdf_uri)
         raise
 
     else:
@@ -93,4 +96,4 @@ def process_remediation(remediation_id: str) -> None:
             remediation_id,
             time.monotonic() - job_start,
         )
-        service.mark_complete(remediation)
+        service.mark_complete(remediation, final_output_uri=pdf_uri)

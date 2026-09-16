@@ -39,6 +39,7 @@ class ProcessRemediationTaskTests(TestCase):
         self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
         self.assertIsNotNone(remediation.started_at)
         self.assertIsNotNone(remediation.completed_at)
+        self.assertEqual(remediation.final_output_uri, remediation.source_pdf_uri)
         self.assertEqual(
             set(remediation.artifacts.values_list("step", "status")),
             {
@@ -128,6 +129,7 @@ class ProcessRemediationTaskTests(TestCase):
             "postcheck: 1 rules failed, 1 checks\n"
             "  - CRITICAL     7.1 StructTreeRoot missing (1 checks)",
         )
+        self.assertEqual(remediation.final_output_uri, remediation.source_pdf_uri)
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.PRECHECK,

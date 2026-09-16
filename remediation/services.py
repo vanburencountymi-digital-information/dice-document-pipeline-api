@@ -151,16 +151,18 @@ class RemediationService:
         remediation.started_at = timezone.now()
         remediation.save(update_fields=["status", "started_at"])
 
-    def mark_complete(self, remediation: Remediation) -> None:
+    def mark_complete(self, remediation: Remediation, final_output_uri: str) -> None:
         remediation.status = Remediation.JobStatus.COMPLETE
         remediation.completed_at = timezone.now()
-        remediation.save(update_fields=["status", "completed_at"])
+        remediation.final_output_uri = final_output_uri
+        remediation.save(update_fields=["status", "completed_at", "final_output_uri"])
 
-    def mark_failed(self, remediation: Remediation, error: str) -> None:
+    def mark_failed(self, remediation: Remediation, error: str, final_output_uri: str) -> None:
         remediation.status = Remediation.JobStatus.FAILED
         remediation.error = error
         remediation.completed_at = timezone.now()
-        remediation.save(update_fields=["status", "error", "completed_at"])
+        remediation.final_output_uri = final_output_uri
+        remediation.save(update_fields=["status", "error", "completed_at", "final_output_uri"])
 
 
 class ArtifactService:
