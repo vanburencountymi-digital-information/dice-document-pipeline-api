@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v1.4.0 (2026-09-16)
+
+### Features
+
+- Add an endpoint for users to fetch remediated documents from the server
+  ([`c450965`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/c4509654336f1f7ca884c9def5b81a6c332804c1))
+
+
 ## v1.3.0 (2026-09-16)
 
 ### Features
