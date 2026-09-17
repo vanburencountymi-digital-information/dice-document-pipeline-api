@@ -1,10 +1,13 @@
 import hashlib
 import logging
 import os
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from urllib.parse import urljoin
 
-import sentry_sdk
 from django.conf import settings
+from django.core.files.base import File
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
 from django.urls import reverse
@@ -12,6 +15,7 @@ from django.utils import timezone
 from packaging.version import InvalidVersion, Version
 
 from accounts.models import ServiceAccount
+from common.error_logging_client import ErrorLoggingClient
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import (
     PikePdfAdapter as AltTextPikePdfAdapter,
@@ -213,24 +217,42 @@ class ArtifactService:
         return self.mark_skipped(remediation, f"{self.setting_name} is disabled")
 
     def report_exception(self, exc: Exception, remediation: Remediation) -> None:
-        """every step's `run()` calls this instead of an SDK directly, so swapping monitoring vendors, or
-        adding a second one, only ever touches this one method.
-        """
-        sentry_sdk.capture_exception(
+        ErrorLoggingClient().report_exception(
             exc, tags={"step": self.step.value, "remediation_id": str(remediation.id)}
         )
 
     def construct_output_dir(self, remediation: Remediation) -> str:
-        """This step's own working directory for one remediation attempt (ADR 0008):
-        `remediations/<service_account_id>/<content_hash>/<remediation_id>/<step>`.
+        """This step's own storage-key prefix for one remediation attempt (ADR 0008):
+        `remediations/<service_account_id>/<content_hash>/<remediation_id>/<step>/`.
 
-        Assumes FileSystemStorage — same assumption `VerificationService.run` already
-        makes for `pdf_path`, called out there rather than repeated at every call site.
+        Pure string construction, not a real filesystem directory — `default_storage`
+        isn't guaranteed to have one (`S3Storage.path()` raises `NotImplementedError`).
+        Combine with a filename and pass to `persist_output` as the destination URI.
         """
-        return default_storage.path(
+        return (
             f"remediations/{remediation.service_account_id}/"
-            f"{remediation.content_hash}/{remediation.id}/{self.step.value}"
+            f"{remediation.content_hash}/{remediation.id}/{self.step.value}/"
         )
+
+    @contextmanager
+    def local_input_copy(self, pdf_uri: str) -> Iterator[str]:
+        """Copies `pdf_uri` out of `default_storage` into a real local file, since local
+        tools (veraPDF, pikepdf, PyMuPDF, OpenDataLoader) need an actual filesystem path,
+        not a storage-abstracted name. `.open()` is a standard `Storage` API method every
+        backend implements, unlike `.path()`. Cleans up the temp file on exit either way.
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            local_path = os.path.join(tmp_dir, os.path.basename(pdf_uri))
+            with default_storage.open(pdf_uri, "rb") as remote_file, open(local_path, "wb") as f:
+                f.write(remote_file.read())
+            yield local_path
+
+    def persist_output(self, local_path: str, dest_uri: str) -> str:
+        """Uploads a local tool's output file to `default_storage` at `dest_uri` — the
+        write-side counterpart to `local_input_copy`. Returns the actual name saved to.
+        """
+        with open(local_path, "rb") as fh:
+            return default_storage.save(dest_uri, File(fh))
 
     def _mark_status(
         self, remediation: Remediation, status: RemediationArtifact.StepStatus, **fields: str
