@@ -43,6 +43,9 @@ pip install pre-commit
 pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
+> [!CAUTION]
+> This be careful with squash-merging PRs - make sure the new commit message follows conventional commits, so that a new version is correctly issued.
+
 ## Pipeline steps
 
 If all steps are enabled via environment variable, a document upload runs through the following steps in order (see [ADR 0003](docs/adrs/0003-pipeline-steps-and-branching.md) and [ADR 0010](docs/adrs/0010-fix-opendataloader-hybrid-tagging-upstream.md)):

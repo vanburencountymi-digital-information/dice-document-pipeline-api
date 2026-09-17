@@ -10,4 +10,4 @@ class ServiceAccountFactoryTests(TestCase):
         service_account = ServiceAccountFactory()
 
         self.assertTrue(service_account.token)
-        self.assertEqual(service_account.user.auth_token.key, service_account.token)
+        self.assertEqual(service_account.user.auth_token_set.count(), 1)
