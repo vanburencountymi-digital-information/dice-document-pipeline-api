@@ -114,6 +114,7 @@ COPY manage.py .
 COPY config/ ./config/
 COPY accounts/ ./accounts/
 COPY api/ ./api/
+COPY common/ ./common/
 COPY remediation/ ./remediation/
 
 # Make app created files locally editable

@@ -49,11 +49,12 @@ def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
     Keyed by `RemediationCallback.id`, not `remediation_id` — each subscriber on the same
     attempt retries independently of any others registered on it.
 
-    Real timed backoff only takes effect once a `run_after`-honoring task backend is in use
-    — `ImmediateBackend` (this project's only backend today) ignores `run_after` entirely,
-    so locally this retries up to `MAX_WEBHOOK_ATTEMPTS` back-to-back with no real delay.
-    Still useful for a truly transient blip; genuine exponential backoff is a Cloud Tasks
-    concern (ADR 0002), not something `ImmediateBackend` can offer.
+    `ImmediateBackend` (this project's local/test backend) doesn't support `run_after` at
+    all — `Task.using(run_after=...)` validates eagerly and raises `InvalidTask` the moment
+    it's constructed, not when enqueued — so this checks `supports_defer` before attaching
+    one. Under `ImmediateBackend` that means retries happen back-to-back with no real delay;
+    genuine exponential backoff only takes effect once a backend that supports deferred
+    execution is configured.
     """
     callback = RemediationCallback.objects.select_related("remediation__service_account").get(
         pk=callback_id
@@ -80,10 +81,11 @@ def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
         LOGGER.exception("callback %s: webhook delivery failed (attempt %s)", callback_id, attempt)
         if attempt >= MAX_WEBHOOK_ATTEMPTS:
             raise
-        delay = WEBHOOK_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
-        send_webhook_notification.using(
-            run_after=timezone.now() + timedelta(seconds=delay)
-        ).enqueue(callback_id, attempt=attempt + 1)
+        retry_task = send_webhook_notification
+        if send_webhook_notification.get_backend().supports_defer:
+            delay = WEBHOOK_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+            retry_task = retry_task.using(run_after=timezone.now() + timedelta(seconds=delay))
+        retry_task.enqueue(callback_id, attempt=attempt + 1)
 
 
 @task()
