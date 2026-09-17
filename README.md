@@ -18,6 +18,7 @@ Other make commands include:
 make init             # first time only convenience method: build the images, migrate, then start the app
 make build            # rebuild the images (needed after ANY app source change, not just requirements*.txt/Dockerfile* — the app image doesn't live-mount source)
 make migrate          # apply migrations to the running Postgres
+make migrations       # generate new migration files from model changes (rebuild after)
 make up               # start the app (without rebuilding or migrating)
 make down             # stop everything
 make recreate         # a convenience method that bundles down, build, and up - use when you edit .env on an already-running container
@@ -30,13 +31,6 @@ make verapdf-version  # confirm veraPDF/Java installed correctly
 ```
 
 The app runs at `http://localhost:8000`.
-
-### Adding a migration
-
-```bash
-docker compose run --rm --user "$(id -u):$(id -g)" -v "$(pwd):/app" app python manage.py makemigrations
-```
-now run `make build` and `make migrate`
 
 ### 2. Install the git hooks (if making changes)
 
