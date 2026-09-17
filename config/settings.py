@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -48,7 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "rest_framework.authtoken",
+    "knox",
     "accounts",
     "api",
     "remediation",
@@ -137,8 +138,16 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "knox.auth.TokenAuthentication",
     ]
+}
+
+# django-knox
+
+# Slide token expiration forward another year whenever used
+REST_KNOX = {
+    "TOKEN_TTL": timedelta(days=365),
+    "AUTO_REFRESH": True,
 }
 
 # This repo uses Django Tasks, swap out backends as needed.

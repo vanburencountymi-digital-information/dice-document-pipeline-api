@@ -17,7 +17,7 @@ class ServiceAccountServiceTests(TestCase):
         cls.organization = OrganizationFactory()
 
     def test_create_links_service_account_to_organization(self) -> None:
-        service_account = ServiceAccountService().create(
+        service_account, _ = ServiceAccountService().create(
             organization=self.organization, service_name="wordpress-prod"
         )
 
@@ -25,19 +25,19 @@ class ServiceAccountServiceTests(TestCase):
         self.assertEqual(service_account.name, "wordpress-prod")
 
     def test_create_creates_user_with_unusable_password(self) -> None:
-        service_account = ServiceAccountService().create(
+        service_account, _ = ServiceAccountService().create(
             organization=self.organization, service_name="wordpress-prod"
         )
 
         self.assertFalse(service_account.user.has_usable_password())
 
     def test_create_creates_auth_token(self) -> None:
-        service_account = ServiceAccountService().create(
+        service_account, token = ServiceAccountService().create(
             organization=self.organization, service_name="wordpress-prod"
         )
 
-        self.assertTrue(service_account.token)
-        self.assertEqual(service_account.user.auth_token.key, service_account.token)
+        self.assertTrue(token)
+        self.assertEqual(service_account.user.auth_token_set.count(), 1)
 
     def test_create_rolls_back_on_duplicate_service_name(self) -> None:
         ServiceAccountService().create(
@@ -51,3 +51,13 @@ class ServiceAccountServiceTests(TestCase):
 
         self.assertEqual(User.objects.filter(username="wordpress-prod").count(), 1)
         self.assertEqual(ServiceAccount.objects.count(), 1)
+
+    def test_issue_token_adds_an_additional_token_without_disturbing_the_first(self) -> None:
+        service_account, first_token = ServiceAccountService().create(
+            organization=self.organization, service_name="wordpress-prod"
+        )
+
+        second_token = ServiceAccountService().issue_token(service_account)
+
+        self.assertNotEqual(first_token, second_token)
+        self.assertEqual(service_account.user.auth_token_set.count(), 2)

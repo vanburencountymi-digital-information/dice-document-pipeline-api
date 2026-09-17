@@ -4,7 +4,7 @@ import secrets
 
 import factory
 from django.contrib.auth import get_user_model
-from rest_framework.authtoken.models import Token
+from knox.models import AuthToken
 
 from accounts.models import Organization, ServiceAccount
 
@@ -45,5 +45,7 @@ class ServiceAccountFactory(factory.django.DjangoModelFactory):
     @factory.post_generation
     def token(self, create, extracted, **kwargs):
         # Real service accounts always have a token (ServiceAccountService.create()).
+        # knox only stores a hash, so the raw value is stashed here as a plain in-memory
+        # attribute purely for test convenience
         if create:
-            Token.objects.get_or_create(user=self.user)
+            _, self.token = AuthToken.objects.create(user=self.user)

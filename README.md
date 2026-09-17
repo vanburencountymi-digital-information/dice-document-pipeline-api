@@ -18,6 +18,7 @@ Other make commands include:
 make init             # first time only convenience method: build the images, migrate, then start the app
 make build            # rebuild the images (needed after ANY app source change, not just requirements*.txt/Dockerfile* — the app image doesn't live-mount source)
 make migrate          # apply migrations to the running Postgres
+make migrations       # generate new migration files from model changes (rebuild after)
 make up               # start the app (without rebuilding or migrating)
 make down             # stop everything
 make recreate         # a convenience method that bundles down, build, and up - use when you edit .env on an already-running container
@@ -31,13 +32,6 @@ make verapdf-version  # confirm veraPDF/Java installed correctly
 
 The app runs at `http://localhost:8000`.
 
-### Adding a migration
-
-```bash
-docker compose run --rm --user "$(id -u):$(id -g)" -v "$(pwd):/app" app python manage.py makemigrations
-```
-now run `make build` and `make migrate`
-
 ### 2. Install the git hooks (if making changes)
 
 Linting and type checking (ruff + mypy) run automatically on commit via pre-commit, and commit messages are checked against [Conventional Commits](https://www.conventionalcommits.org/) (`fix:`/`feat:`/etc. — see ADR 0012, this is what drives automatic version tagging).
@@ -48,6 +42,9 @@ Both run on your host machine's `git commit`, not inside Docker:
 pip install pre-commit
 pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
+
+> [!CAUTION]
+> This be careful with squash-merging PRs - make sure the new commit message follows conventional commits, so that a new version is correctly issued.
 
 ## Pipeline steps
 

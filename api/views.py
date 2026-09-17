@@ -1,8 +1,8 @@
 from django.contrib.auth.models import AnonymousUser
 from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
+from knox.auth import TokenAuthentication
 from rest_framework import status
-from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response

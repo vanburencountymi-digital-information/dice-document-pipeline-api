@@ -20,7 +20,3 @@ class ServiceAccount(models.Model):
 
     def __str__(self) -> str:
         return f"{self.organization}: {self.name}"
-
-    @property
-    def token(self) -> str:
-        return self.user.auth_token.key
