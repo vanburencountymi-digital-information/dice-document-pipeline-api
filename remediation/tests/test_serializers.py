@@ -63,6 +63,7 @@ class RemediationSerializerTests(TestCase):
                 "started_at",
                 "completed_at",
                 "verification_results",
+                "download_url",
             },
         )
         self.assertEqual(data["id"], str(remediation.id))
