@@ -27,7 +27,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      # main requires PRs for everyone, including the default GITHUB_TOKEN's
+      # github-actions[bot] identity — that bot can't be added to a ruleset's bypass
+      # list. This org-owned GitHub App (installed on this repo, granted Contents:
+      # read/write, added to the bypass list) mints a short-lived installation token
+      # instead, so the version-bump push below authenticates as the app, not the bot.
+      - name: Generate a token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Semantic version release
         uses: python-semantic-release/python-semantic-release@v10.6.2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ steps.generate-token.outputs.token }}
