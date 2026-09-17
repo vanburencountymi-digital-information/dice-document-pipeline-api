@@ -14,6 +14,8 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
+import sentry_sdk
+from sentry_sdk.integrations.django import DjangoIntegration
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,6 +40,17 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 # "0.0.0" only shows up before this repo's very first tagged release ever ships.
 PIPELINE_VERSION = env.str("PIPELINE_VERSION", default="0.0.0")
 
+# ADR 0017 — error monitoring. An empty SENTRY_DSN (the local/test default) makes the SDK
+# a no-op, so this is safe to leave wired up unconditionally rather than gating it behind
+# an extra "is monitoring enabled" flag.
+sentry_sdk.init(
+    dsn=env.str("SENTRY_DSN", default=""),
+    integrations=[DjangoIntegration()],
+    environment=env.str("SENTRY_ENVIRONMENT", default="development"),
+    release=PIPELINE_VERSION,
+    send_default_pii=False,
+)
+
 
 # Application definition
 
@@ -52,6 +65,7 @@ INSTALLED_APPS = [
     "knox",
     "accounts",
     "api",
+    "common",
     "remediation",
 ]
 

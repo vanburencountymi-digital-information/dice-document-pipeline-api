@@ -38,6 +38,7 @@ repos:
           - anthropic==0.121.0
           - PyMuPDF==1.28.2
           - packaging==26.3
+          - sentry-sdk[django]==2.69.2
         args: [--config-file=pyproject.toml, .]
         pass_filenames: false
         always_run: true

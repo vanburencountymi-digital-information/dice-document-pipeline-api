@@ -3,6 +3,7 @@ import logging
 import os
 from urllib.parse import urljoin
 
+import sentry_sdk
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import UploadedFile
@@ -211,6 +212,14 @@ class ArtifactService:
     def record_skip(self, remediation: Remediation) -> RemediationArtifact:
         return self.mark_skipped(remediation, f"{self.setting_name} is disabled")
 
+    def report_exception(self, exc: Exception, remediation: Remediation) -> None:
+        """every step's `run()` calls this instead of an SDK directly, so swapping monitoring vendors, or
+        adding a second one, only ever touches this one method.
+        """
+        sentry_sdk.capture_exception(
+            exc, tags={"step": self.step.value, "remediation_id": str(remediation.id)}
+        )
+
     def construct_output_dir(self, remediation: Remediation) -> str:
         """This step's own working directory for one remediation attempt (ADR 0008):
         `remediations/<service_account_id>/<content_hash>/<remediation_id>/<step>`.
@@ -304,6 +313,7 @@ class VerificationService(ArtifactService):
             outcome = self.adapter.validate(pdf_path)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s adapter failed", remediation.id, self.step)
+            self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             self.handle_verification_error(str(exc))
             return pdf_uri
@@ -381,6 +391,7 @@ class OCRService(ArtifactService):
             output_path = self.adapter.extract(pdf_path, output_dir=output_dir)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
+            self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
@@ -409,6 +420,7 @@ class FontRepairService(ArtifactService):
             output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
+            self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
@@ -454,6 +466,7 @@ class MetadataService(ArtifactService):
             )
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
+            self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
@@ -481,6 +494,7 @@ class LinkService(ArtifactService):
             output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
+            self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
@@ -530,6 +544,7 @@ class AltTextService(ArtifactService):
             )
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
+            self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
@@ -555,6 +570,7 @@ class ScoringService(ArtifactService):
             result = self.adapter.score(pdf_path)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
+            self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
