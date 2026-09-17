@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v2.0.0 (2026-09-17)
+
+### Chores
+
+- Simplify making migrations
+  ([`e15e5d8`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/e15e5d82b48492ad40dee48abee30f22c363b8ac))
+
+### Features
+
+- Switch to django-rest-knox for auth tokens and drop support for DRF plaintext tokens
+  ([`862e8e8`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/862e8e853199f2ac01d8ec41422d7cbb36cc8f85))
+
+### Breaking Changes
+
+- Any issued plaintext tokens will be immediately invalidated. Issue new tokens via django-admin or
+  shell. See ADR-0016 for justification
+
+
 ## v1.5.0 (2026-09-16)
 
 ### Features
