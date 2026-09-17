@@ -42,7 +42,7 @@ pyshell:
 	docker compose run --rm app python manage.py shell
 
 test:
-	docker compose run --rm app python manage.py test
+	docker compose run --rm app python manage.py test --settings=config.test_settings
 
 verapdf-version:
 	docker compose run --rm app verapdf --version
