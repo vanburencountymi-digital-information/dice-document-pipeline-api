@@ -46,6 +46,58 @@ pre-commit install --hook-type pre-commit --hook-type commit-msg
 > [!CAUTION]
 > This be careful with squash-merging PRs - make sure the new commit message follows conventional commits, so that a new version is correctly issued.
 
+### 3. Optional: use S3-compatible storage locally
+
+By default, files are stored on local disk (`./media`). To instead exercise the same storage backend staging uses (ADR 0018) — a real object store, not local disk — bring up the bundled [Garage](https://garagehq.deuxfleurs.fr/):
+
+```bash
+make garage
+```
+
+Garage is deliberately excluded from plain `make up`/`make recreate` (it's behind a Compose profile) — `make garage` is the only thing that starts it, and it also pulls the pinned image and force-recreates the container, so it's safe to re-run any time you want a clean restart.
+
+Garage needs its single-node "cluster" layout applied and a bucket + key created once before it's usable — unlike a lot of S3-compatible tools this can't be a single command, since Garage is built around a distributed-cluster model even when you're only running one node. Run these once:
+
+```bash
+# Find your node's ID (a long hex string) — it has no role assigned yet.
+docker compose exec garage /garage status
+
+# Assign it a single-node layout and apply it (bump --version if this isn't the first apply).
+docker compose exec garage /garage layout assign -z dc1 -c 1G <node ID from above>
+docker compose exec garage /garage layout apply --version 1
+
+# Create a bucket, a key, and grant the key access.
+docker compose exec garage /garage bucket create dice-local
+docker compose exec garage /garage key create dice-local-key
+docker compose exec garage /garage bucket allow --read --write --owner dice-local --key dice-local-key
+
+# Print the access key ID / secret access key you'll need below.
+docker compose exec garage /garage key info dice-local-key --show-secret
+```
+
+> [!NOTE]
+> These are the current Garage v2.4.1 CLI commands per its own quick-start docs. If a command errors, check `docker compose exec garage /garage --help` (or the subcommand's own `--help`) — exact flags occasionally shift between Garage releases.
+
+Then add the printed access/secret key to `.env` and `make recreate`:
+
+```bash
+S3_BUCKET_NAME=dice-local
+S3_ENDPOINT_URL=http://garage:3900
+S3_ACCESS_KEY=<printed above>
+S3_SECRET_KEY=<printed above>
+S3_REGION_NAME=garage
+```
+
+You can check if garage is correctly hooked up, or if an object exists inside of garage, with `default_storage`:
+```
+make pyshell
+from django.core.files.storage import default_storage
+default_storage.__class__ # Should be storages.backends.s3.S3Storage
+default_storage.exists("remediations/<service_account_id>/<remediation_id>/filename.pdf")
+# Like: default_storage.exists("remediations/1/402da5654f5cb986c12577a5f2c3aa8b415440c52fcb32bebd81958190a2da43/Wikipedia-Article.pdf")
+# should return `True` if the file exists and `False` if it doesn't
+```
+
 ## Pipeline steps
 
 If all steps are enabled via environment variable, a document upload runs through the following steps in order (see [ADR 0003](docs/adrs/0003-pipeline-steps-and-branching.md) and [ADR 0010](docs/adrs/0010-fix-opendataloader-hybrid-tagging-upstream.md)):

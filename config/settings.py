@@ -143,10 +143,35 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
-# Media files (user uploads — PDFs). FileSystemStorage locally; swap to
-# django-storages' GoogleCloudStorage via STORAGES["default"] for Cloud Run.
+# Media files
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+S3_BUCKET_NAME = env.str("S3_BUCKET_NAME", default="")
+STORAGES = {
+    "default": (
+        {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "bucket_name": S3_BUCKET_NAME,
+                "endpoint_url": env.str(
+                    "S3_ENDPOINT_URL", default="https://storage.googleapis.com"
+                ),
+                "access_key": env.str("S3_ACCESS_KEY", default=""),
+                "secret_key": env.str("S3_SECRET_KEY", default=""),
+                # Cloudflare R2 has no AWS-style regions but boto3's SigV4 signing still
+                # needs some value here — "auto" is R2's own documented answer, and GCS's
+                # S3-compatible endpoint accepts it too, so it's a safe default either way.
+                "region_name": env.str("S3_REGION_NAME", default="auto"),
+                "signature_version": env.str("S3_SIGNATURE_VERSION", default="s3v4"),
+                "addressing_style": env.str("S3_ADDRESSING_STYLE", default="virtual"),
+            },
+        }
+        if S3_BUCKET_NAME
+        else {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+    ),
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+}
 
 # REST_FRAMEWORK
 

@@ -4,9 +4,11 @@ import os
 import tempfile
 from unittest.mock import create_autospec
 
+import boto3
 from django.core.files.storage import default_storage
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
+from moto import mock_aws
 from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
@@ -59,7 +61,10 @@ from remediation.tests.factories import (
     RemediationArtifactFactory,
     RemediationFactory,
 )
-from remediation.tests.helpers import assert_step_continues_on_adapter_error
+from remediation.tests.helpers import (
+    assert_step_continues_on_adapter_error,
+    fake_adapter_output,
+)
 
 
 class RemediationServiceTests(TestCase):
@@ -329,9 +334,7 @@ class ArtifactServiceTests(TestCase):
 
         output_dir = self.service.construct_output_dir(remediation)
 
-        expected = default_storage.path(
-            f"remediations/{remediation.service_account_id}/abc123/{remediation.id}/ocr"
-        )
+        expected = f"remediations/{remediation.service_account_id}/abc123/{remediation.id}/ocr/"
         self.assertEqual(output_dir, expected)
 
     def test_mark_completed_records_completed_status_and_output_uri(self) -> None:
@@ -388,7 +391,9 @@ class ArtifactServiceTests(TestCase):
 class VerificationServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
-        cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
+        cls.remediation = RemediationFactory(
+            source_pdf_uri="remediations/test.pdf", with_stored_file=True
+        )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(VeraPDFAdapter, spec_set=True)
@@ -572,18 +577,14 @@ class OCRServiceTests(TestCase):
             service_account=cls.service_account,
             content_hash="abc123",
             source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+            with_stored_file=True,
         )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(OpenDataLoaderAdapter, spec_set=True)
 
-    def _output_dir(self) -> str:
-        return OCRService(adapter=self.adapter).construct_output_dir(self.remediation)
-
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
-        output_dir = self._output_dir()
-        extracted_path = os.path.join(output_dir, "test.pdf")
-        self.adapter.extract.return_value = extracted_path
+        self.adapter.extract.side_effect = fake_adapter_output(filename="test.pdf")
 
         result = OCRService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
@@ -593,9 +594,11 @@ class OCRServiceTests(TestCase):
             f"remediations/{self.service_account.id}/abc123/{self.remediation.id}/ocr/test.pdf"
         )
         self.assertEqual(result, expected_uri)
-        self.adapter.extract.assert_called_once_with(
-            default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
-        )
+        self.adapter.extract.assert_called_once()
+        called_pdf_path = self.adapter.extract.call_args.args[0]
+        self.assertEqual(os.path.basename(called_pdf_path), "test.pdf")
+        with default_storage.open(expected_uri) as f:
+            self.assertEqual(f.read(), b"%PDF-1.4 repaired")
         artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
         self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
         self.assertEqual(artifact.output_uri, expected_uri)
@@ -611,18 +614,14 @@ class MetadataServiceTests(TestCase):
             content_hash="abc123",
             source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
             original_filename="test.pdf",
+            with_stored_file=True,
         )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(PikePdfAdapter, spec_set=True)
 
-    def _output_dir(self) -> str:
-        return MetadataService(adapter=self.adapter).construct_output_dir(self.remediation)
-
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
-        output_dir = self._output_dir()
-        finalized_path = os.path.join(output_dir, "test.pdf")
-        self.adapter.finalize.return_value = finalized_path
+        self.adapter.finalize.side_effect = fake_adapter_output(filename="test.pdf")
 
         result = MetadataService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
@@ -638,26 +637,26 @@ class MetadataServiceTests(TestCase):
         self.assertEqual(artifact.output_uri, expected_uri)
 
     def test_run_calls_adapter_with_title_derived_from_original_filename(self) -> None:
-        output_dir = self._output_dir()
-        self.adapter.finalize.return_value = os.path.join(output_dir, "test.pdf")
+        self.adapter.finalize.side_effect = fake_adapter_output(filename="test.pdf")
 
         MetadataService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
         )
 
-        self.adapter.finalize.assert_called_once_with(
-            default_storage.path(self.remediation.source_pdf_uri),
-            output_dir=output_dir,
-            title="test",
-            lang="en-us",
-        )
+        self.adapter.finalize.assert_called_once()
+        call = self.adapter.finalize.call_args
+        self.assertEqual(os.path.basename(call.args[0]), "test.pdf")
+        self.assertEqual(call.kwargs["title"], "test")
+        self.assertEqual(call.kwargs["lang"], "en-us")
 
     def test_run_falls_back_to_default_title_when_original_filename_blank(self) -> None:
         remediation = RemediationFactory(
-            service_account=self.service_account, content_hash="def456", original_filename=""
+            service_account=self.service_account,
+            content_hash="def456",
+            original_filename="",
+            with_stored_file=True,
         )
-        output_dir = MetadataService(adapter=self.adapter).construct_output_dir(remediation)
-        self.adapter.finalize.return_value = os.path.join(output_dir, "test.pdf")
+        self.adapter.finalize.side_effect = fake_adapter_output(filename="test.pdf")
 
         MetadataService(adapter=self.adapter).run(remediation, pdf_uri=remediation.source_pdf_uri)
 
@@ -673,18 +672,14 @@ class FontRepairServiceTests(TestCase):
             service_account=cls.service_account,
             content_hash="abc123",
             source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+            with_stored_file=True,
         )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(FontRepairPikePdfAdapter, spec_set=True)
 
-    def _output_dir(self) -> str:
-        return FontRepairService(adapter=self.adapter).construct_output_dir(self.remediation)
-
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
-        output_dir = self._output_dir()
-        repaired_path = os.path.join(output_dir, "test.pdf")
-        self.adapter.repair.return_value = repaired_path
+        self.adapter.repair.side_effect = fake_adapter_output(filename="test.pdf")
 
         result = FontRepairService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
@@ -700,18 +695,17 @@ class FontRepairServiceTests(TestCase):
         self.assertEqual(artifact.output_uri, expected_uri)
 
     def test_run_calls_adapter_with_correct_args(self) -> None:
-        output_dir = self._output_dir()
-        self.adapter.repair.return_value = os.path.join(output_dir, "test.pdf")
+        self.adapter.repair.side_effect = fake_adapter_output(filename="test.pdf")
 
         FontRepairService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
         )
 
-        self.adapter.repair.assert_called_once_with(
-            default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
-        )
+        self.adapter.repair.assert_called_once()
+        self.assertEqual(os.path.basename(self.adapter.repair.call_args.args[0]), "test.pdf")
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class LinkServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
@@ -720,18 +714,14 @@ class LinkServiceTests(TestCase):
             service_account=cls.service_account,
             content_hash="abc123",
             source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
+            with_stored_file=True,
         )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(LinkPikePdfAdapter, spec_set=True)
 
-    def _output_dir(self) -> str:
-        return LinkService(adapter=self.adapter).construct_output_dir(self.remediation)
-
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
-        output_dir = self._output_dir()
-        repaired_path = os.path.join(output_dir, "test.pdf")
-        self.adapter.repair.return_value = repaired_path
+        self.adapter.repair.side_effect = fake_adapter_output(filename="test.pdf")
 
         result = LinkService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
@@ -746,18 +736,17 @@ class LinkServiceTests(TestCase):
         self.assertEqual(artifact.output_uri, expected_uri)
 
     def test_run_calls_adapter_with_correct_args(self) -> None:
-        output_dir = self._output_dir()
-        self.adapter.repair.return_value = os.path.join(output_dir, "test.pdf")
+        self.adapter.repair.side_effect = fake_adapter_output(filename="test.pdf")
 
         LinkService(adapter=self.adapter).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
         )
 
-        self.adapter.repair.assert_called_once_with(
-            default_storage.path(self.remediation.source_pdf_uri), output_dir=output_dir
-        )
+        self.adapter.repair.assert_called_once()
+        self.assertEqual(os.path.basename(self.adapter.repair.call_args.args[0]), "test.pdf")
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class AltTextServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
@@ -767,22 +756,16 @@ class AltTextServiceTests(TestCase):
             content_hash="abc123",
             source_pdf_uri=f"remediations/{cls.service_account.id}/abc123/test.pdf",
             original_filename="test.pdf",
+            with_stored_file=True,
         )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(AltTextPikePdfAdapter, spec_set=True)
         self.client = create_autospec(ClaudeVisionClient, spec_set=True)
 
-    def _output_dir(self) -> str:
-        return AltTextService(adapter=self.adapter, client=self.client).construct_output_dir(
-            self.remediation
-        )
-
     def test_run_returns_output_uri_and_records_completed_artifact(self) -> None:
-        output_dir = self._output_dir()
-        output_path = os.path.join(output_dir, "test.pdf")
         self.adapter.collect_figures.return_value = []
-        self.adapter.write_alt_text.return_value = output_path
+        self.adapter.write_alt_text.side_effect = fake_adapter_output(filename="test.pdf")
 
         result = AltTextService(adapter=self.adapter, client=self.client).run(
             self.remediation, pdf_uri=self.remediation.source_pdf_uri
@@ -797,7 +780,6 @@ class AltTextServiceTests(TestCase):
         self.assertEqual(artifact.output_uri, expected_uri)
 
     def test_run_calls_describe_once_per_non_decorative_candidate(self) -> None:
-        output_dir = self._output_dir()
         self.adapter.collect_figures.return_value = [
             FigureCandidate(
                 ref=(0, 0),
@@ -810,7 +792,7 @@ class AltTextServiceTests(TestCase):
                 ref=(0, 1), page_number=1, image_bytes=b"", media_type="", decorative=True
             ),
         ]
-        self.adapter.write_alt_text.return_value = os.path.join(output_dir, "test.pdf")
+        self.adapter.write_alt_text.side_effect = fake_adapter_output(filename="test.pdf")
         self.client.describe.return_value = "a red square"
 
         AltTextService(adapter=self.adapter, client=self.client).run(
@@ -820,11 +802,10 @@ class AltTextServiceTests(TestCase):
         self.client.describe.assert_called_once_with(
             b"a", media_type="image/png", document_title="test", page_number=1
         )
-        self.adapter.write_alt_text.assert_called_once_with(
-            default_storage.path(self.remediation.source_pdf_uri),
-            output_dir=output_dir,
-            alt_by_ref={(0, 0): "a red square", (0, 1): ""},
-        )
+        self.adapter.write_alt_text.assert_called_once()
+        call = self.adapter.write_alt_text.call_args
+        self.assertEqual(os.path.basename(call.args[0]), "test.pdf")
+        self.assertEqual(call.kwargs["alt_by_ref"], {(0, 0): "a red square", (0, 1): ""})
 
     def test_run_records_failed_artifact_and_continues_on_collect_figures_error(self) -> None:
         self.adapter.collect_figures.side_effect = AdapterError("boom")
@@ -864,7 +845,9 @@ class AltTextServiceTests(TestCase):
 class ScoringServiceTests(TestCase):
     @classmethod
     def setUpTestData(cls) -> None:
-        cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
+        cls.remediation = RemediationFactory(
+            source_pdf_uri="remediations/test.pdf", with_stored_file=True
+        )
 
     def setUp(self) -> None:
         self.adapter = create_autospec(ScoringPikePdfAdapter, spec_set=True)
@@ -951,3 +934,119 @@ class StepContinuesOnAdapterErrorTests(TestCase):
             remediation=self.remediation,
             pdf_uri="remediations/test.pdf",
         )
+
+
+class S3StorageIntegrationTests(TestCase):
+    """Exercises the real `storages.backends.s3.S3Storage` class (not a stand-in) against
+    moto's simulated S3 API — django-storages' own test suite uses moto for exactly this
+    (see its `tox.ini`). `S3Storage` doesn't implement `.path()` either (confirmed by
+    reading its source — it inherits the base `Storage.path()`, which raises), so these
+    already prove the rework avoids depending on `.path()` — a separate `NoPathStorage`
+    stand-in would only duplicate that, with weaker fidelity (a hand-rolled in-memory
+    class instead of the real backend's actual `save()`/`open()`/`exists()` behavior).
+    One test per distinct code shape in `services.py` (read-only, verification,
+    write-with-one-adapter, write-with-two-collaborators) — the ones left out
+    (`FontRepairService`/`MetadataService`/`LinkService`) are structurally identical to
+    `OCRService` here (one adapter call, write an output file).
+    """
+
+    def setUp(self) -> None:
+        self.mock_aws = mock_aws()
+        self.mock_aws.start()
+        self.addCleanup(self.mock_aws.stop)
+
+        bucket_name = "dice-test-bucket"
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=bucket_name)
+
+        storage_override = override_settings(
+            STORAGES={
+                "default": {
+                    "BACKEND": "storages.backends.s3.S3Storage",
+                    "OPTIONS": {"bucket_name": bucket_name, "region_name": "us-east-1"},
+                }
+            }
+        )
+        storage_override.enable()
+        self.addCleanup(storage_override.disable)
+
+        self.remediation = RemediationFactory(
+            source_pdf_uri="remediations/test.pdf", with_stored_file=True
+        )
+
+    def test_read_only_step_round_trips_through_real_s3storage(self) -> None:
+        adapter = create_autospec(ScoringPikePdfAdapter, spec_set=True)
+        adapter.score.return_value = ScoringResult(score=100, grade="A", manual_review_items=[])
+
+        result = ScoringService(adapter=adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        self.assertEqual(result, self.remediation.source_pdf_uri)
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.SCORING)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+
+    def test_verification_step_round_trips_through_real_s3storage(self) -> None:
+        adapter = create_autospec(VeraPDFAdapter, spec_set=True)
+        adapter.validate.return_value = VerificationOutcome(
+            is_compliant=False, failed_rules=[], verapdf_version="1.30.2"
+        )
+
+        result = PrecheckService(adapter=adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        self.assertEqual(result, self.remediation.source_pdf_uri)
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.PRECHECK)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+
+    def test_two_collaborator_step_round_trips_through_real_s3storage(self) -> None:
+        adapter = create_autospec(AltTextPikePdfAdapter, spec_set=True)
+        client = create_autospec(ClaudeVisionClient, spec_set=True)
+        adapter.collect_figures.return_value = []
+        adapter.write_alt_text.side_effect = fake_adapter_output(filename="test.pdf")
+
+        result = AltTextService(adapter=adapter, client=client).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.ALT_TEXT)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, result)
+
+    def test_ocr_step_round_trips_through_real_s3storage(self) -> None:
+        adapter = create_autospec(OpenDataLoaderAdapter, spec_set=True)
+        adapter.extract.side_effect = fake_adapter_output(filename="test.pdf")
+
+        result = OCRService(adapter=adapter).run(
+            self.remediation, pdf_uri=self.remediation.source_pdf_uri
+        )
+
+        artifact = self.remediation.artifacts.get(step=RemediationArtifact.Step.OCR)
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, result)
+        with default_storage.open(result) as f:
+            self.assertEqual(f.read(), b"%PDF-1.4 repaired")
+
+    def test_persist_output_overwrites_in_place_rather_than_suffixing(self) -> None:
+        """Proves `persist_output`'s delete-then-save fix actually holds against a real
+        `S3Storage`, not just `FileSystemStorage` — this is the exact bug ADR 0018's fix
+        addresses. Calls `persist_output` directly rather than through a full `run()`:
+        running the same step twice for one remediation hits a separate, not-yet-fixed
+        idempotency gap tracked for Phase C (a real `IntegrityError` on the artifact's
+        unique constraint) — a different concern from whether storage itself overwrites.
+        """
+        service = OCRService(adapter=create_autospec(OpenDataLoaderAdapter, spec_set=True))
+        dest_uri = f"{service.construct_output_dir(self.remediation)}test.pdf"
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+            f.write(b"first version")
+            f.flush()
+            first_uri = service.persist_output(f.name, dest_uri)
+
+        with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
+            f.write(b"second version")
+            f.flush()
+            second_uri = service.persist_output(f.name, dest_uri)
+
+        self.assertEqual(first_uri, second_uri)
+        with default_storage.open(second_uri) as f:
+            self.assertEqual(f.read(), b"second version")

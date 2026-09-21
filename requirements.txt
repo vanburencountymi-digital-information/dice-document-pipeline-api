@@ -10,6 +10,7 @@ distro==1.9.0
 Django==6.0.7
 django-environ==0.14.0
 django-rest-knox==5.1.0
+django-storages[s3]==1.14.6
 django-stubs==6.0.7
 django-stubs-ext==6.0.7
 djangorestframework==3.17.1
@@ -28,6 +29,7 @@ iniconfig==2.3.0
 jiter==0.16.0
 librt==0.13.0
 lxml==6.1.1
+moto==5.2.3
 mypy==2.3.0
 mypy_extensions==1.1.0
 nodeenv==1.10.0
