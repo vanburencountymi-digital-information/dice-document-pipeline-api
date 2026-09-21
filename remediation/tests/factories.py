@@ -13,11 +13,24 @@ from remediation.models import (
     RemediationScore,
     VerificationResult,
 )
+from remediation.tests.helpers import write_fake_pdf
 
 
 class RemediationFactory(factory.django.DjangoModelFactory):
     class Meta:
         model = Remediation
+
+    class Params:
+        # Opt-in: RemediationFactory(with_stored_file=True) also writes real bytes to
+        # default_storage at source_pdf_uri. Needed by any test exercising a step's
+        # run(), since ArtifactService.local_input_copy performs a real storage read
+        with_stored_file = factory.Trait(
+            _stored_file=factory.PostGeneration(
+                lambda obj, create, extracted, **kwargs: (
+                    write_fake_pdf(obj.source_pdf_uri) if create else None
+                )
+            )
+        )
 
     service_account = factory.SubFactory(ServiceAccountFactory)
     source_pdf_uri = factory.Sequence(lambda n: f"local:///tmp/document-{n}.pdf")

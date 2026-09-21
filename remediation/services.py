@@ -250,7 +250,14 @@ class ArtifactService:
     def persist_output(self, local_path: str, dest_uri: str) -> str:
         """Uploads a local tool's output file to `default_storage` at `dest_uri` — the
         write-side counterpart to `local_input_copy`. Returns the actual name saved to.
+
+        Deletes any existing object at `dest_uri` first: ADR 0008's paths are deterministic
+        on purpose (the same remediation + step always lands at the same key). Retries create
+        new remediation rows, so this only happens with task redelivery and will be fixed
+        with idempotency check soon.
         """
+        if default_storage.exists(dest_uri):
+            default_storage.delete(dest_uri)
         with open(local_path, "rb") as fh:
             return default_storage.save(dest_uri, File(fh))
 
@@ -327,12 +334,9 @@ class VerificationService(ArtifactService):
         self.adapter = adapter or VeraPDFAdapter()
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        # default_storage.path() assumes FileSystemStorage — will need reworking once a
-        # GCS backend is wired in (implementation_plan.md Backlog), since veraPDF needs a
-        # real local file path, not a storage-abstracted name/URL.
-        pdf_path = default_storage.path(pdf_uri)
         try:
-            outcome = self.adapter.validate(pdf_path)
+            with self.local_input_copy(pdf_uri) as pdf_path:
+                outcome = self.adapter.validate(pdf_path)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s adapter failed", remediation.id, self.step)
             self.report_exception(exc, remediation)
@@ -406,18 +410,22 @@ class OCRService(ArtifactService):
         )
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        pdf_path = default_storage.path(pdf_uri)
-        output_dir = self.construct_output_dir(remediation)
-
         try:
-            output_path = self.adapter.extract(pdf_path, output_dir=output_dir)
+            with (
+                self.local_input_copy(pdf_uri) as pdf_path,
+                tempfile.TemporaryDirectory() as local_output_dir,
+            ):
+                output_path = self.adapter.extract(pdf_path, output_dir=local_output_dir)
+                dest_uri = (
+                    f"{self.construct_output_dir(remediation)}{os.path.basename(output_path)}"
+                )
+                output_uri = self.persist_output(output_path, dest_uri)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
-        output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
         return output_uri
 
@@ -435,18 +443,22 @@ class FontRepairService(ArtifactService):
         self.adapter = adapter or FontRepairPikePdfAdapter()
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        pdf_path = default_storage.path(pdf_uri)
-        output_dir = self.construct_output_dir(remediation)
-
         try:
-            output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
+            with (
+                self.local_input_copy(pdf_uri) as pdf_path,
+                tempfile.TemporaryDirectory() as local_output_dir,
+            ):
+                output_path = self.adapter.repair(pdf_path, output_dir=local_output_dir)
+                dest_uri = (
+                    f"{self.construct_output_dir(remediation)}{os.path.basename(output_path)}"
+                )
+                output_uri = self.persist_output(output_path, dest_uri)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
-        output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
         return output_uri
 
@@ -476,23 +488,27 @@ class MetadataService(ArtifactService):
         self.adapter = adapter or PikePdfAdapter()
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        pdf_path = default_storage.path(pdf_uri)
-        output_dir = self.construct_output_dir(remediation)
-
         try:
-            output_path = self.adapter.finalize(
-                pdf_path,
-                output_dir=output_dir,
-                title=_derive_title(remediation),
-                lang=settings.LANGUAGE_CODE,
-            )
+            with (
+                self.local_input_copy(pdf_uri) as pdf_path,
+                tempfile.TemporaryDirectory() as local_output_dir,
+            ):
+                output_path = self.adapter.finalize(
+                    pdf_path,
+                    output_dir=local_output_dir,
+                    title=_derive_title(remediation),
+                    lang=settings.LANGUAGE_CODE,
+                )
+                dest_uri = (
+                    f"{self.construct_output_dir(remediation)}{os.path.basename(output_path)}"
+                )
+                output_uri = self.persist_output(output_path, dest_uri)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
-        output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
         return output_uri
 
@@ -509,18 +525,22 @@ class LinkService(ArtifactService):
         self.adapter = adapter or LinkPikePdfAdapter()
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        pdf_path = default_storage.path(pdf_uri)
-        output_dir = self.construct_output_dir(remediation)
-
         try:
-            output_path = self.adapter.repair(pdf_path, output_dir=output_dir)
+            with (
+                self.local_input_copy(pdf_uri) as pdf_path,
+                tempfile.TemporaryDirectory() as local_output_dir,
+            ):
+                output_path = self.adapter.repair(pdf_path, output_dir=local_output_dir)
+                dest_uri = (
+                    f"{self.construct_output_dir(remediation)}{os.path.basename(output_path)}"
+                )
+                output_uri = self.persist_output(output_path, dest_uri)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
-        output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
         return output_uri
 
@@ -544,33 +564,38 @@ class AltTextService(ArtifactService):
         )
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        pdf_path = default_storage.path(pdf_uri)
-        output_dir = self.construct_output_dir(remediation)
         document_title = _derive_title(remediation)
 
         try:
-            candidates = self.adapter.collect_figures(pdf_path)
-            alt_by_ref: dict[tuple[int, int], str] = {}
-            for candidate in candidates:
-                if candidate.decorative:
-                    alt_by_ref[candidate.ref] = ""
-                    continue
-                alt_by_ref[candidate.ref] = self.client.describe(
-                    candidate.image_bytes,
-                    media_type=candidate.media_type,
-                    document_title=document_title,
-                    page_number=candidate.page_number,
+            with (
+                self.local_input_copy(pdf_uri) as pdf_path,
+                tempfile.TemporaryDirectory() as local_output_dir,
+            ):
+                candidates = self.adapter.collect_figures(pdf_path)
+                alt_by_ref: dict[tuple[int, int], str] = {}
+                for candidate in candidates:
+                    if candidate.decorative:
+                        alt_by_ref[candidate.ref] = ""
+                        continue
+                    alt_by_ref[candidate.ref] = self.client.describe(
+                        candidate.image_bytes,
+                        media_type=candidate.media_type,
+                        document_title=document_title,
+                        page_number=candidate.page_number,
+                    )
+                output_path = self.adapter.write_alt_text(
+                    pdf_path, output_dir=local_output_dir, alt_by_ref=alt_by_ref
                 )
-            output_path = self.adapter.write_alt_text(
-                pdf_path, output_dir=output_dir, alt_by_ref=alt_by_ref
-            )
+                dest_uri = (
+                    f"{self.construct_output_dir(remediation)}{os.path.basename(output_path)}"
+                )
+                output_uri = self.persist_output(output_path, dest_uri)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.report_exception(exc, remediation)
             self.mark_failed(remediation, str(exc))
             return pdf_uri
 
-        output_uri = os.path.relpath(output_path, default_storage.path(""))
         self.mark_completed(remediation, output_uri=output_uri)
         return output_uri
 
@@ -587,9 +612,9 @@ class ScoringService(ArtifactService):
         self.adapter = adapter or ScoringPikePdfAdapter()
 
     def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
-        pdf_path = default_storage.path(pdf_uri)
         try:
-            result = self.adapter.score(pdf_path)
+            with self.local_input_copy(pdf_uri) as pdf_path:
+                result = self.adapter.score(pdf_path)
         except Exception as exc:
             LOGGER.exception("remediation %s: %s failed", remediation.id, self.step)
             self.report_exception(exc, remediation)

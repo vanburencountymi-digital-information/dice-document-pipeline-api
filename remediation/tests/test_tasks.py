@@ -3,7 +3,6 @@ from __future__ import annotations
 import tempfile
 from unittest.mock import patch
 
-from django.core.files.storage import default_storage
 from django.tasks import TaskResultStatus
 from django.test import TestCase, override_settings
 
@@ -16,6 +15,7 @@ from remediation.tasks import (
     send_webhook_notification,
 )
 from remediation.tests.factories import RemediationCallbackFactory, RemediationFactory
+from remediation.tests.helpers import fake_adapter_output
 from remediation.webhook_client import WebhookDeliveryError
 
 
@@ -82,7 +82,7 @@ class ProcessRemediationTaskTests(TestCase):
         mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
             is_compliant=True, failed_rules=[], verapdf_version="1.30.2"
         )
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
 
         result = process_remediation.enqueue(str(remediation.id))
 
@@ -122,7 +122,7 @@ class ProcessRemediationTaskTests(TestCase):
         mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
             is_compliant=False, failed_rules=[failed_rule], verapdf_version="1.30.2"
         )
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
 
         result = process_remediation.enqueue(str(remediation.id))
 
@@ -167,10 +167,8 @@ class ProcessRemediationTaskTests(TestCase):
             VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
             VerificationOutcome(is_compliant=True, failed_rules=[], verapdf_version="1.30.2"),
         ]
-        remediation = RemediationFactory()
-        mock_ocr_cls.return_value.extract.return_value = default_storage.path(
-            f"remediations/{remediation.id}/ocr/test.pdf"
-        )
+        remediation = RemediationFactory(with_stored_file=True)
+        mock_ocr_cls.return_value.extract.side_effect = fake_adapter_output(filename="test.pdf")
 
         result = process_remediation.enqueue(str(remediation.id))
 
@@ -204,7 +202,7 @@ class ProcessRemediationTaskTests(TestCase):
             VerificationOutcome(is_compliant=True, failed_rules=[], verapdf_version="1.30.2"),
         ]
         mock_scoring_cls.return_value.score.side_effect = AdapterError("boom")
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
 
         result = process_remediation.enqueue(str(remediation.id))
 
@@ -245,7 +243,7 @@ class ProcessRemediationTaskTests(TestCase):
             VerificationOutcome(is_compliant=True, failed_rules=[], verapdf_version="1.30.2"),
         ]
         mock_ocr_cls.return_value.extract.side_effect = AdapterError("boom")
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
 
         result = process_remediation.enqueue(str(remediation.id))
 
@@ -284,7 +282,7 @@ class ProcessRemediationTaskTests(TestCase):
             AdapterError("verapdf crashed"),
             VerificationOutcome(is_compliant=True, failed_rules=[], verapdf_version="1.30.2"),
         ]
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
 
         result = process_remediation.enqueue(str(remediation.id))
 
@@ -321,7 +319,7 @@ class ProcessRemediationTaskTests(TestCase):
             VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
             AdapterError("verapdf crashed"),
         ]
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
 
         result = process_remediation.enqueue(str(remediation.id))
 
@@ -381,7 +379,7 @@ class ProcessRemediationWebhookTests(TestCase):
         mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
             is_compliant=True, failed_rules=[], verapdf_version="1.30.2"
         )
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
         callback = RemediationCallbackFactory(remediation=remediation)
 
         process_remediation.enqueue(str(remediation.id))
@@ -396,7 +394,7 @@ class ProcessRemediationWebhookTests(TestCase):
             VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
             VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
         ]
-        remediation = RemediationFactory()
+        remediation = RemediationFactory(with_stored_file=True)
         callback = RemediationCallbackFactory(remediation=remediation)
 
         process_remediation.enqueue(str(remediation.id))

@@ -1,4 +1,4 @@
-.PHONY: build up down recreate migrate migrations shell pyshell test verapdf-version init
+.PHONY: build up down recreate migrate migrations shell pyshell test verapdf-version init garage
 
 build:
 	# Docker auto-creates a missing bind-mount source as root, which then blocks
@@ -22,6 +22,13 @@ down:
 # Docker only reads .env at container creation — use this after editing it
 # (e.g. flipping a RUN_* pipeline toggle) so the change actually takes effect.
 recreate: down build up
+
+# Optional (ADR 0018) — pulls the pinned Garage image and (re)starts it fresh. Named
+# volumes (garage_meta/garage_data) persist across this, so your cluster layout/bucket/
+# key setup isn't wiped. See readme for 1st time garage config
+garage:
+	docker compose pull garage
+	docker compose up -d --force-recreate garage
 
 migrate:
 	docker compose run --rm app python manage.py migrate

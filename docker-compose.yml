@@ -61,5 +61,21 @@ services:
     ports:
       - "5002:5002"
 
+  # Optional (ADR 0018) — lets local dev/CI exercise the same S3Storage backend
+  # staging uses via Garage in a separate docker container. Start with `make garage`.
+  # See readme for configuration details.
+  garage:
+    image: dxflrs/garage:v2.4.1
+    profiles: ["storage"]
+    volumes:
+      - ./garage.toml:/etc/garage.toml:ro
+      - garage_meta:/var/lib/garage/meta
+      - garage_data:/var/lib/garage/data
+    ports:
+      - "3900:3900" # S3 API
+      - "3903:3903" # admin API
+
 volumes:
   postgres_data:
+  garage_meta:
+  garage_data:
