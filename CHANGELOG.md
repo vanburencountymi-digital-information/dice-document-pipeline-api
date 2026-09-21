@@ -2,6 +2,41 @@
 
 <!-- version list -->
 
+## v2.1.0 (2026-09-21)
+
+### Bug Fixes
+
+- Gh releases should authenticate via short-lived app token
+  ([`0c3e288`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/0c3e288de8a4d89eec1ba020c3c352783784f885))
+
+- Missing file from sentry release
+  ([`908745b`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/908745b64860d55bba860237e758d72cac623be8))
+
+- Update release.yml to work with Private GH App for semantic release package / ruleset
+  ([`92d62cf`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/92d62cf88560be55db28c2dcc108a8e21514ebe5))
+
+### Chores
+
+- Add omitted field from RemediationSerializer test
+  ([`ca6ecd0`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/ca6ecd04452a42dc1209383022f145ab1d5b498e))
+
+- Add testing settings
+  ([`a7af55b`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/a7af55bc50b05fabf881c0658efc6e7a4cb75ba1))
+
+### Continuous Integration
+
+- Fix semantic release token error
+  ([`834dde8`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/834dde8f63f94fe227bc91e3f1dc3e86dea229db))
+
+### Features
+
+- Add sentry_sdk for error monitoring
+  ([`4a14f59`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/4a14f599d9daba301e739cd454d6d87d221c01f3))
+
+- Swap FileSystem storage for S3 compatible bucket storage
+  ([`6ceaead`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/6ceaead88b783cb261f60d2aa4c00c3098f911f8))
+
+
 ## v2.0.0 (2026-09-17)
 
 ### Chores
