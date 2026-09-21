@@ -22,9 +22,28 @@ jobs:
       id-token: write
 
     steps:
+      # main requires PRs for everyone, including the default GITHUB_TOKEN's
+      # github-actions[bot] identity — that bot can't be added to a ruleset's bypass
+      # list. This org-owned GitHub App (installed on this repo, granted Contents:
+      # read/write, added to the bypass list) mints a short-lived installation token
+      # instead, so checkout and the version-bump push below both authenticate as
+      # the app, not the bot.
+      - name: Generate a token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      # Must come after the token step and consume it directly: checkout bakes
+      # whatever token it's given into a git credential helper
+      # (http.https://github.com/.extraheader), and that's what the actual `git push`
+      # semantic-release runs (via GitPython) authenticates with — not just whatever
+      # `github_token` is passed to the semantic-release step below.
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          token: ${{ steps.generate-token.outputs.token }}
           fetch-depth: 0
 
       # main requires PRs for everyone, including the default GITHUB_TOKEN's

@@ -39,6 +39,8 @@ repos:
           - PyMuPDF==1.28.2
           - packaging==26.3
           - sentry-sdk[django]==2.69.2
+          - django-storages[s3]==1.14.6
+          - moto==5.2.3
         args: [--config-file=pyproject.toml, .]
         pass_filenames: false
         always_run: true
