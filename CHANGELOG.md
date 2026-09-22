@@ -2,6 +2,23 @@
 
 <!-- version list -->
 
+## v2.2.0 (2026-09-22)
+
+### Features
+
+- Add live OCR optional test battery for regressions testing
+  ([#12](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/12),
+  [`0f219e3`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/0f219e31eaee7f5ecc9e32c5f82fabd78c208553))
+
+- OCR regressions test battery
+  ([#12](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/12),
+  [`0f219e3`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/0f219e31eaee7f5ecc9e32c5f82fabd78c208553))
+
+- Update OCR regression diffs to include human-readable, colored diff history
+  ([#12](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/12),
+  [`0f219e3`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/0f219e31eaee7f5ecc9e32c5f82fabd78c208553))
+
+
 ## v2.1.0 (2026-09-21)
 
 ### Bug Fixes
