@@ -110,15 +110,21 @@ COPY --from=opendataloader-pdf-builder \
      /build/java/opendataloader-pdf-cli/target/opendataloader-pdf-cli-0.0.0.jar \
      /usr/local/lib/python3.12/site-packages/opendataloader_pdf/jar/opendataloader-pdf-cli.jar
 
-COPY manage.py .
-COPY config/ ./config/
-COPY accounts/ ./accounts/
-COPY api/ ./api/
-COPY common/ ./common/
-COPY remediation/ ./remediation/
-
-# Make app created files locally editable
+# Created before the COPY block below (not after) so --chown can reference it: the app
+# user needs to own its own source tree, not just /app/media and /app/remediation/migrations
+# (the two paths docker-compose.yml separately bind-mounts writable). Without this, any
+# runtime write under an unmounted app path — e.g. check_ocr_regression's diff_history/
+# report output under remediation/tests/ — hits a PermissionError, since a plain COPY
+# with no --chown leaves files root-owned regardless of the later USER directive.
 RUN addgroup -g 1000 app && adduser -D -u 1000 -G app app
+
+COPY --chown=app:app manage.py .
+COPY --chown=app:app config/ ./config/
+COPY --chown=app:app accounts/ ./accounts/
+COPY --chown=app:app api/ ./api/
+COPY --chown=app:app common/ ./common/
+COPY --chown=app:app remediation/ ./remediation/
+
 USER app
 
 EXPOSE 8000
