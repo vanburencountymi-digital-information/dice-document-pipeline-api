@@ -4,9 +4,11 @@ Golden-baseline regression report for the opendataloader-hybrid OCR/tagging step
 No test in this repo exercises real OCR/Docling output — the unit tests all mock
 `OpenDataLoaderAdapter`/`opendataloader_pdf.convert` directly. This command runs the real
 adapter against every real PDF under `remediation/tests/fixtures/original/` and
-`remediation/tests/fixtures/edge-cases/`, and prints a diff of a text/metadata/structure
-fingerprint against a committed baseline, so a torch/Docling-fork/opendataloader-pdf version
-bump that changes real OCR output is visible and reviewable — not just a pass/fail.
+`remediation/tests/fixtures/edge-cases/`, and reports a diff of a text/metadata/structure
+fingerprint against a committed baseline — both as a terminal summary and, for any fixture
+that changed, a color-coded HTML diff under `remediation/tests/diff_history/<run timestamp>/`
+— so a torch/Docling-fork/opendataloader-pdf version bump that changes real OCR output is
+visible and reviewable, not just a pass/fail.
 
 Deliberately not pass/fail: an intentional model/library improvement is *expected* to change
 output, so a diff here isn't automatically a bug. It's a prompt to look at exactly what
@@ -24,6 +26,7 @@ Makefile's `check-ocr-regression` target and README.md's "Dependency Upgrades" s
 import difflib
 import json
 from collections import Counter
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -39,6 +42,30 @@ from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 FIXTURES_ROOT = Path(__file__).resolve().parent.parent.parent / "tests/fixtures"
 FIXTURE_DIRS = [FIXTURES_ROOT / "original", FIXTURES_ROOT / "edge-cases"]
 BASELINE_DIR = FIXTURES_ROOT / "ocr_regression_baseline"
+
+# Sibling of fixtures/, not inside it — these are generated review artifacts (gitignored),
+# not committed fixtures. One timestamped subfolder per run, so past runs stay browsable.
+DIFF_HISTORY_ROOT = FIXTURES_ROOT.parent / "diff_history"
+
+# CSS for the HTML reports. The table.diff/.diff_* rules match difflib.HtmlDiff's own output
+# exactly (copied rather than read off its `_styles` attribute — private, unlisted in
+# typeshed, and small enough to not be worth depending on as an implementation detail).
+_REPORT_STYLES = """
+        table.diff {font-family:Courier; border:medium;}
+        .diff_header {background-color:#e0e0e0}
+        td.diff_header {text-align:right}
+        .diff_next {background-color:#c0c0c0}
+        .diff_add {background-color:#aaffaa}
+        .diff_chg {background-color:#ffff77}
+        .diff_sub {background-color:#ffaaaa}
+        table.kv-diff {border-collapse: collapse; margin-bottom: 1em; font-family: Courier;}
+        table.kv-diff th, table.kv-diff td {border: 1px solid #999; padding: 4px 8px;}
+        table.kv-diff tr.added {background-color: #dfd;}
+        table.kv-diff tr.removed {background-color: #fdd;}
+        table.kv-diff tr.changed {background-color: #ffe9a8;}
+        h2 {font-family: sans-serif;}
+        h3 {font-family: sans-serif; margin-top: 1.5em;}
+"""
 
 
 def _discover_fixtures() -> list[Path]:
@@ -121,8 +148,8 @@ class Command(BaseCommand):
 
     help = (
         "Diffs real opendataloader-hybrid OCR/tagging output against a committed baseline. "
-        "Not pass/fail — prints what changed so you can judge whether it's expected. Use "
-        "--record to accept the current output as the new baseline."
+        "Not pass/fail — prints what changed and writes a color-coded HTML diff for any "
+        "changed fixture. Use --record to accept the current output as the new baseline."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -142,14 +169,15 @@ class Command(BaseCommand):
         if not fixtures:
             raise CommandError(f"No PDF fixtures found under {FIXTURE_DIRS}")
 
+        run_dir = DIFF_HISTORY_ROOT / datetime.now().strftime("%Y%m%dT%H%M%S")
+        html_reports: list[Path] = []
+
         any_diff = False
         for fixture_path in fixtures:
-            label = str(fixture_path.relative_to(FIXTURES_ROOT))
+            rel_path = fixture_path.relative_to(FIXTURES_ROOT)
             fingerprint = _build_fingerprint(adapter, fixture_path)
 
-            baseline_path = (BASELINE_DIR / fixture_path.relative_to(FIXTURES_ROOT)).with_suffix(
-                ".json"
-            )
+            baseline_path = (BASELINE_DIR / rel_path).with_suffix(".json")
 
             if record:
                 baseline_path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,9 +191,17 @@ class Command(BaseCommand):
                 )
             baseline = json.loads(baseline_path.read_text())
 
-            self.stdout.write(f"\n=== {label} ===")
+            self.stdout.write(f"\n=== {rel_path} ===")
             file_changed = self._report_diff(baseline, fingerprint)
             any_diff = any_diff or file_changed
+
+            if file_changed:
+                report_path = (run_dir / rel_path).with_suffix(".html")
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(
+                    self._render_html_report(str(rel_path), baseline, fingerprint)
+                )
+                html_reports.append(report_path)
 
         if record:
             return
@@ -180,6 +216,9 @@ class Command(BaseCommand):
                     "looks unintended, investigate before merging."
                 )
             )
+            self.stdout.write("\nColor-coded HTML diffs written:")
+            for report_path in html_reports:
+                self.stdout.write(f"  {report_path}")
         else:
             self.stdout.write(self.style.SUCCESS("\nNo change from the recorded baseline."))
 
@@ -250,3 +289,68 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(f"  {label}.{key}: {old_value!r} -> {new_value!r}")
         return changed
+
+    def _render_kv_diff_table(self, label: str, old: dict[str, Any], new: dict[str, Any]) -> str:
+        rows = []
+        for key in sorted(set(old) | set(new)):
+            old_value, new_value = old.get(key), new.get(key)
+            if old_value == new_value:
+                continue
+            css_class = "added" if key not in old else "removed" if key not in new else "changed"
+            rows.append(
+                f"<tr class='{css_class}'><td>{key}</td>"
+                f"<td>{old_value if key in old else ''}</td>"
+                f"<td>{new_value if key in new else ''}</td></tr>"
+            )
+        if not rows:
+            return ""
+        return (
+            f"<h3>{label}</h3><table class='kv-diff'>"
+            "<tr><th>field</th><th>baseline</th><th>current</th></tr>"
+            f"{''.join(rows)}</table>"
+        )
+
+    def _render_html_report(
+        self, label: str, baseline: dict[str, Any], current: dict[str, Any]
+    ) -> str:
+        html_diff = difflib.HtmlDiff(wrapcolumn=100)
+        body_parts = [f"<h2>{label}</h2>"]
+
+        if baseline.get("extraction_error") != current.get("extraction_error"):
+            body_parts.append(
+                self._render_kv_diff_table(
+                    "extraction_error",
+                    {"extraction_error": baseline.get("extraction_error")},
+                    {"extraction_error": current.get("extraction_error")},
+                )
+            )
+
+        if not (baseline.get("extraction_error") or current.get("extraction_error")):
+            body_parts.append(
+                self._render_kv_diff_table("metadata", baseline["metadata"], current["metadata"])
+            )
+            body_parts.append(
+                self._render_kv_diff_table(
+                    "structure_tag_counts",
+                    baseline["structure_tag_counts"],
+                    current["structure_tag_counts"],
+                )
+            )
+            for i, (old_page, new_page) in enumerate(
+                zip(baseline["page_text"], current["page_text"], strict=False)
+            ):
+                if old_page == new_page:
+                    continue
+                body_parts.append(f"<h3>page {i} text</h3>")
+                body_parts.append(
+                    html_diff.make_table(
+                        old_page, new_page, "baseline", "current", context=True, numlines=2
+                    )
+                )
+
+        return (
+            "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            f"<title>OCR regression diff: {label}</title>"
+            f"<style>{_REPORT_STYLES}</style>"
+            f"</head><body>{''.join(body_parts)}</body></html>"
+        )
