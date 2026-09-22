@@ -53,7 +53,7 @@ NONCOMPLIANT_REPORT = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 # Trimmed from a real veraPDF 1.30.2 run against
-# docs/tests/example-files/edge-cases/page9-broken-tounicode-offset29.pdf — two failed rules
+# remediation/tests/fixtures/edge-cases/page9-broken-tounicode-offset29.pdf — two failed rules
 # across different clauses, each with its own `failedChecks` count.
 MULTI_RULE_REPORT = """<?xml version="1.0" encoding="utf-8"?>
 <report>
