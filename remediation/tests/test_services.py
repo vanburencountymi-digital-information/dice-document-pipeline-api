@@ -6,7 +6,6 @@ from unittest.mock import create_autospec
 
 import boto3
 from django.core.files.storage import default_storage
-from django.db import IntegrityError
 from django.test import TestCase, override_settings
 from moto import mock_aws
 from parameterized import parameterized
@@ -56,10 +55,12 @@ from remediation.services import (
     ScoringService,
 )
 from remediation.tests.factories import (
+    FailedRuleFactory,
     PdfUploadFactory,
     PipelineConfigFactory,
     RemediationArtifactFactory,
     RemediationFactory,
+    VerificationResultFactory,
 )
 from remediation.tests.helpers import (
     assert_step_continues_on_adapter_error,
@@ -364,11 +365,42 @@ class ArtifactServiceTests(TestCase):
         self.assertEqual(artifact.error, "Timeout error during OCR")
         self.assertEqual(artifact.output_uri, "")
 
-    def test_mark_completed_for_step_already_recorded_violates_unique_constraint(self) -> None:
-        RemediationArtifactFactory(remediation=self.remediation, step=RemediationArtifact.Step.OCR)
+    def test_mark_completed_for_step_already_recorded_updates_existing_row(self) -> None:
+        RemediationArtifactFactory(
+            remediation=self.remediation,
+            step=RemediationArtifact.Step.OCR,
+            status=RemediationArtifact.StepStatus.FAILED,
+            error="Timeout error during OCR",
+        )
 
-        with self.assertRaises(IntegrityError):
-            self.service.mark_completed(self.remediation, "local:///tmp/output-2.pdf")
+        artifact = self.service.mark_completed(self.remediation, "local:///tmp/output-2.pdf")
+
+        self.assertEqual(
+            self.remediation.artifacts.filter(step=RemediationArtifact.Step.OCR).count(), 1
+        )
+        self.assertEqual(artifact.status, RemediationArtifact.StepStatus.COMPLETED)
+        self.assertEqual(artifact.output_uri, "local:///tmp/output-2.pdf")
+        self.assertEqual(artifact.error, "")
+
+    @parameterized.expand(
+        [
+            ("completed", RemediationArtifact.StepStatus.COMPLETED, "remediations/prior.pdf"),
+            ("failed", RemediationArtifact.StepStatus.FAILED, None),
+            ("skipped", RemediationArtifact.StepStatus.SKIPPED, None),
+        ]
+    )
+    def test_completed_output_uri_only_counts_completed_steps(
+        self, _name, status, expected
+    ) -> None:
+        remediation = RemediationFactory()
+        RemediationArtifactFactory(
+            remediation=remediation,
+            step=RemediationArtifact.Step.OCR,
+            status=status,
+            output_uri="remediations/prior.pdf",
+        )
+
+        self.assertEqual(self.service.completed_output_uri(remediation), expected)
 
     @parameterized.expand(
         [
@@ -435,6 +467,75 @@ class VerificationServiceTests(TestCase):
         self.assertEqual(result_row.failed_rules, [])
         self.assertIsNone(result_row.worst_severity)
         self.assertEqual(result_row.verapdf_version, "1.30.2")
+
+    @parameterized.expand(
+        [
+            ("precheck_compliant", PrecheckService, True, AlreadyCompliant),
+            ("precheck_noncompliant", PrecheckService, False, None),
+            ("postcheck_compliant", PostCheckService, True, None),
+            ("postcheck_noncompliant", PostCheckService, False, NotCompliant),
+        ]
+    )
+    def test_run_replays_stored_verdict_without_calling_adapter(
+        self, _name, service_cls, is_compliant, expected_exception
+    ) -> None:
+        """ADR 0019 — on redelivery the stored verdict must still raise the same signal,
+        or the pipeline would carry on past a decision the first run already made.
+        """
+        remediation = RemediationFactory()
+        RemediationArtifactFactory(
+            remediation=remediation,
+            step=service_cls.step,
+            status=RemediationArtifact.StepStatus.COMPLETED,
+            output_uri="remediations/test.pdf",
+        )
+        VerificationResultFactory(
+            remediation=remediation,
+            step=service_cls.step,
+            is_compliant=is_compliant,
+            failed_rules=[] if is_compliant else [FailedRuleFactory()],
+        )
+        service = service_cls(adapter=self.adapter)
+
+        if expected_exception is not None:
+            with self.assertRaises(expected_exception):
+                service.run(remediation, pdf_uri="remediations/test.pdf")
+        else:
+            result = service.run(remediation, pdf_uri="remediations/test.pdf")
+            self.assertEqual(result, "remediations/test.pdf")
+
+        self.adapter.validate.assert_not_called()
+        self.assertEqual(
+            VerificationResult.objects.filter(
+                remediation=remediation, step=service_cls.step
+            ).count(),
+            1,
+        )
+
+    @parameterized.expand(
+        [
+            ("precheck", PrecheckService),
+            ("postcheck", PostCheckService),
+        ]
+    )
+    def test_run_raises_when_completed_step_has_no_stored_verdict(self, _name, service_cls) -> None:
+        """ADR 0019 — a COMPLETED verification step without its `VerificationResult`
+        shouldn't be possible (the result is saved first). If it happens anyway, fail loudly
+        rather than silently skipping the verdict or quietly re-running the check.
+        """
+        remediation = RemediationFactory()
+        RemediationArtifactFactory(
+            remediation=remediation,
+            step=service_cls.step,
+            status=RemediationArtifact.StepStatus.COMPLETED,
+            output_uri="remediations/test.pdf",
+        )
+        service = service_cls(adapter=self.adapter)
+
+        with self.assertRaises(VerificationResult.DoesNotExist):
+            service.run(remediation, pdf_uri="remediations/test.pdf")
+
+        self.adapter.validate.assert_not_called()
 
     @parameterized.expand(
         [
@@ -878,6 +979,41 @@ class ScoringServiceTests(TestCase):
         self.assertFalse(RemediationScore.objects.filter(remediation=self.remediation).exists())
 
 
+# Every step whose `run()` is "call one adapter method, persist/return a URI" — shared by
+# the adapter-error and already-completed tests below.
+SINGLE_ADAPTER_STEPS = [
+    ("ocr", OCRService, OpenDataLoaderAdapter, "extract", RemediationArtifact.Step.OCR),
+    (
+        "font_repair",
+        FontRepairService,
+        FontRepairPikePdfAdapter,
+        "repair",
+        RemediationArtifact.Step.FONT_REPAIR,
+    ),
+    (
+        "metadata",
+        MetadataService,
+        PikePdfAdapter,
+        "finalize",
+        RemediationArtifact.Step.FINALIZE_METADATA,
+    ),
+    (
+        "link",
+        LinkService,
+        LinkPikePdfAdapter,
+        "repair",
+        RemediationArtifact.Step.LINK_TAG,
+    ),
+    (
+        "scoring",
+        ScoringService,
+        ScoringPikePdfAdapter,
+        "score",
+        RemediationArtifact.Step.SCORING,
+    ),
+]
+
+
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class StepContinuesOnAdapterErrorTests(TestCase):
     """One shared proof of ADR 0013's "a failed step doesn't abort the pipeline" contract,
@@ -889,39 +1025,7 @@ class StepContinuesOnAdapterErrorTests(TestCase):
     def setUpTestData(cls) -> None:
         cls.remediation = RemediationFactory(source_pdf_uri="remediations/test.pdf")
 
-    @parameterized.expand(
-        [
-            ("ocr", OCRService, OpenDataLoaderAdapter, "extract", RemediationArtifact.Step.OCR),
-            (
-                "font_repair",
-                FontRepairService,
-                FontRepairPikePdfAdapter,
-                "repair",
-                RemediationArtifact.Step.FONT_REPAIR,
-            ),
-            (
-                "metadata",
-                MetadataService,
-                PikePdfAdapter,
-                "finalize",
-                RemediationArtifact.Step.FINALIZE_METADATA,
-            ),
-            (
-                "link",
-                LinkService,
-                LinkPikePdfAdapter,
-                "repair",
-                RemediationArtifact.Step.LINK_TAG,
-            ),
-            (
-                "scoring",
-                ScoringService,
-                ScoringPikePdfAdapter,
-                "score",
-                RemediationArtifact.Step.SCORING,
-            ),
-        ]
-    )
+    @parameterized.expand(SINGLE_ADAPTER_STEPS)
     def test_run_continues_on_adapter_error(
         self, _name, service_cls, adapter_cls, mock_method_name, step
     ) -> None:
@@ -934,6 +1038,43 @@ class StepContinuesOnAdapterErrorTests(TestCase):
             remediation=self.remediation,
             pdf_uri="remediations/test.pdf",
         )
+
+
+class StepSkipsWhenAlreadyCompletedTests(TestCase):
+    """ADR 0019 — a redelivered task never re-runs a step that already completed."""
+
+    @parameterized.expand(
+        [
+            *SINGLE_ADAPTER_STEPS,
+            (
+                "alt_text",
+                AltTextService,
+                AltTextPikePdfAdapter,
+                "collect_figures",
+                RemediationArtifact.Step.ALT_TEXT,
+            ),
+        ]
+    )
+    def test_run_returns_prior_output_without_calling_adapter(
+        self, _name, service_cls, adapter_cls, mock_method_name, step
+    ) -> None:
+        remediation = RemediationFactory()
+        RemediationArtifactFactory(
+            remediation=remediation,
+            step=step,
+            status=RemediationArtifact.StepStatus.COMPLETED,
+            output_uri="remediations/prior.pdf",
+        )
+        adapter = create_autospec(adapter_cls, spec_set=True)
+        collaborators = {"adapter": adapter}
+        if service_cls is AltTextService:
+            collaborators["client"] = create_autospec(ClaudeVisionClient, spec_set=True)
+
+        result = service_cls(**collaborators).run(remediation, pdf_uri="remediations/test.pdf")
+
+        self.assertEqual(result, "remediations/prior.pdf")
+        getattr(adapter, mock_method_name).assert_not_called()
+        self.assertEqual(remediation.artifacts.filter(step=step).count(), 1)
 
 
 class S3StorageIntegrationTests(TestCase):

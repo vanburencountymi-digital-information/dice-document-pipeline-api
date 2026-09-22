@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 from django.tasks import TaskResultStatus
 from django.test import TestCase, override_settings
+from django.utils import timezone
+from parameterized import parameterized
 
 from remediation.adapters.base import AdapterError, FailedRule, VerificationOutcome
 from remediation.adapters.verification.severity import Severity
@@ -14,8 +16,13 @@ from remediation.tasks import (
     process_remediation,
     send_webhook_notification,
 )
-from remediation.tests.factories import RemediationCallbackFactory, RemediationFactory
-from remediation.tests.helpers import fake_adapter_output
+from remediation.tests.factories import (
+    RemediationArtifactFactory,
+    RemediationCallbackFactory,
+    RemediationFactory,
+    VerificationResultFactory,
+)
+from remediation.tests.helpers import fake_adapter_output, write_fake_pdf
 from remediation.webhook_client import WebhookDeliveryError
 
 
@@ -180,6 +187,69 @@ class ProcessRemediationTaskTests(TestCase):
                 step=RemediationArtifact.Step.OCR,
                 status=RemediationArtifact.StepStatus.COMPLETED,
             ).exists()
+        )
+
+    @override_settings(
+        RUN_PRECHECK=True,
+        RUN_OCR=True,
+        RUN_FONT_REPAIR=False,
+        RUN_FINALIZE_METADATA=False,
+        RUN_LINK_TAG=False,
+        RUN_ALT_TEXT=False,
+        RUN_SCORING=False,
+        RUN_POSTCHECK=True,
+    )
+    @patch("remediation.services.OpenDataLoaderAdapter", autospec=True)
+    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    def test_redelivered_task_resumes_without_rerunning_completed_steps(
+        self, mock_vera_cls, mock_ocr_cls
+    ) -> None:
+        """ADR 0019 — the state a worker crash after OCR leaves behind: still `RUNNING`,
+        precheck and OCR already recorded. Only postcheck should actually run.
+        """
+        remediation = RemediationFactory(
+            with_stored_file=True, status=Remediation.JobStatus.RUNNING
+        )
+        RemediationArtifactFactory(
+            remediation=remediation,
+            step=RemediationArtifact.Step.PRECHECK,
+            status=RemediationArtifact.StepStatus.COMPLETED,
+            output_uri=remediation.source_pdf_uri,
+        )
+        VerificationResultFactory(
+            remediation=remediation, step=RemediationArtifact.Step.PRECHECK, is_compliant=False
+        )
+        ocr_output_uri = f"remediations/{remediation.id}/ocr/test.pdf"
+        write_fake_pdf(ocr_output_uri)
+        RemediationArtifactFactory(
+            remediation=remediation,
+            step=RemediationArtifact.Step.OCR,
+            status=RemediationArtifact.StepStatus.COMPLETED,
+            output_uri=ocr_output_uri,
+        )
+        mock_vera_cls.return_value.validate.return_value = VerificationOutcome(
+            is_compliant=True, failed_rules=[], verapdf_version="1.30.2"
+        )
+
+        result = process_remediation.enqueue(str(remediation.id))
+
+        remediation.refresh_from_db()
+        self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.final_output_uri, ocr_output_uri)
+        mock_ocr_cls.return_value.extract.assert_not_called()
+        mock_vera_cls.return_value.validate.assert_called_once()
+        self.assertEqual(
+            set(
+                remediation.artifacts.filter(
+                    status=RemediationArtifact.StepStatus.COMPLETED
+                ).values_list("step", flat=True)
+            ),
+            {
+                RemediationArtifact.Step.PRECHECK,
+                RemediationArtifact.Step.OCR,
+                RemediationArtifact.Step.POSTCHECK,
+            },
         )
 
     @override_settings(
@@ -363,6 +433,31 @@ class ProcessRemediationWebhookTests(TestCase):
 
         enqueued_ids = {call.args[0] for call in mock_send.enqueue.call_args_list}
         self.assertEqual(enqueued_ids, {str(callback_a.id), str(callback_b.id)})
+
+    @parameterized.expand(
+        [
+            ("complete", Remediation.JobStatus.COMPLETE),
+            ("failed", Remediation.JobStatus.FAILED),
+        ]
+    )
+    @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
+    def test_redelivered_task_for_finished_remediation_is_a_noop(
+        self, _name, status, mock_send
+    ) -> None:
+        """ADR 0019 — no steps re-run, timestamps untouched, no second round of webhooks."""
+        remediation = RemediationFactory(status=status, completed_at=timezone.now())
+        RemediationCallbackFactory(remediation=remediation)
+        completed_at = remediation.completed_at
+
+        result = process_remediation.enqueue(str(remediation.id))
+
+        remediation.refresh_from_db()
+        self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
+        self.assertEqual(remediation.status, status)
+        self.assertEqual(remediation.completed_at, completed_at)
+        self.assertIsNone(remediation.started_at)
+        self.assertFalse(remediation.artifacts.exists())
+        mock_send.enqueue.assert_not_called()
 
     @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
     def test_does_not_enqueue_when_no_callbacks_registered(self, mock_send) -> None:

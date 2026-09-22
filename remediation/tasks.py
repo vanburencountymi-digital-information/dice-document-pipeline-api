@@ -106,6 +106,16 @@ def process_remediation(remediation_id: str) -> None:
     """
     service = RemediationService()
     remediation = service.get(remediation_id)
+    # A redelivered task for an already-finished attempt (ADR 0019) — returning before the
+    # try/finally below keeps timestamps intact and doesn't re-send every webhook. Retries
+    # are unaffected: they always create a new `Remediation` row (ADR 0014).
+    if remediation.status in (Remediation.JobStatus.COMPLETE, Remediation.JobStatus.FAILED):
+        LOGGER.info(
+            "remediation %s: already %s, skipping redelivered task",
+            remediation_id,
+            remediation.status,
+        )
+        return
     service.mark_running(remediation)
     pdf_uri = remediation.source_pdf_uri
     LOGGER.info(
