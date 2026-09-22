@@ -1,0 +1,39 @@
+# Runs the Django test suite (the same command `make test` runs) on every pull request.
+#
+# Deliberately skips building/starting the opendataloader-hybrid service (--no-deps below):
+# every test that exercises the OCR step mocks OpenDataLoaderAdapter/opendataloader_pdf.convert
+# directly (see remediation/tests/test_adapters.py, test_services.py) — nothing here calls the
+# real hybrid server, so building its image on every PR would be pure CI time with no coverage
+# benefit. The separate, deliberately-manual `make check-ocr-regression` battery (see README's
+# "Dependency Upgrades" section) is what actually exercises that real service — not this.
+name: Test
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # docker-compose.yml's `app` service references `env_file: .env` — gitignored, so it
+      # doesn't exist in a fresh checkout. SECRET_KEY is the only setting with no default
+      # (see .env.example); everything else settings.py falls back on is fine for tests.
+      - name: Create minimal .env for CI
+        run: echo "SECRET_KEY=ci-test-secret-key-not-for-production" > .env
+
+      - name: Build app image
+        run: docker compose build app
+
+      - name: Start database
+        run: docker compose up -d --wait db
+
+      - name: Run Django test suite
+        run: docker compose run --rm --no-deps app python manage.py test --settings=config.test_settings
