@@ -1,4 +1,4 @@
-.PHONY: build up down recreate migrate migrations shell pyshell test verapdf-version init garage
+.PHONY: build up down recreate migrate migrations shell pyshell test check-ocr-regression verapdf-version init garage
 
 build:
 	# Docker auto-creates a missing bind-mount source as root, which then blocks
@@ -50,6 +50,13 @@ pyshell:
 
 test:
 	docker compose run --rm app python manage.py test --settings=config.test_settings
+
+# Not part of `make test`/CI — needs the real opendataloader-hybrid container and is meant
+# to be run by hand before/after bumping torch, the Docling fork, or opendataloader-pdf.
+# See README.md's "Dependency Upgrades" section. Pass ARGS=--record to (re)generate the
+# committed baseline instead of comparing against it.
+check-ocr-regression:
+	docker compose run --rm app python manage.py check_ocr_regression $(ARGS)
 
 verapdf-version:
 	docker compose run --rm app verapdf --version

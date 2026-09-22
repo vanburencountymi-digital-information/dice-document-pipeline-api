@@ -175,6 +175,20 @@ any version of the pipeline that has previously run a remediation job via the ad
 
 This repo is currently pinned to forked versions of OpenDataLoader and Docling due to the need for bug-fixes not present in the original files. We periodically check to see if the main images have been upgraded to include those bugfixes; once they have, we will pin to main branch.
 
+**Whenever you bump a major dependency in `Dockerfile.opendataloader-hybrid`/`requirements-opendataloader-hybrid.txt`** (torch, the Docling fork, `opendataloader-pdf` itself), run the OCR regression check before and after to confirm real OCR/tagging output didn't silently change:
+
+```bash
+make check-ocr-regression
+```
+
+This runs the real `opendataloader-hybrid` OCR/tagging step against a couple of committed fixture PDFs (`remediation/tests/fixtures/original/`) and compares a text/structure fingerprint against a committed baseline (`remediation/tests/fixtures/ocr_regression_baseline/`). It's deliberately **not** part of `make test`/CI — it needs the real container running and is meant to be a manual check around a dependency bump, not a per-PR gate.
+
+If a dependency bump causes a real, deliberately-verified output change (e.g. an upstream bug fix), regenerate the baseline instead of treating the mismatch as a failure:
+
+```bash
+make check-ocr-regression ARGS=--record
+```
+
 ### VeraPDF
 
 This repo currently validates against PDF/UA-1, not the newer PDF/UA-2, because PDF/UA-2 targets PDF 2.0's structure model and none of the available tooling (OpenDataLoader, pikepdf) produces PDF 2.0 output yet.
