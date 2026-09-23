@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v2.3.0 (2026-09-23)
+
+### Bug Fixes
+
+- Copy block needs to own files to be able to run inside of container
+  ([`f8f2193`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/f8f2193e888638cbc24eaf2c200f1ff50b24c44a))
+
+### Features
+
+- Add true workers and task queues via django-tasks-db
+  ([`5fa61b8`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/5fa61b811c28c1eb995c5702b8f9fdf0d848dffe))
+
+- Make pipeline steps idempotent for task redelivery
+  ([`d902515`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/d902515c33bb045d6f09487e939de96446d58f5b))
+
+### Testing
+
+- Add Django test battery to CI/CD for PRs targeting main
+  ([`5f464d4`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/5f464d4b94fc5ef9548d7ffb8d3caed79011cb49))
+
+
 ## v2.2.0 (2026-09-22)
 
 ### Features
