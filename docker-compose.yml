@@ -38,16 +38,28 @@ services:
       - ./remediation/migrations:/app/remediation/migrations
     env_file:
       - .env
-    environment:
+    # Anchored so `worker` below reuses the exact same values instead of a copy.
+    environment: &app-environment
       # Overrides config/settings.py's defaults — only apply inside this
       # compose network, where service names resolve via Docker's DNS.
       DATABASE_URL: postgres://dice:dice@db:5432/dice_document_pipeline
       OPENDATALOADER_HYBRID_URL: http://opendataloader-hybrid:5002
-    depends_on:
+    depends_on: &app-depends-on
       db:
         condition: service_healthy
       opendataloader-hybrid:
         condition: service_started
+
+  worker:
+    build: .
+    command: python manage.py db_worker
+    restart: unless-stopped
+    volumes:
+      - ./media:/app/media
+    env_file:
+      - .env
+    environment: *app-environment
+    depends_on: *app-depends-on
 
   # ADR 0004's "--hybrid docling-fast" AI backend — see Dockerfile.opendataloader-hybrid
   # for why this is a separate image from `app`. No healthcheck: `app` only calls this

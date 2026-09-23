@@ -9,3 +9,5 @@ import sentry_sdk
 sentry_sdk.init = MagicMock()  # type: ignore[misc]
 
 from config.settings import *  # noqa: E402,F403
+
+TASKS = {"default": {"BACKEND": "django.tasks.backends.immediate.ImmediateBackend"}}

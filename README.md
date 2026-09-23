@@ -114,16 +114,22 @@ If all steps are enabled via environment variable, a document upload runs throug
 
 ## Testing the API
 
-The API authenticates requests with a token tied to a `ServiceAccount`. To create one, open a Django shell (`make pyshell`) and run:
+The API authenticates requests with a token tied to a `ServiceAccount`. To set one up:
 
-```python
-from accounts.models import Organization
-from accounts.services import ServiceAccountService
+1. Create an admin login (first time only): `docker compose run --rm app python manage.py createsuperuser`, then log in at `http://localhost:8000/admin/`.
+2. Create an organization and service account. Open a Django shell (`make pyshell`) and run:
 
-org = Organization.objects.create(name="Test Org")
-account = ServiceAccountService().create(org, "test-service-account")
-print(account.token)  # save this
-```
+    ```python
+    from accounts.models import Organization
+    from accounts.services import ServiceAccountService
+
+    org = Organization.objects.create(name="Test Org")
+    account, token = ServiceAccountService().create(org, "test-service-account")
+    print(token)  # save this — it can't be shown again
+    print(account.webhook_secret)  # only needed if you use webhooks, to check they came from us
+    ```
+
+3. Need another token later (e.g. you lost it)? In the admin, go to **Service accounts**, tick the account, choose **Issue a new token** from the action menu, and click **Go**. The token appears in the message at the top of the page, only that once. Older tokens keep working.
 
 ### With Postman
 
@@ -132,7 +138,8 @@ print(account.token)  # save this
 1. New request: `POST http://localhost:8000/api/submit-document/` (or whatever URL you've deployed to)
 2. Headers: Key: `Authorization`, Value: `Token <the token you printed above>`
 3. Body: Choose `form-data` radio button. Add key `file`, change its type (in next column) from "Text" to `File`, and pick a PDF.
-4. Send. The response is the remediation job — `status` will be `COMPLETE` or `FAILED` immediately, since the pipeline runs synchronously when deployed locally (via Django Tasks ImmediateBackend.)
+   - Optional: add a key `callback_url` (type Text) with the URL to notify when the job finishes, e.g. `https://example.com/webhooks/remediation`. See [Get a webhook instead of polling](#get-a-webhook-instead-of-polling) below.
+4. Send. The response is the remediation job, with `status` `queued`. The worker processes it in the background; check its status (below) or register a webhook to find out when it's done.
 
 The response will contain an `id` field with the remediation job id and a `document_id` that is a hashed key for your document; save this if you want to check status later.
 
@@ -144,12 +151,12 @@ If you would like to force re-running the pipeline, such as during testing, clic
 
 #### Check a submitted document's status
 
-Submissions in the local environment process synchronously (and therefore don't return a response to postman until the document has finished processing). However, there is a known bug with postman where a long running POST waiting for a response (as would occur when OCR'ing a 150 page, complex document) can appear to hang--in other words, the POST never appears to return a response to PostMan, even though the job actually completed. If you suspect this may have happened (i.e., job running over an hour), you can check via the `document-status` endpoint:
+Submissions return right away with `status` `queued`; the worker processes them in the background. To see how a job is doing, use the `document-status` endpoint:
 
 1. New request: `GET http://localhost:8000/api/document-status/<document_id>/`, using the `document_id` from the submit response.
 2. Same `Authorization` header as above.
 
-You should see `status` in the response. If the status is `running`, the job is still in progress.
+You should see `status` in the response. `queued` means it's waiting for the worker, and `running` means it's in progress.
 
 #### Download the finished document
 
@@ -161,6 +168,12 @@ This returns the actual PDF file, not JSON. It works even if the job `FAILED` �
 #### Get a webhook instead of polling
 
 Add a `callback_url` key (type Text) to the submit request's `form-data` body. When the job finishes, we'll POST a small JSON notice to that URL (with a `download_url` you can `GET` right away) instead of you having to poll `document-status`. Multiple different callers can each submit the same document with their own `callback_url` and all get notified independently.
+
+## Worker Queue
+
+`make up` also starts a `worker` container. Uploads don't get processed inside the upload request; they're put in a queue (a table in Postgres), and the worker picks them up and runs the pipeline in the background ([ADR 0020](docs/adrs/0020-database-backed-task-worker.md)). Watch it with `docker compose logs -f worker`. If uploads sit at `queued`, the worker isn't running.
+
+Finished task records pile up in that table over time. Clear out old ones with `docker compose run --rm app python manage.py prune_db_task_results`; in a real deployment, run on a schedule.
 
 ## Dependency Upgrades
 

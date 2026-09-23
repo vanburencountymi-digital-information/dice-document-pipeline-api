@@ -41,7 +41,7 @@ from remediation.adapters.ocr.open_data_loader import OpenDataLoaderAdapter
 from remediation.adapters.scoring.pike_pdf import (
     PikePdfAdapter as ScoringPikePdfAdapter,
 )
-from remediation.adapters.verification.severity import SEVERITY_RANK
+from remediation.adapters.verification.severity import SEVERITY_RANK, Severity
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
 from remediation.models import (
     PipelineConfig,
@@ -253,20 +253,58 @@ class ArtifactService:
 
         Deletes any existing object at `dest_uri` first: ADR 0008's paths are deterministic
         on purpose (the same remediation + step always lands at the same key). Retries create
-        new remediation rows, so this only happens with task redelivery and will be fixed
-        with idempotency check soon.
+        new remediation rows, so this only happens when a redelivered task re-runs a step that
+        didn't complete the first time (ADR 0019).
         """
         if default_storage.exists(dest_uri):
             default_storage.delete(dest_uri)
         with open(local_path, "rb") as fh:
             return default_storage.save(dest_uri, File(fh))
 
+    def completed_output_uri(self, remediation: Remediation) -> str | None:
+        """This step's `output_uri` if it already completed for `remediation`, else `None`
+        (ADR 0019). Steps check this first so a redelivered task never re-runs finished work.
+        Only `COMPLETED` counts — a `FAILED` or `SKIPPED` step is allowed to run again.
+        """
+        return (
+            remediation.artifacts.filter(
+                step=self.step, status=RemediationArtifact.StepStatus.COMPLETED
+            )
+            .values_list("output_uri", flat=True)
+            .first()
+        )
+
+    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        """Runs this step, unless it already completed for `remediation` (ADR 0019) — then
+        `resume_completed` stands in for it, so a redelivered task never redoes finished work.
+        Subclasses put their actual work in `_run`.
+        """
+        existing_output_uri = self.completed_output_uri(remediation)
+        if existing_output_uri is not None:
+            return self.resume_completed(remediation, existing_output_uri)
+        return self._run(remediation, pdf_uri=pdf_uri)
+
+    def resume_completed(self, remediation: Remediation, output_uri: str) -> str:
+        """What `run` returns for an already-completed step. Default: the step's previous
+        output. `VerificationService` overrides this to replay its stored verdict.
+        """
+        return output_uri
+
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+        raise NotImplementedError
+
     def _mark_status(
         self, remediation: Remediation, status: RemediationArtifact.StepStatus, **fields: str
     ) -> RemediationArtifact:
-        return RemediationArtifact.objects.create(
-            remediation=remediation, step=self.step, status=status, **fields
+        # Upsert, not create (ADR 0019): a redelivered task re-running a previously failed
+        # step overwrites its row instead of tripping `one_artifact_per_step`. Blank defaults
+        # so a stale `error` doesn't survive a later success (and vice versa).
+        artifact, _ = RemediationArtifact.objects.update_or_create(
+            remediation=remediation,
+            step=self.step,
+            defaults={"status": status, "output_uri": "", "error": "", **fields},
         )
+        return artifact
 
     def mark_completed(self, remediation: Remediation, output_uri: str) -> RemediationArtifact:
         return self._mark_status(
@@ -333,7 +371,28 @@ class VerificationService(ArtifactService):
     def __init__(self, adapter: VerificationAdapter | None = None) -> None:
         self.adapter = adapter or VeraPDFAdapter()
 
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+    def resume_completed(self, remediation: Remediation, output_uri: str) -> str:
+        """Replays the stored verdict rather than just returning early (ADR 0019) —
+        `handle_result` is what raises `AlreadyCompliant`/`NotCompliant`, so skipping it
+        would let a redelivered task carry on past a decision the first run already made.
+        """
+        previous = VerificationResult.objects.get(remediation=remediation, step=self.step)
+        self.handle_result(
+            previous.is_compliant,
+            [
+                FailedRule(
+                    clause=rule["clause"],
+                    test_number=rule["test_number"],
+                    description=rule["description"],
+                    failed_checks=rule["failed_checks"],
+                    severity=Severity(rule["severity"]),
+                )
+                for rule in previous.failed_rules
+            ],
+        )
+        return output_uri
+
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         try:
             with self.local_input_copy(pdf_uri) as pdf_path:
                 outcome = self.adapter.validate(pdf_path)
@@ -409,7 +468,7 @@ class OCRService(ArtifactService):
             hybrid_url=settings.OPENDATALOADER_HYBRID_URL
         )
 
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         try:
             with (
                 self.local_input_copy(pdf_uri) as pdf_path,
@@ -442,7 +501,7 @@ class FontRepairService(ArtifactService):
     def __init__(self, adapter: FontRepairAdapter | None = None) -> None:
         self.adapter = adapter or FontRepairPikePdfAdapter()
 
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         try:
             with (
                 self.local_input_copy(pdf_uri) as pdf_path,
@@ -487,7 +546,7 @@ class MetadataService(ArtifactService):
     def __init__(self, adapter: MetadataAdapter | None = None) -> None:
         self.adapter = adapter or PikePdfAdapter()
 
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         try:
             with (
                 self.local_input_copy(pdf_uri) as pdf_path,
@@ -524,7 +583,7 @@ class LinkService(ArtifactService):
     def __init__(self, adapter: LinkAdapter | None = None) -> None:
         self.adapter = adapter or LinkPikePdfAdapter()
 
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         try:
             with (
                 self.local_input_copy(pdf_uri) as pdf_path,
@@ -563,7 +622,7 @@ class AltTextService(ArtifactService):
             api_key=settings.ANTHROPIC_API_KEY, model=settings.CLAUDE_VISION_MODEL
         )
 
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         document_title = _derive_title(remediation)
 
         try:
@@ -611,7 +670,7 @@ class ScoringService(ArtifactService):
     def __init__(self, adapter: ScoringAdapter | None = None) -> None:
         self.adapter = adapter or ScoringPikePdfAdapter()
 
-    def run(self, remediation: Remediation, *, pdf_uri: str) -> str:
+    def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         try:
             with self.local_input_copy(pdf_uri) as pdf_path:
                 result = self.adapter.score(pdf_path)
