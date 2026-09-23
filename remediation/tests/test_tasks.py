@@ -3,16 +3,18 @@ from __future__ import annotations
 import tempfile
 from unittest.mock import patch
 
+from django.conf import settings
+from django.core.management import call_command
 from django.tasks import TaskResultStatus
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
+from django_tasks_db.models import DBTaskResult
 from parameterized import parameterized
 
 from remediation.adapters.base import AdapterError, FailedRule, VerificationOutcome
 from remediation.adapters.verification.severity import Severity
 from remediation.models import Remediation, RemediationArtifact
 from remediation.tasks import (
-    MAX_WEBHOOK_ATTEMPTS,
     process_remediation,
     send_webhook_notification,
 )
@@ -579,7 +581,9 @@ class SendWebhookNotificationTaskTests(TestCase):
 
         send_webhook_notification.enqueue(str(callback.id))
 
-        self.assertEqual(mock_client_cls.return_value.notify.call_count, MAX_WEBHOOK_ATTEMPTS)
+        self.assertEqual(
+            mock_client_cls.return_value.notify.call_count, settings.MAX_WEBHOOK_ATTEMPTS
+        )
 
     @patch("remediation.tasks.WebhookClient", autospec=True)
     def test_raises_once_max_attempts_reached_instead_of_reenqueueing(
@@ -589,6 +593,78 @@ class SendWebhookNotificationTaskTests(TestCase):
         remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
         callback = RemediationCallbackFactory(remediation=remediation)
 
-        result = send_webhook_notification.enqueue(str(callback.id), attempt=5)
+        result = send_webhook_notification.enqueue(
+            str(callback.id), attempt=settings.MAX_WEBHOOK_ATTEMPTS
+        )
 
         self.assertEqual(result.status, TaskResultStatus.FAILED)
+
+
+@override_settings(
+    TASKS={"default": {"BACKEND": "django_tasks_db.DatabaseBackend"}},
+    MEDIA_ROOT=tempfile.mkdtemp(),
+    RUN_PRECHECK=False,
+    RUN_OCR=False,
+    RUN_FONT_REPAIR=False,
+    RUN_FINALIZE_METADATA=False,
+    RUN_LINK_TAG=False,
+    RUN_ALT_TEXT=False,
+    RUN_SCORING=False,
+    RUN_POSTCHECK=False,
+)
+class DatabaseBackendWorkerTests(TransactionTestCase):
+    """ADR 0020 — tasks are queued in Postgres and only run when `db_worker` picks them up.
+    `--batch` makes the worker run everything that's due, then exit, so tests can drive it.
+
+    `TransactionTestCase`, not `TestCase`: the worker calls `close_old_connections()` on
+    every loop, which on Postgres closes the connection mid-way through `TestCase`'s
+    wrapping transaction and breaks every query after it. SQLite's in-memory database never
+    closes its connection, so this only shows up on Postgres.
+    """
+
+    def run_worker(self) -> None:
+        call_command("db_worker", batch=True, startup_delay=False, reload=False, verbosity=0)
+
+    def test_enqueue_queues_pipeline_for_worker_instead_of_running_inline(self) -> None:
+        remediation = RemediationFactory()
+
+        process_remediation.enqueue(str(remediation.id))
+
+        remediation.refresh_from_db()
+        self.assertEqual(remediation.status, Remediation.JobStatus.QUEUED)
+
+        self.run_worker()
+
+        remediation.refresh_from_db()
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_webhook_retry_waits_for_its_backoff_before_running(self, mock_client_cls) -> None:
+        """The whole point of this backend for ADR 0015's webhooks: a failed delivery's
+        retry is held back until `run_after`, not fired straight away like under
+        `ImmediateBackend`.
+        """
+        mock_client_cls.return_value.notify.side_effect = WebhookDeliveryError("boom")
+        callback = RemediationCallbackFactory(
+            remediation=RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        )
+        send_webhook_notification.enqueue(str(callback.id))
+
+        self.run_worker()
+
+        retry = DBTaskResult.objects.get(status=TaskResultStatus.READY)
+        self.assertEqual(retry.task_result.kwargs, {"attempt": 2})
+        self.assertAlmostEqual(
+            (retry.run_after - timezone.now()).total_seconds(),
+            settings.WEBHOOK_BACKOFF_BASE_SECONDS,
+            delta=5,
+        )
+
+        self.run_worker()
+
+        self.assertEqual(mock_client_cls.return_value.notify.call_count, 1)
+
+        DBTaskResult.objects.filter(pk=retry.pk).update(run_after=timezone.now())
+        self.run_worker()
+
+        self.assertEqual(mock_client_cls.return_value.notify.call_count, 2)

@@ -2,6 +2,7 @@ import logging
 import time
 from datetime import timedelta
 
+from django.conf import settings
 from django.tasks import task
 from django.utils import timezone
 
@@ -38,9 +39,6 @@ PIPELINE_STEPS = [
 
 LOGGER = logging.getLogger(__name__)
 
-MAX_WEBHOOK_ATTEMPTS = 5
-WEBHOOK_BACKOFF_BASE_SECONDS = 30
-
 
 @task()
 def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
@@ -49,12 +47,11 @@ def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
     Keyed by `RemediationCallback.id`, not `remediation_id` — each subscriber on the same
     attempt retries independently of any others registered on it.
 
-    `ImmediateBackend` (this project's local/test backend) doesn't support `run_after` at
-    all — `Task.using(run_after=...)` validates eagerly and raises `InvalidTask` the moment
-    it's constructed, not when enqueued — so this checks `supports_defer` before attaching
-    one. Under `ImmediateBackend` that means retries happen back-to-back with no real delay;
-    genuine exponential backoff only takes effect once a backend that supports deferred
-    execution is configured.
+    `ImmediateBackend` (the test backend) doesn't support `run_after` at all —
+    `Task.using(run_after=...)` validates eagerly and raises `InvalidTask` the moment it's
+    constructed, not when enqueued — so this checks `supports_defer` before attaching one.
+    Under `ImmediateBackend` retries happen back-to-back with no real delay; the default
+    `DatabaseBackend` (ADR 0020) holds each retry until its backoff has passed.
     """
     callback = RemediationCallback.objects.select_related("remediation__service_account").get(
         pk=callback_id
@@ -79,11 +76,11 @@ def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
         )
     except WebhookDeliveryError:
         LOGGER.exception("callback %s: webhook delivery failed (attempt %s)", callback_id, attempt)
-        if attempt >= MAX_WEBHOOK_ATTEMPTS:
+        if attempt >= settings.MAX_WEBHOOK_ATTEMPTS:
             raise
         retry_task = send_webhook_notification
         if send_webhook_notification.get_backend().supports_defer:
-            delay = WEBHOOK_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+            delay = settings.WEBHOOK_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
             retry_task = retry_task.using(run_after=timezone.now() + timedelta(seconds=delay))
         retry_task.enqueue(callback_id, attempt=attempt + 1)
 

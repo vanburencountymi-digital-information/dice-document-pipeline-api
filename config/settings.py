@@ -63,6 +63,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "knox",
+    "django_tasks_db",
     "accounts",
     "api",
     "common",
@@ -189,16 +190,25 @@ REST_KNOX = {
     "AUTO_REFRESH": True,
 }
 
-# This repo uses Django Tasks, swap out backends as needed.
+# Tasks
+
+# This repo uses Django Tasks (ADR 0020). Tasks are queued in the database and run by a
+# separate worker process (`manage.py db_worker`). config/test_settings.py swaps in
+# ImmediateBackend so tests run tasks inline.
 
 TASKS = {
     "default": {
         "BACKEND": env.str(
             "DJANGO_TASKS_BACKEND",
-            default="django.tasks.backends.immediate.ImmediateBackend",
+            default="django_tasks_db.DatabaseBackend",
         ),
     }
 }
+
+# ADR 0015 — send_webhook_notification gives up after this many delivery attempts, waiting
+# WEBHOOK_BACKOFF_BASE_SECONDS * 2^(attempt - 1) before each retry (30s, 60s, 120s, ...).
+MAX_WEBHOOK_ATTEMPTS = env.int("MAX_WEBHOOK_ATTEMPTS", default=5)
+WEBHOOK_BACKOFF_BASE_SECONDS = env.int("WEBHOOK_BACKOFF_BASE_SECONDS", default=30)
 
 # Remediation pipeline step toggles
 RUN_PRECHECK = env.bool("RUN_PRECHECK", default=False)
