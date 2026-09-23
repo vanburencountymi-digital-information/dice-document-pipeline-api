@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v2.3.1 (2026-09-23)
+
+### Bug Fixes
+
+- Bump sqlparse from 0.5.5 to 0.6.0
+  ([#11](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/11),
+  [`bcb591e`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/bcb591e2c275c3ff4b288522cadfd64b3b63c1b1))
+
+
 ## v2.3.0 (2026-09-23)
 
 ### Bug Fixes
