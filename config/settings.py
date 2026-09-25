@@ -234,6 +234,12 @@ TASKS = {
 MAX_WEBHOOK_ATTEMPTS = env.int("MAX_WEBHOOK_ATTEMPTS", default=5)
 WEBHOOK_BACKOFF_BASE_SECONDS = env.int("WEBHOOK_BACKOFF_BASE_SECONDS", default=30)
 
+# ADR 0023 — only used by `manage.py run_queued_tasks` (the scheduled worker in deployed
+# environments): when there's work queued, how long to wait for the OCR sidecar to finish
+# loading before giving up (tasks stay queued for the next run), and how often to check.
+OCR_READY_TIMEOUT_SECONDS = env.int("OCR_READY_TIMEOUT_SECONDS", default=600)
+OCR_READY_POLL_SECONDS = env.int("OCR_READY_POLL_SECONDS", default=5)
+
 # Remediation pipeline step toggles
 RUN_PRECHECK = env.bool("RUN_PRECHECK", default=False)
 RUN_OCR = env.bool("RUN_OCR", default=False)

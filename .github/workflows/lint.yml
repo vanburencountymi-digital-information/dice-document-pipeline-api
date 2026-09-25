@@ -1,0 +1,43 @@
+name: Lint
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    # mypy's Django plugin loads config.settings, which requires both of these (ADR 0021).
+    # Dummy values: nothing here connects to a database.
+    env:
+      SECRET_KEY: ci-lint-secret-key-not-for-production
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Reuses pre-commit's hook environments (notably mypy's, which installs Django and
+      # the rest of additional_dependencies) between runs; rebuilt only when the hook
+      # config changes.
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      # The commit-msg hook (conventional-pre-commit) only runs at the commit-msg stage,
+      # so it's skipped here automatically.
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files --show-diff-on-failure

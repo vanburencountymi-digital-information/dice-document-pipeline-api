@@ -1,0 +1,58 @@
+# Automated staging deploy (ADR 0022). Run by the Cloud Build trigger `dice-staging-deploy`
+# whenever release.yml pushes a new vX.Y.Z tag — i.e. after every merge to main.
+# Setup and first deploy: docs/deploying-staging.md.
+#
+# Order matters, and each step must succeed before the next runs:
+#   1-2. Build and push the app image, versioned by the release tag (ADR 0012).
+#   3.   Run migrations with the new image. If they fail, the build stops here and nothing
+#        new is deployed — staging keeps running the previous version.
+#   4.   Point the app at the new image.
+#   5.   Point the worker job's `worker` container at the new image (ADR 0023: the worker
+#        is a Cloud Run job run every 15 minutes by Cloud Scheduler, not an always-on
+#        service).
+#
+# Steps 3-5 use `update`, not `deploy`: they only swap the image, keeping the env vars,
+# secrets, Cloud SQL connection, OCR sidecar and schedule set up in the Console.
+
+substitutions:
+  _REGION: us-central1
+  _REPO: dice
+  _APP_SERVICE: dice-app
+  _WORKER_JOB: dice-worker
+  _MIGRATE_JOB: dice-migrate
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/app:${TAG_NAME}
+
+options:
+  # Substitutions defined in terms of other substitutions (_IMAGE above) need this.
+  dynamicSubstitutions: true
+  # The Java/Maven build stages in the Dockerfile are CPU-heavy.
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 3600s
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "--build-arg", "PIPELINE_VERSION=${TAG_NAME}", "-t", "${_IMAGE}", "."]
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}"]
+
+  - id: migrate
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud run jobs update ${_MIGRATE_JOB} --image ${_IMAGE} --region ${_REGION} &&
+        gcloud run jobs execute ${_MIGRATE_JOB} --region ${_REGION} --wait
+
+  - id: deploy-app
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args: ["gcloud", "run", "services", "update", "${_APP_SERVICE}", "--image", "${_IMAGE}", "--region", "${_REGION}"]
+
+  - id: deploy-worker
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args: ["gcloud", "run", "jobs", "update", "${_WORKER_JOB}", "--region", "${_REGION}", "--container", "worker", "--image", "${_IMAGE}"]
