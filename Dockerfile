@@ -1,5 +1,4 @@
-# dice-document-pipeline-api — dev image
-#
+
 # Scope (see ADR 0007 for the Java version call, and implementation_plan.md's
 # Decisions for why Docker is staged this way): the Django app, veraPDF for the
 # precheck/postcheck stages, and Java + the `opendataloader-pdf` pip package
@@ -16,9 +15,10 @@
 # Run via docker-compose (app + Postgres — see docker-compose.yml):
 #   docker compose up --build
 #
-# Run this image alone, no Postgres (falls back to sqlite per config/settings.py):
+# Run this image alone with its default command (gunicorn), as a deploy does — point
+# DATABASE_URL at a reachable Postgres, as every real deploy sets it:
 #   docker build -t dice-document-pipeline-api .
-#   docker run -p 8000:8000 --env-file .env dice-document-pipeline-api
+#   docker run -p 8000:8000 --env-file .env -e DATABASE_URL=postgres://... dice-document-pipeline-api
 
 # ---- Stage 1: install veraPDF via its own unattended installer -------------
 FROM eclipse-temurin:21-jdk-alpine AS verapdf-installer
@@ -125,7 +125,19 @@ COPY --chown=app:app api/ ./api/
 COPY --chown=app:app common/ ./common/
 COPY --chown=app:app remediation/ ./remediation/
 
+# Gathers static files (the admin's CSS/JS) into /app/staticfiles for WhiteNoise to serve
+# (ADR 0021). Runs before `USER app`, since the app user can't create directories in /app.
+# SECRET_KEY and DATABASE_URL have no defaults in settings, so this one build step gets
+# throwaway values — collectstatic never uses the key or connects to the database, and
+# neither value is baked into the image's environment.
+RUN SECRET_KEY=collectstatic-only DATABASE_URL=postgres://unused@localhost/unused \
+    python manage.py collectstatic --noinput
+
 USER app
 
 EXPOSE 8000
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Cloud Run's recommended starting point: one process with 8 threads, bound to the port
+# Cloud Run provides in $PORT (8000 when run elsewhere). `--timeout 0` turns off gunicorn's
+# own worker timeout and leaves request timeouts to Cloud Run. Tune without rebuilding via
+# gunicorn's GUNICORN_CMD_ARGS env var, e.g. more workers on a multi-CPU instance.
+CMD exec gunicorn config.wsgi:application --bind "0.0.0.0:${PORT:-8000}" --workers 1 --threads 8 --timeout 0 --access-logfile -

@@ -9,7 +9,7 @@ Docker only — the current implementation depends on Postgres, Java/veraPDF, an
 ### 1. Docker
 
 ```bash
-cp .env.example .env   # then set SECRET_KEY (see comment in the file)
+cp .env.example .env   # then set SECRET_KEY (see comment in the file); DATABASE_URL is prefilled
 ```
 
 Other make commands include:
@@ -174,6 +174,32 @@ Add a `callback_url` key (type Text) to the submit request's `form-data` body. W
 `make up` also starts a `worker` container. Uploads don't get processed inside the upload request; they're put in a queue (a table in Postgres), and the worker picks them up and runs the pipeline in the background ([ADR 0020](docs/adrs/0020-database-backed-task-worker.md)). Watch it with `docker compose logs -f worker`. If uploads sit at `queued`, the worker isn't running.
 
 Finished task records pile up in that table over time. Clear out old ones with `docker compose run --rm app python manage.py prune_db_task_results`; in a real deployment, run on a schedule.
+
+## Deploying
+
+Deploy via Docker. Each deploy runs the image two ways:
+
+- **App** — the image's default command (gunicorn). Serves the API and the admin, including the admin's styling (no separate file server needed).
+- **Worker** — same image, command `python manage.py db_worker`. Must always be running, and restart if it crashes; without it, uploads are accepted but never processed.
+
+On each deploy, run `python manage.py migrate` once, before the new version starts taking traffic. Also run `python manage.py prune_db_task_results` on a schedule (e.g. daily) to clear out old task records.
+
+Settings a deploy must set (app **and** worker):
+
+| Setting | What it's for |
+|---|---|
+| `SECRET_KEY` | Long random string; keep it secret. See `.env.example` for how to generate one. |
+| `ALLOWED_HOSTS` | The domain(s) the app is served from, comma-separated. |
+| `PUBLIC_BASE_URL` | The app's public address, e.g. `https://pipeline.example.org` — used in webhook download links. |
+| `DATABASE_URL` | Postgres connection string. |
+| `S3_BUCKET_NAME`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (+ other `S3_*` as needed) | Where uploaded and finished PDFs are stored ([ADR 0018](docs/adrs/0018-s3-compatible-storage-backend.md)). |
+| `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | Error reporting, e.g. environment `staging` or `production`. |
+| `RUN_PRECHECK`, `RUN_OCR`, … `RUN_POSTCHECK` | Which pipeline steps are switched on. |
+| `OPENDATALOADER_HYBRID_URL` | Address of the OCR service. Must be private — reachable by the worker, not the internet. |
+| `ANTHROPIC_API_KEY` | Only if `RUN_ALT_TEXT=True`. |
+| `CSRF_TRUSTED_ORIGINS` | Optional — only if the admin is reached through a different domain than the app itself. |
+
+The following are set by defaults: `DEBUG`: `False`,
 
 ## Dependency Upgrades
 

@@ -20,6 +20,9 @@ services:
 
   app:
     build: .
+    # Local dev keeps Django's development server (auto-reload, detailed error pages). The
+    # image's own default command is gunicorn, which is what staging/production run.
+    command: python manage.py runserver 0.0.0.0:8000
     ports:
       - "8000:8000"
     volumes:

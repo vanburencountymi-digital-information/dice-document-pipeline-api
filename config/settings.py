@@ -72,6 +72,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves static files (the admin's CSS/JS) straight from the app, so deploys need no
+    # separate static file host or bucket (ADR 0021). Must sit right after SecurityMiddleware.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -103,8 +106,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Required, no fallback: Postgres everywhere — local dev, CI, staging, production — so
+# nothing behaves differently between them, and a deploy that forgets DATABASE_URL fails
+# at startup instead of silently using a throwaway database inside the container.
 DATABASES = {
-    "default": env.db_url("DATABASE_URL", default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}"),
+    "default": env.db_url("DATABASE_URL"),
 }
 
 
@@ -143,6 +149,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
+# Where `collectstatic` gathers static files at image build time, for WhiteNoise to serve.
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Media files
 MEDIA_URL = "media/"
@@ -171,8 +179,24 @@ STORAGES = {
         if S3_BUCKET_NAME
         else {"BACKEND": "django.core.files.storage.FileSystemStorage"}
     ),
-    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+    # Compressed copies with a content fingerprint in each filename, so browsers can cache
+    # them indefinitely. With DEBUG=True Django uses the plain names, so local dev needs no
+    # `collectstatic`.
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
+
+# Running behind a proxy (ADR 0021). Cloud Run handles HTTPS and forwards plain HTTP to the
+# app, with an X-Forwarded-Proto header saying the original request was HTTPS — this tells
+# Django to trust that header, so the admin login's CSRF check sees an HTTPS request.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Only needed if the admin is reached from a different origin than the app itself (e.g. a
+# custom domain in front of it). Full origins, e.g. https://pipeline.example.org
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+# Only send login/CSRF cookies over HTTPS. On whenever DEBUG is off (staging, production);
+# off with DEBUG on, so local admin login still works over plain http://localhost.
+SECURE_COOKIES = env.bool("SECURE_COOKIES", default=not DEBUG)
+SESSION_COOKIE_SECURE = SECURE_COOKIES
+CSRF_COOKIE_SECURE = SECURE_COOKIES
 
 # REST_FRAMEWORK
 
