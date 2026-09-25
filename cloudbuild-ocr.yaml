@@ -1,0 +1,35 @@
+# Builds the OCR service image (Dockerfile.opendataloader-hybrid) and swaps it into the
+# worker job's `ocr` sidecar container (ADR 0022, ADR 0023). Run by hand — the Cloud Build trigger
+# `dice-ocr-build` has no automatic event — only when Dockerfile.opendataloader-hybrid or
+# requirements-opendataloader-hybrid.txt changes. The image is ~12 GB and slow to build,
+# and it rarely changes, so it isn't rebuilt on every release.
+#
+# Tagged by commit (SHORT_SHA), not release version: it isn't part of the app's release.
+
+substitutions:
+  _REGION: us-central1
+  _REPO: dice
+  _WORKER_JOB: dice-worker
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/opendataloader-hybrid:${SHORT_SHA}
+
+options:
+  dynamicSubstitutions: true
+  machineType: E2_HIGHCPU_8
+  # Room for the ~12 GB image plus its build layers.
+  diskSizeGb: 200
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 7200s
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "Dockerfile.opendataloader-hybrid", "-t", "${_IMAGE}", "."]
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_IMAGE}"]
+
+  - id: deploy-ocr
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    args: ["gcloud", "run", "jobs", "update", "${_WORKER_JOB}", "--region", "${_REGION}", "--container", "ocr", "--image", "${_IMAGE}"]
