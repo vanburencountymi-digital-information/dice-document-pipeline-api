@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.1.0 (2026-09-25)
+
+### Features
+
+- **CI/CD**: Setup automatic deploys on cloud run
+  ([`9989ed4`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/9989ed4091335a8db10c571e6ce2329c586557c0))
+
+
 ## v3.0.0 (2026-09-25)
 
 ### Features
