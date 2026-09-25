@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.0.0 (2026-09-25)
+
+### Features
+
+- Add deployable image with gunicorn and whitenoise
+  ([`65c7735`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/65c7735a135448ba543830643c8749a3d210d8ed))
+
+
 ## v2.3.1 (2026-09-23)
 
 ### Bug Fixes
