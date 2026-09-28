@@ -1,12 +1,14 @@
 import logging
 import time
 from datetime import timedelta
+from typing import Any
 
 from django.conf import settings
 from django.tasks import task
 from django.utils import timezone
 
 from remediation.models import Remediation, RemediationCallback
+from remediation.serializers import VerificationResultSerializer
 from remediation.services import (
     AlreadyCompliant,
     AltTextService,
@@ -47,6 +49,11 @@ def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
     Keyed by `RemediationCallback.id`, not `remediation_id` — each subscriber on the same
     attempt retries independently of any others registered on it.
 
+    The payload's `pipeline_version` and `verification_results` use the same values and shape
+    as the API's `RemediationSerializer` (`verification_results` through the same
+    `VerificationResultSerializer`), so a webhook and a `document-status` poll can't describe
+    the same attempt differently.
+
     `ImmediateBackend` (the test backend) doesn't support `run_after` at all —
     `Task.using(run_after=...)` validates eagerly and raises `InvalidTask` the moment it's
     constructed, not when enqueued — so this checks `supports_defer` before attaching one.
@@ -58,10 +65,14 @@ def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
     )
     remediation = callback.remediation
 
-    payload: dict[str, str] = {
+    payload: dict[str, Any] = {
         "remediation_id": str(remediation.id),
         "document_id": remediation.content_hash,
         "status": remediation.status,
+        "pipeline_version": remediation.pipeline_version,
+        "verification_results": VerificationResultSerializer(
+            remediation.verification_results.all(), many=True
+        ).data,
     }
     if remediation.final_output_uri:
         payload["download_url"] = build_download_url(remediation)

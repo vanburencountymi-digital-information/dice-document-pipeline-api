@@ -167,7 +167,7 @@ This returns the actual PDF file, not JSON. It works even if the job `FAILED` â€
 
 #### Get a webhook instead of polling
 
-Add a `callback_url` key (type Text) to the submit request's `form-data` body. When the job finishes, we'll POST a small JSON notice to that URL (with a `download_url` you can `GET` right away) instead of you having to poll `document-status`. Multiple different callers can each submit the same document with their own `callback_url` and all get notified independently.
+Add a `callback_url` key (type Text) to the submit request's `form-data` body. When the job finishes, we'll POST a small JSON notice to that URL instead of you having to poll `document-status`. It includes the job's `status`, a `download_url` you can `GET` right away, the `pipeline_version` that processed it, and its `verification_results` (the veraPDF checks, same as `document-status` shows). Multiple different callers can each submit the same document with their own `callback_url` and all get notified independently.
 
 ## Worker Queue
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from unittest.mock import patch
 
@@ -14,11 +15,13 @@ from parameterized import parameterized
 from remediation.adapters.base import AdapterError, FailedRule, VerificationOutcome
 from remediation.adapters.verification.severity import Severity
 from remediation.models import Remediation, RemediationArtifact
+from remediation.serializers import RemediationSerializer
 from remediation.tasks import (
     process_remediation,
     send_webhook_notification,
 )
 from remediation.tests.factories import (
+    FailedRuleFactory,
     RemediationArtifactFactory,
     RemediationCallbackFactory,
     RemediationFactory,
@@ -541,6 +544,54 @@ class SendWebhookNotificationTaskTests(TestCase):
         self.assertEqual(payload["status"], Remediation.JobStatus.COMPLETE)
         self.assertIn("download_url", payload)
         self.assertNotIn("error", payload)
+
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_payload_includes_pipeline_version_and_verification_results(
+        self, mock_client_cls
+    ) -> None:
+        remediation = RemediationFactory(
+            status=Remediation.JobStatus.FAILED, pipeline_version="3.2.0"
+        )
+        failed_rule = FailedRuleFactory(clause="7.1", severity=Severity.CRITICAL.value)
+        VerificationResultFactory(
+            remediation=remediation,
+            step=RemediationArtifact.Step.POSTCHECK,
+            is_compliant=False,
+            failed_rules=[failed_rule],
+        )
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        send_webhook_notification.enqueue(str(callback.id))
+
+        payload = mock_client_cls.return_value.notify.call_args.kwargs["payload"]
+        self.assertEqual(payload["pipeline_version"], "3.2.0")
+        self.assertEqual(
+            payload["verification_results"],
+            [
+                {
+                    "step": RemediationArtifact.Step.POSTCHECK.value,
+                    "is_compliant": False,
+                    "verapdf_version": "1.30.2",
+                    "failed_rules": [failed_rule],
+                }
+            ],
+        )
+        # Same values and shape as the API, so a webhook and a status poll agree.
+        api_data = RemediationSerializer(remediation).data
+        self.assertEqual(payload["pipeline_version"], api_data["pipeline_version"])
+        self.assertEqual(payload["verification_results"], api_data["verification_results"])
+        # WebhookClient sends the payload as JSON.
+        json.dumps(payload)
+
+    @patch("remediation.tasks.WebhookClient", autospec=True)
+    def test_payload_verification_results_empty_when_none_recorded(self, mock_client_cls) -> None:
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        callback = RemediationCallbackFactory(remediation=remediation)
+
+        send_webhook_notification.enqueue(str(callback.id))
+
+        payload = mock_client_cls.return_value.notify.call_args.kwargs["payload"]
+        self.assertEqual(payload["verification_results"], [])
 
     @patch("remediation.tasks.WebhookClient", autospec=True)
     def test_builds_payload_with_error_when_failed(self, mock_client_cls) -> None:
