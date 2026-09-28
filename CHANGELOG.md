@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.2.0 (2026-09-28)
+
+### Features
+
+- Expose pipeline_version in RemediationSerializer
+  ([`dddd6bf`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/dddd6bf6e37d1b68ce68c5203aa38517b392acef))
+
+
 ## v3.1.0 (2026-09-25)
 
 ### Features
