@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.test import SimpleTestCase, TestCase
+from parameterized import parameterized
 
 from remediation.adapters.verification.severity import Severity
 from remediation.models import RemediationArtifact
@@ -58,6 +59,7 @@ class RemediationSerializerTests(TestCase):
                 "document_id",
                 "original_filename",
                 "status",
+                "pipeline_version",
                 "error",
                 "created_at",
                 "started_at",
@@ -70,6 +72,32 @@ class RemediationSerializerTests(TestCase):
         self.assertEqual(data["document_id"], "abc123")
         self.assertEqual(data["original_filename"], "test.pdf")
         self.assertEqual(data["status"], remediation.status)
+
+    @parameterized.expand(
+        [
+            ("released_version", "1.4.2"),
+            # Rows created before ADR 0012 have no version recorded.
+            ("pre_versioning_row", ""),
+        ]
+    )
+    def test_serializes_pipeline_version_the_attempt_ran_on(self, _name, version) -> None:
+        remediation = RemediationFactory(pipeline_version=version)
+
+        data = RemediationSerializer(remediation).data
+
+        self.assertEqual(data["pipeline_version"], version)
+
+    def test_pipeline_version_is_read_only(self) -> None:
+        remediation = RemediationFactory(pipeline_version="1.4.2")
+
+        serializer = RemediationSerializer(
+            remediation, data={"pipeline_version": "9.9.9"}, partial=True
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        remediation.refresh_from_db()
+        self.assertEqual(remediation.pipeline_version, "1.4.2")
 
     def test_serializes_empty_verification_results_when_none_recorded(self) -> None:
         remediation = RemediationFactory()

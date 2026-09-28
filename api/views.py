@@ -58,8 +58,8 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
 
     Returns:
         Response with the serialized remediation job (id, document_id, original_filename,
-        status, error, created_at, started_at, completed_at, verification_results,
-        download_url).
+        status, pipeline_version, error, created_at, started_at, completed_at,
+        verification_results, download_url).
     """
 
     def post(self, request: Request) -> Response:
@@ -99,7 +99,8 @@ class DocumentStatusView(ServiceAccountRequiredMixin):
 
     Returns:
         Response with the serialized remediation job (id, document_id, original_filename,
-        status, error, created_at, started_at, completed_at).
+        status, pipeline_version, error, created_at, started_at, completed_at,
+        verification_results, download_url).
         Returns 404 if no remediation job for that file + that service account.
     """
 
