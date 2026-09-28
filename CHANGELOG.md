@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v3.3.0 (2026-09-28)
+
+### Features
+
+- Add pipeline version to webhook payloads
+  ([`a8c3697`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/a8c3697e08486a379d9622f54278c6372148c359))
+
+
 ## v3.2.0 (2026-09-28)
 
 ### Features
