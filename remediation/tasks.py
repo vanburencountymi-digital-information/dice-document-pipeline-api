@@ -18,6 +18,7 @@ from remediation.services import (
     NotCompliant,
     OCRService,
     PostCheckService,
+    PostCheckUnavailable,
     PrecheckService,
     RemediationService,
     ScoringService,
@@ -37,6 +38,7 @@ PIPELINE_STEPS = [
     AltTextService,
     ScoringService,
     PostCheckService,
+    PostCheckUnavailable,
 ]
 
 LOGGER = logging.getLogger(__name__)
@@ -76,7 +78,7 @@ def send_webhook_notification(callback_id: str, attempt: int = 1) -> None:
     }
     if remediation.final_output_uri:
         payload["download_url"] = build_download_url(remediation)
-    if remediation.status == Remediation.JobStatus.FAILED:
+    if remediation.status in (Remediation.JobStatus.NONCOMPLIANT, Remediation.JobStatus.ERROR):
         payload["error"] = remediation.error
 
     try:
@@ -117,7 +119,7 @@ def process_remediation(remediation_id: str) -> None:
     # A redelivered task for an already-finished attempt (ADR 0019) — returning before the
     # try/finally below keeps timestamps intact and doesn't re-send every webhook. Retries
     # are unaffected: they always create a new `Remediation` row (ADR 0014).
-    if remediation.status in (Remediation.JobStatus.COMPLETE, Remediation.JobStatus.FAILED):
+    if remediation.status in Remediation.FINISHED_STATUSES:
         LOGGER.info(
             "remediation %s: already %s, skipping redelivered task",
             remediation_id,
@@ -153,16 +155,20 @@ def process_remediation(remediation_id: str) -> None:
             )
 
     except AlreadyCompliant:
-        LOGGER.info("remediation %s: already compliant, marking complete", remediation_id)
-        service.mark_complete(remediation, final_output_uri=remediation.source_pdf_uri)
+        LOGGER.info("remediation %s: already compliant", remediation_id)
+        service.mark_compliant(remediation, final_output_uri=remediation.source_pdf_uri)
 
     except NotCompliant as exc:
         LOGGER.info("remediation %s: postcheck did not pass", remediation_id)
-        service.mark_failed(remediation, f"postcheck: {exc}", final_output_uri=pdf_uri)
+        service.mark_noncompliant(remediation, f"postcheck: {exc}", final_output_uri=pdf_uri)
+
+    except PostCheckUnavailable as exc:
+        LOGGER.info("remediation %s: postcheck could not run", remediation_id)
+        service.mark_error(remediation, f"postcheck: {exc}", final_output_uri=pdf_uri)
 
     except Exception as exc:
         LOGGER.exception("remediation %s: pipeline step raised", remediation_id)
-        service.mark_failed(remediation, str(exc), final_output_uri=pdf_uri)
+        service.mark_error(remediation, str(exc), final_output_uri=pdf_uri)
         raise
 
     else:
@@ -171,7 +177,10 @@ def process_remediation(remediation_id: str) -> None:
             remediation_id,
             time.monotonic() - job_start,
         )
-        service.mark_complete(remediation, final_output_uri=pdf_uri)
+        if PostCheckService().is_disabled():
+            service.mark_skipped(remediation, final_output_uri=pdf_uri)
+        else:
+            service.mark_compliant(remediation, final_output_uri=pdf_uri)
 
     finally:
         for callback_id in remediation.callbacks.values_list("id", flat=True):

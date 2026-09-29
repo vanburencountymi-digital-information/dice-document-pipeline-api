@@ -43,13 +43,13 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
     remediation job.
 
     Otherwise finds the most recent existing job for that file — unless `force=true` is
-    passed, or the existing job is FAILED and old enough to auto-retry (ADR 0014), in
+    passed, or the existing job is NONCOMPLIANT/ERROR and old enough to auto-retry (ADR 0014), in
     which case a new attempt is enqueued instead.
 
     An optional `callback_url` registers a webhook subscription (ADR 0015) on whichever
     attempt the request resolved to, new or deduped — any number of callers can each
     register their own callback on the same attempt. If that attempt is already terminal
-    (COMPLETE/FAILED) at submission time — i.e. subscribing after the fact — the
+    (see `Remediation.FINISHED_STATUSES`) at submission time — i.e. subscribing after the fact — the
     notification is enqueued immediately rather than waiting for a pipeline run that isn't
     going to happen.
 
@@ -77,10 +77,7 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
         if callback_url:
             callback, callback_created = service.register_callback(remediation, callback_url)
             # If job is already completed, post to webhook now.
-            if callback_created and remediation.status in (
-                Remediation.JobStatus.COMPLETE,
-                Remediation.JobStatus.FAILED,
-            ):
+            if callback_created and remediation.status in Remediation.FINISHED_STATUSES:
                 send_webhook_notification.enqueue(str(callback.id))
 
         if created:
@@ -115,7 +112,7 @@ class DocumentDownloadView(ServiceAccountRequiredMixin):
     """
     Serves a document's most recent remediation attempt's finished output file.
 
-    Serves it regardless of `status` (ADR 0013/0015) — a FAILED attempt can still have a
+    Serves it regardless of `status` (ADR 0013/0015) — a NONCOMPLIANT or ERROR attempt can still have a
     partially-remediated file worth downloading — as long as one was actually produced.
 
     Takes:

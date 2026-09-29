@@ -156,14 +156,21 @@ Submissions return right away with `status` `queued`; the worker processes them 
 1. New request: `GET http://localhost:8000/api/document-status/<document_id>/`, using the `document_id` from the submit response.
 2. Same `Authorization` header as above.
 
-You should see `status` in the response. `queued` means it's waiting for the worker, and `running` means it's in progress.
+You should see `status` in the response:
+
+- `queued`: waiting for the worker.
+- `running`: in progress.
+- `compliant`: the final check passed (or the document was already compliant).
+- `noncompliant`: the final check ran and still found problems. The `verification_results` list them, and a partly-fixed document is still available to download.
+- `error`: something crashed, or the final check couldn't run.
+- `skipped`: the job finished, but the final check is switched off, so we can't say if it's compliant.
 
 #### Download the finished document
 
 1. New request: `GET http://localhost:8000/api/document-download/<document_id>/`, using the `document_id` from the submit response.
 2. Same `Authorization` header as above.
 
-This returns the actual PDF file, not JSON. It works even if the job `FAILED` — a partially-fixed document is still returned if any remediation happened before the failure.
+This returns the actual PDF file, not JSON. It works even if the job is `noncompliant` or `error` — a partially-fixed document is still returned if any remediation happened before the problem.
 
 #### Get a webhook instead of polling
 
@@ -211,8 +218,7 @@ The following are set by defaults: `DEBUG`: `False`,
 
 By default, re-running the same document from the same organization returns the result from the previous run unless `force=True` has been passed in with the `POST`.
 
-However, upgrading a major dependency might mean that jobs that previously failed would now pass with the current pipeline. You can set the retry floor to
-any version of the pipeline that has previously run a remediation job via the admin panel. If a file from a previously failed job that was run on a version of the pipeline older than the floor is sent by the same organization, it will automatically be retried to see if the version change has corrected whatever previously caused the file to fail.
+However, upgrading a major dependency might mean that jobs that previously ended `noncompliant` or `error` would now pass with the current pipeline. You can set the retry floor to any version of the pipeline that has previously run a remediation job via the admin panel. If a file from a previous `noncompliant` or `error` job that was run on a version of the pipeline older than the floor is sent by the same organization, it will automatically be retried to see if the version change has corrected whatever previously caused the file to fail.
 
 ### OpenDataloader and Docling
 

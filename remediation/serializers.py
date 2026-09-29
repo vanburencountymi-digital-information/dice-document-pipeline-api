@@ -61,7 +61,7 @@ class RemediationSerializer(serializers.ModelSerializer):
         ]
 
     def get_download_url(self, obj: Remediation) -> str | None:
-        # Present whenever final_output_uri is set, not gated on status == COMPLETE —
-        # a FAILED attempt can still have a partially-remediated file worth downloading
+        # Present whenever final_output_uri is set, not gated on status —
+        # a NONCOMPLIANT or ERROR attempt can still have a partially-remediated file worth downloading
         # (ADR 0013/0015).
         return build_download_url(obj) if obj.final_output_uri else None

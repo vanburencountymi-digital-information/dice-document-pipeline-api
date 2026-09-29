@@ -22,14 +22,14 @@ class WebhookClientTests(SimpleTestCase):
         self.client.notify(
             "https://example.com/webhook",
             secret="s3cr3t",
-            payload={"remediation_id": "abc", "status": "complete"},
+            payload={"remediation_id": "abc", "status": "compliant"},
         )
 
         mock_post.assert_called_once()
         call = mock_post.call_args
         self.assertEqual(call.args[0], "https://example.com/webhook")
         body = call.kwargs["content"]
-        self.assertEqual(json.loads(body), {"remediation_id": "abc", "status": "complete"})
+        self.assertEqual(json.loads(body), {"remediation_id": "abc", "status": "compliant"})
         expected_signature = hmac.new(b"s3cr3t", body, hashlib.sha256).hexdigest()
         self.assertEqual(
             call.kwargs["headers"]["X-Webhook-Signature"], f"sha256={expected_signature}"

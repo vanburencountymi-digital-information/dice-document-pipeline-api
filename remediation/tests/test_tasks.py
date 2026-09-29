@@ -46,14 +46,15 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=False,
     )
-    def test_marks_complete_when_all_steps_disabled(self) -> None:
+    def test_marks_skipped_when_all_steps_disabled(self) -> None:
+        """No postcheck means no verdict, so the job isn't claimed compliant (ADR 0024)."""
         remediation = RemediationFactory()
 
         result = process_remediation.enqueue(str(remediation.id))
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.SKIPPED)
         self.assertIsNotNone(remediation.started_at)
         self.assertIsNotNone(remediation.completed_at)
         self.assertEqual(remediation.final_output_uri, remediation.source_pdf_uri)
@@ -100,7 +101,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.PRECHECK,
@@ -123,7 +124,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_POSTCHECK=True,
     )
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
-    def test_fails_when_postcheck_still_noncompliant(self, mock_adapter_cls) -> None:
+    def test_marks_noncompliant_when_postcheck_still_noncompliant(self, mock_adapter_cls) -> None:
         failed_rule = FailedRule(
             clause="7.1",
             test_number="11",
@@ -140,7 +141,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
+        self.assertEqual(remediation.status, Remediation.JobStatus.NONCOMPLIANT)
         self.assertEqual(
             remediation.error,
             "postcheck: 1 rules failed, 1 checks\n"
@@ -186,7 +187,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.OCR,
@@ -240,7 +241,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
         self.assertEqual(remediation.final_output_uri, ocr_output_uri)
         mock_ocr_cls.return_value.extract.assert_not_called()
         mock_vera_cls.return_value.validate.assert_called_once()
@@ -283,7 +284,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.SCORING,
@@ -324,7 +325,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.OCR,
@@ -363,7 +364,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.PRECHECK,
@@ -388,7 +389,7 @@ class ProcessRemediationTaskTests(TestCase):
     ) -> None:
         """postcheck's own adapter crashing still has to fail the job (there's no later
         check to fall back on, and it must never default to COMPLETE) — but per ADR 0013
-        that's a NotCompliant, not a re-raised exception, so the task itself still succeeds.
+        that's a PostCheckUnavailable, not a re-raised exception, so the task itself still succeeds.
         """
         mock_adapter_cls.return_value.validate.side_effect = [
             VerificationOutcome(is_compliant=False, failed_rules=[], verapdf_version="1.30.2"),
@@ -400,7 +401,7 @@ class ProcessRemediationTaskTests(TestCase):
 
         remediation.refresh_from_db()
         self.assertEqual(result.status, TaskResultStatus.SUCCESSFUL)
-        self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
+        self.assertEqual(remediation.status, Remediation.JobStatus.ERROR)
         self.assertEqual(remediation.error, "postcheck: postcheck could not run: verapdf crashed")
         self.assertTrue(
             remediation.artifacts.filter(
@@ -441,8 +442,10 @@ class ProcessRemediationWebhookTests(TestCase):
 
     @parameterized.expand(
         [
-            ("complete", Remediation.JobStatus.COMPLETE),
-            ("failed", Remediation.JobStatus.FAILED),
+            ("compliant", Remediation.JobStatus.COMPLIANT),
+            ("noncompliant", Remediation.JobStatus.NONCOMPLIANT),
+            ("error", Remediation.JobStatus.ERROR),
+            ("skipped", Remediation.JobStatus.SKIPPED),
         ]
     )
     @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
@@ -505,7 +508,7 @@ class ProcessRemediationWebhookTests(TestCase):
     @patch("remediation.tasks.PrecheckService.run", side_effect=RuntimeError("db exploded"))
     @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
     def test_enqueues_callback_even_when_the_task_itself_fails(self, mock_send, mock_run) -> None:
-        """The generic `except Exception` branch re-raises after `mark_failed` — `finally`
+        """The generic `except Exception` branch re-raises after `mark_error` — `finally`
         still has to fire and enqueue every registered callback before that re-raise
         propagates out of the task.
         """
@@ -528,7 +531,7 @@ class SendWebhookNotificationTaskTests(TestCase):
         self, mock_client_cls
     ) -> None:
         remediation = RemediationFactory(
-            status=Remediation.JobStatus.COMPLETE, final_output_uri="remediations/final.pdf"
+            status=Remediation.JobStatus.COMPLIANT, final_output_uri="remediations/final.pdf"
         )
         callback = RemediationCallbackFactory(remediation=remediation)
 
@@ -541,7 +544,7 @@ class SendWebhookNotificationTaskTests(TestCase):
         payload = call.kwargs["payload"]
         self.assertEqual(payload["remediation_id"], str(remediation.id))
         self.assertEqual(payload["document_id"], remediation.content_hash)
-        self.assertEqual(payload["status"], Remediation.JobStatus.COMPLETE)
+        self.assertEqual(payload["status"], Remediation.JobStatus.COMPLIANT)
         self.assertIn("download_url", payload)
         self.assertNotIn("error", payload)
 
@@ -550,7 +553,7 @@ class SendWebhookNotificationTaskTests(TestCase):
         self, mock_client_cls
     ) -> None:
         remediation = RemediationFactory(
-            status=Remediation.JobStatus.FAILED, pipeline_version="3.2.0"
+            status=Remediation.JobStatus.NONCOMPLIANT, pipeline_version="3.2.0"
         )
         failed_rule = FailedRuleFactory(clause="7.1", severity=Severity.CRITICAL.value)
         VerificationResultFactory(
@@ -585,7 +588,7 @@ class SendWebhookNotificationTaskTests(TestCase):
 
     @patch("remediation.tasks.WebhookClient", autospec=True)
     def test_payload_verification_results_empty_when_none_recorded(self, mock_client_cls) -> None:
-        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         callback = RemediationCallbackFactory(remediation=remediation)
 
         send_webhook_notification.enqueue(str(callback.id))
@@ -593,11 +596,17 @@ class SendWebhookNotificationTaskTests(TestCase):
         payload = mock_client_cls.return_value.notify.call_args.kwargs["payload"]
         self.assertEqual(payload["verification_results"], [])
 
+    @parameterized.expand(
+        [
+            ("noncompliant", Remediation.JobStatus.NONCOMPLIANT),
+            ("error", Remediation.JobStatus.ERROR),
+        ]
+    )
     @patch("remediation.tasks.WebhookClient", autospec=True)
-    def test_builds_payload_with_error_when_failed(self, mock_client_cls) -> None:
-        remediation = RemediationFactory(
-            status=Remediation.JobStatus.FAILED, error="postcheck: not compliant"
-        )
+    def test_builds_payload_with_error_when_noncompliant_or_error(
+        self, _name, status, mock_client_cls
+    ) -> None:
+        remediation = RemediationFactory(status=status, error="postcheck: not compliant")
         callback = RemediationCallbackFactory(remediation=remediation)
 
         send_webhook_notification.enqueue(str(callback.id))
@@ -627,7 +636,7 @@ class SendWebhookNotificationTaskTests(TestCase):
         times in total.
         """
         mock_client_cls.return_value.notify.side_effect = WebhookDeliveryError("boom")
-        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         callback = RemediationCallbackFactory(remediation=remediation)
 
         send_webhook_notification.enqueue(str(callback.id))
@@ -641,7 +650,7 @@ class SendWebhookNotificationTaskTests(TestCase):
         self, mock_client_cls
     ) -> None:
         mock_client_cls.return_value.notify.side_effect = WebhookDeliveryError("boom")
-        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         callback = RemediationCallbackFactory(remediation=remediation)
 
         result = send_webhook_notification.enqueue(
@@ -687,7 +696,7 @@ class DatabaseBackendWorkerTests(TransactionTestCase):
         self.run_worker()
 
         remediation.refresh_from_db()
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
 
     @patch("remediation.tasks.WebhookClient", autospec=True)
     def test_webhook_retry_waits_for_its_backoff_before_running(self, mock_client_cls) -> None:
@@ -697,7 +706,7 @@ class DatabaseBackendWorkerTests(TransactionTestCase):
         """
         mock_client_cls.return_value.notify.side_effect = WebhookDeliveryError("boom")
         callback = RemediationCallbackFactory(
-            remediation=RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+            remediation=RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         )
         send_webhook_notification.enqueue(str(callback.id))
 
