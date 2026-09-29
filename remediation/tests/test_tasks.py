@@ -696,7 +696,7 @@ class DatabaseBackendWorkerTests(TransactionTestCase):
         self.run_worker()
 
         remediation.refresh_from_db()
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
+        self.assertEqual(remediation.status, Remediation.JobStatus.SKIPPED)
 
     @patch("remediation.tasks.WebhookClient", autospec=True)
     def test_webhook_retry_waits_for_its_backoff_before_running(self, mock_client_cls) -> None:

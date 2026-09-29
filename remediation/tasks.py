@@ -38,7 +38,6 @@ PIPELINE_STEPS = [
     AltTextService,
     ScoringService,
     PostCheckService,
-    PostCheckUnavailable,
 ]
 
 LOGGER = logging.getLogger(__name__)

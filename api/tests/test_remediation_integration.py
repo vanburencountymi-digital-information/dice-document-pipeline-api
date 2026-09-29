@@ -40,7 +40,7 @@ class CreateRemediationIntegrationTests(TestCase):
         self.url = reverse("submit-document")
         self.service_account = ServiceAccountFactory()
 
-    def test_new_upload_is_saved_processed_and_marked_complete(self) -> None:
+    def test_new_upload_is_saved_processed_and_marked_skipped_without_postcheck(self) -> None:
         request = APIRequestFactory().post(
             self.url,
             {"file": PdfUploadFactory()},
@@ -55,4 +55,4 @@ class CreateRemediationIntegrationTests(TestCase):
         self.assertEqual(remediation.service_account, self.service_account)
         self.assertEqual(remediation.original_filename, "test.pdf")
         self.assertTrue(default_storage.exists(remediation.source_pdf_uri))
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLIANT)
+        self.assertEqual(remediation.status, Remediation.JobStatus.SKIPPED)
