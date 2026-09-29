@@ -52,6 +52,7 @@ from remediation.services import (
     NotCompliant,
     OCRService,
     PostCheckService,
+    PostCheckUnavailable,
     PrecheckService,
     RemediationService,
     ScoringService,
@@ -117,7 +118,7 @@ class RemediationServiceTests(TestCase):
         remediation = RemediationFactory(
             service_account=self.service_account,
             content_hash="abc123",
-            status=Remediation.JobStatus.FAILED,
+            status=Remediation.JobStatus.ERROR,
         )
 
         found = RemediationService().latest_for_document(self.service_account, "abc123")
@@ -144,23 +145,42 @@ class RemediationServiceTests(TestCase):
         self.assertEqual(remediation.status, Remediation.JobStatus.RUNNING)
         self.assertIsNotNone(remediation.started_at)
 
-    def test_mark_complete_sets_status_completed_at_and_final_output_uri(self) -> None:
+    @parameterized.expand(
+        [
+            ("compliant", "mark_compliant", Remediation.JobStatus.COMPLIANT),
+            ("skipped", "mark_skipped", Remediation.JobStatus.SKIPPED),
+        ]
+    )
+    def test_mark_verdictless_sets_status_completed_at_and_final_output_uri(
+        self, _name, method_name, expected_status
+    ) -> None:
         remediation = RemediationFactory()
 
-        RemediationService().mark_complete(remediation, final_output_uri="remediations/final.pdf")
+        getattr(RemediationService(), method_name)(
+            remediation, final_output_uri="remediations/final.pdf"
+        )
 
-        self.assertEqual(remediation.status, Remediation.JobStatus.COMPLETE)
+        self.assertEqual(remediation.status, expected_status)
         self.assertIsNotNone(remediation.completed_at)
         self.assertEqual(remediation.final_output_uri, "remediations/final.pdf")
+        self.assertEqual(remediation.error, "")
 
-    def test_mark_failed_sets_status_error_completed_at_and_final_output_uri(self) -> None:
+    @parameterized.expand(
+        [
+            ("noncompliant", "mark_noncompliant", Remediation.JobStatus.NONCOMPLIANT),
+            ("error", "mark_error", Remediation.JobStatus.ERROR),
+        ]
+    )
+    def test_mark_noncompliant_or_error_sets_status_error_completed_at_and_final_output_uri(
+        self, _name, method_name, expected_status
+    ) -> None:
         remediation = RemediationFactory()
 
-        RemediationService().mark_failed(
+        getattr(RemediationService(), method_name)(
             remediation, "Timeout error during OCR", final_output_uri="remediations/partial.pdf"
         )
 
-        self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
+        self.assertEqual(remediation.status, expected_status)
         self.assertEqual(remediation.error, "Timeout error during OCR")
         self.assertIsNotNone(remediation.completed_at)
         self.assertEqual(remediation.final_output_uri, "remediations/partial.pdf")
@@ -216,12 +236,12 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
         self.assertEqual(remediation.source_pdf_uri, expected_uri)
         self.assertTrue(default_storage.exists(remediation.source_pdf_uri))
 
-    def test_resubmitting_failed_remediation_reports_it_without_new_job_or_file(self) -> None:
+    def test_resubmitting_errored_remediation_reports_it_without_new_job_or_file(self) -> None:
         content = b"same bytes"
         failed, _ = RemediationService().get_or_create_from_upload(
             self.service_account, PdfUploadFactory(name="test.pdf", content=content)
         )
-        failed.status = Remediation.JobStatus.FAILED
+        failed.status = Remediation.JobStatus.ERROR
         failed.save(update_fields=["status"])
         original_path = failed.source_pdf_uri
 
@@ -231,7 +251,7 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
 
         self.assertFalse(created)
         self.assertEqual(remediation, failed)
-        self.assertEqual(remediation.status, Remediation.JobStatus.FAILED)
+        self.assertEqual(remediation.status, Remediation.JobStatus.ERROR)
         self.assertEqual(Remediation.objects.count(), 1)
         self.assertEqual(remediation.source_pdf_uri, original_path)
 
@@ -240,7 +260,7 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
         existing, _ = RemediationService().get_or_create_from_upload(
             self.service_account, PdfUploadFactory(name="test.pdf", content=content)
         )
-        existing.status = Remediation.JobStatus.COMPLETE
+        existing.status = Remediation.JobStatus.COMPLIANT
         existing.save(update_fields=["status"])
 
         remediation, created = RemediationService().get_or_create_from_upload(
@@ -254,12 +274,12 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
         self.assertEqual(remediation.content_hash, existing.content_hash)
         self.assertEqual(Remediation.objects.count(), 2)
 
-    def test_force_retries_a_failed_remediation(self) -> None:
+    def test_force_retries_an_errored_remediation(self) -> None:
         content = b"same bytes"
         failed, _ = RemediationService().get_or_create_from_upload(
             self.service_account, PdfUploadFactory(name="test.pdf", content=content)
         )
-        failed.status = Remediation.JobStatus.FAILED
+        failed.status = Remediation.JobStatus.ERROR
         failed.save(update_fields=["status"])
 
         remediation, created = RemediationService().get_or_create_from_upload(
@@ -282,12 +302,30 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
     def test_failed_remediation_retry_gated_by_floor_comparison(
         self, _name, existing_version, floor_version, expected_created
     ) -> None:
+        self._assert_retry_gated_by_floor(
+            Remediation.JobStatus.ERROR, existing_version, floor_version, expected_created
+        )
+
+    @parameterized.expand(
+        [
+            ("noncompliant_retries", Remediation.JobStatus.NONCOMPLIANT, True),
+            ("error_retries", Remediation.JobStatus.ERROR, True),
+            ("compliant_does_not_retry", Remediation.JobStatus.COMPLIANT, False),
+            ("skipped_does_not_retry", Remediation.JobStatus.SKIPPED, False),
+        ]
+    )
+    def test_retry_below_floor_depends_on_status(self, _name, status, expected_created) -> None:
+        self._assert_retry_gated_by_floor(status, "0.9.0", "1.0.0", expected_created)
+
+    def _assert_retry_gated_by_floor(
+        self, status, existing_version, floor_version, expected_created
+    ) -> None:
         content = b"same bytes"
         with override_settings(PIPELINE_VERSION=existing_version):
             failed, _ = RemediationService().get_or_create_from_upload(
                 self.service_account, PdfUploadFactory(name="test.pdf", content=content)
             )
-        failed.status = Remediation.JobStatus.FAILED
+        failed.status = status
         failed.save(update_fields=["status"])
         PipelineConfigFactory(retry_floor_version=floor_version)
 
@@ -571,13 +609,13 @@ class VerificationServiceTests(TestCase):
             ("unexpected_error", RuntimeError("boom")),
         ]
     )
-    def test_postcheck_records_failed_artifact_and_raises_not_compliant_on_adapter_error(
+    def test_postcheck_records_failed_artifact_and_raises_unavailable_on_adapter_error(
         self, _name, side_effect
     ) -> None:
         self.adapter.validate.side_effect = side_effect
         service = PostCheckService(adapter=self.adapter)
 
-        with self.assertRaises(NotCompliant) as ctx:
+        with self.assertRaises(PostCheckUnavailable) as ctx:
             service.run(self.remediation, pdf_uri="remediations/test.pdf")
 
         self.assertEqual(str(ctx.exception), "postcheck could not run: boom")

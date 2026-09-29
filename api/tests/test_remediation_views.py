@@ -135,7 +135,7 @@ class CreateRemediationViewTests(TestCase):
     def test_callback_url_on_an_already_terminal_attempt_fires_immediately(
         self, mock_service_cls, mock_process_remediation, mock_send_webhook
     ) -> None:
-        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, False)
         callback = RemediationCallbackFactory.build(remediation=remediation)
         mock_service_cls.return_value.register_callback.return_value = (callback, True)
@@ -150,7 +150,7 @@ class CreateRemediationViewTests(TestCase):
     def test_reregistering_an_existing_callback_on_a_terminal_attempt_does_not_refire(
         self, mock_service_cls, mock_process_remediation, mock_send_webhook
     ) -> None:
-        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLETE)
+        remediation = RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, False)
         callback = RemediationCallbackFactory.build(remediation=remediation)
         mock_service_cls.return_value.register_callback.return_value = (callback, False)
@@ -233,7 +233,7 @@ class DocumentDownloadViewTests(TestCase):
         output_path = default_storage.save("remediations/output.pdf", ContentFile(b"%PDF-1.4 done"))
         remediation = RemediationFactory.build(
             content_hash="abc123",
-            status=Remediation.JobStatus.COMPLETE,
+            status=Remediation.JobStatus.COMPLIANT,
             final_output_uri=output_path,
             original_filename="document.pdf",
         )
@@ -249,11 +249,11 @@ class DocumentDownloadViewTests(TestCase):
     def test_returns_the_file_for_a_failed_but_partially_remediated_attempt(
         self, mock_service_cls
     ) -> None:
-        """ADR 0013/0015 — a FAILED attempt still has something downloadable."""
+        """ADR 0013/0015 — a NONCOMPLIANT attempt still has something downloadable."""
         output_path = default_storage.save("remediations/partial.pdf", ContentFile(b"partial"))
         remediation = RemediationFactory.build(
             content_hash="abc123",
-            status=Remediation.JobStatus.FAILED,
+            status=Remediation.JobStatus.NONCOMPLIANT,
             final_output_uri=output_path,
         )
         mock_service_cls.return_value.latest_for_document.return_value = remediation

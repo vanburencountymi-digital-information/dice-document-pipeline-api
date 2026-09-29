@@ -11,8 +11,18 @@ class Remediation(models.Model):
     class JobStatus(models.TextChoices):
         QUEUED = "queued", "Queued"
         RUNNING = "running", "Running"
-        COMPLETE = "complete", "Complete"
-        FAILED = "failed", "Failed"
+        COMPLIANT = "compliant", "Compliant"
+        NONCOMPLIANT = "noncompliant", "Noncompliant"
+        ERROR = "error", "Error"
+        SKIPPED = "skipped", "Skipped"
+
+    # Every status a job can end in — see ADR 0024.
+    FINISHED_STATUSES = (
+        JobStatus.COMPLIANT,
+        JobStatus.NONCOMPLIANT,
+        JobStatus.ERROR,
+        JobStatus.SKIPPED,
+    )
 
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     service_account = models.ForeignKey(
@@ -26,8 +36,8 @@ class Remediation(models.Model):
     error = models.TextField(blank=True)
     final_output_uri = models.CharField(max_length=500, blank=True, default="")
     # `settings.PIPELINE_VERSION` at creation time (ADR 0012) — the git tag this attempt's
-    # pipeline logic actually ran under. Lets a retry decide whether a FAILED attempt is
-    # worth re-running: see `PipelineConfig.retry_floor_version` and ADR 0014.
+    # pipeline logic actually ran under. Lets a retry decide whether a NONCOMPLIANT or ERROR
+    # attempt is worth re-running: see `PipelineConfig.retry_floor_version` and ADR 0014.
     pipeline_version = models.CharField(max_length=20, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -135,8 +145,8 @@ class PipelineConfig(models.Model):
     `save()` below and by `PipelineConfigAdmin.has_add_permission` (`remediation/admin.py`)
     refusing a second row once one exists.
 
-    `retry_floor_version` gates ADR 0014's auto-retry: resubmitting a `FAILED` `Remediation`
-    whose `pipeline_version` is strictly older than this triggers a fresh attempt. Left blank
+    `retry_floor_version` gates ADR 0014's auto-retry: resubmitting a `NONCOMPLIANT` or
+    `ERROR` `Remediation` whose `pipeline_version` is strictly older than this triggers a fresh attempt. Left blank
     by default so nothing auto-retries until someone deliberately raises it in admin.
     """
 

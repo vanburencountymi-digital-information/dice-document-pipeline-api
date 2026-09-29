@@ -129,7 +129,10 @@ class RemediationService:
     def _should_retry(self, existing: Remediation, *, force: bool) -> bool:
         if force:
             return True
-        if existing.status != Remediation.JobStatus.FAILED:
+        if existing.status not in (
+            Remediation.JobStatus.NONCOMPLIANT,
+            Remediation.JobStatus.ERROR,
+        ):
             return False
         floor = self._retry_floor_version()
         if not floor:
@@ -170,18 +173,39 @@ class RemediationService:
         remediation.started_at = timezone.now()
         remediation.save(update_fields=["status", "started_at"])
 
-    def mark_complete(self, remediation: Remediation, final_output_uri: str) -> None:
-        remediation.status = Remediation.JobStatus.COMPLETE
-        remediation.completed_at = timezone.now()
-        remediation.final_output_uri = final_output_uri
-        remediation.save(update_fields=["status", "completed_at", "final_output_uri"])
+    def mark_compliant(self, remediation: Remediation, final_output_uri: str) -> None:
+        self._mark_finished(remediation, Remediation.JobStatus.COMPLIANT, final_output_uri)
 
-    def mark_failed(self, remediation: Remediation, error: str, final_output_uri: str) -> None:
-        remediation.status = Remediation.JobStatus.FAILED
-        remediation.error = error
+    def mark_skipped(self, remediation: Remediation, final_output_uri: str) -> None:
+        """Pipeline ran to the end but postcheck is disabled, so there's no verdict."""
+        self._mark_finished(remediation, Remediation.JobStatus.SKIPPED, final_output_uri)
+
+    def mark_noncompliant(
+        self, remediation: Remediation, error: str, final_output_uri: str
+    ) -> None:
+        self._mark_finished(
+            remediation, Remediation.JobStatus.NONCOMPLIANT, final_output_uri, error=error
+        )
+
+    def mark_error(self, remediation: Remediation, error: str, final_output_uri: str) -> None:
+        self._mark_finished(remediation, Remediation.JobStatus.ERROR, final_output_uri, error=error)
+
+    def _mark_finished(
+        self,
+        remediation: Remediation,
+        status: Remediation.JobStatus,
+        final_output_uri: str,
+        *,
+        error: str | None = None,
+    ) -> None:
+        remediation.status = status
         remediation.completed_at = timezone.now()
         remediation.final_output_uri = final_output_uri
-        remediation.save(update_fields=["status", "error", "completed_at", "final_output_uri"])
+        update_fields = ["status", "completed_at", "final_output_uri"]
+        if error is not None:
+            remediation.error = error
+            update_fields.append("error")
+        remediation.save(update_fields=update_fields)
 
     def register_callback(
         self, remediation: Remediation, callback_url: str
@@ -356,20 +380,23 @@ class AlreadyCompliant(Exception):
 
 class NotCompliant(Exception):
     """Not an error — raised by `PostCheckService` when the document still isn't compliant
-    after remediation, signalling the job should be marked failed (ADR 0003).
+    after remediation, signalling the job should be marked noncompliant (ADR 0003, ADR 0024).
 
     `str(exc)` is a short human-readable severity-ranked summary (simplify_vera_printouts) —
-    never the raw veraPDF XML report. `message` overrides that summary for the case where
-    there's no `failed_rules` to summarize at all — postcheck's own adapter crashed rather
-    than producing a real verdict (ADR 0013's `handle_verification_error`) — so the job still
-    reads as an honest "not confirmed compliant" instead of a misleading "0 rules failed".
+    never the raw veraPDF XML report.
     """
 
-    def __init__(
-        self, failed_rules: list[FailedRule] | None = None, *, message: str | None = None
-    ) -> None:
-        self.failed_rules = failed_rules or []
-        super().__init__(message or _format_failure_summary(self.failed_rules))
+    def __init__(self, failed_rules: list[FailedRule]) -> None:
+        self.failed_rules = failed_rules
+        super().__init__(_format_failure_summary(failed_rules))
+
+
+class PostCheckUnavailable(Exception):
+    """Raised by `PostCheckService` when its own adapter crashed rather than producing a
+    verdict (ADR 0013's `handle_verification_error`), signalling the job should be marked
+    `ERROR` — no verdict means nothing for a reviewer to look at (ADR 0024). Deliberately
+    not a `NotCompliant`, so a caller can't confuse the two.
+    """
 
 
 class VerificationService(ArtifactService):
@@ -465,7 +492,7 @@ class PostCheckService(VerificationService):
             raise NotCompliant(failed_rules)
 
     def handle_verification_error(self, error: str) -> None:
-        raise NotCompliant(message=f"postcheck could not run: {error}")
+        raise PostCheckUnavailable(f"postcheck could not run: {error}")
 
 
 class OCRService(ArtifactService):
