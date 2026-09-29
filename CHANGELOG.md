@@ -2,6 +2,20 @@
 
 <!-- version list -->
 
+## v4.0.0 (2026-09-29)
+
+### Features
+
+- Split JobStatus into compliant/noncompliant/error/skipped
+  ([#19](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/19),
+  [`e916aa0`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/e916aa05bf42164a2d5521b48b13c2a72315348c))
+
+### Breaking Changes
+
+- The `status` values "complete" and "failed" no longer exist; consumers must handle "compliant",
+  "noncompliant", "error" and "skipped".
+
+
 ## v3.3.0 (2026-09-28)
 
 ### Features
