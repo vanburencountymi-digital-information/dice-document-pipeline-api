@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v4.1.0 (2026-10-06)
+
+### Features
+
+- Add DRF Spectacular to create an easy docs + test endpoint
+  ([`d860ccf`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/d860ccf3a2a46c0fbe15ddfd950e145a2dc831b8))
+
+
 ## v4.0.0 (2026-09-29)
 
 ### Features
