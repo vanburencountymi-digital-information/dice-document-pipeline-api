@@ -1,8 +1,10 @@
 from django.contrib.auth.models import AnonymousUser
 from django.core.files.storage import default_storage
 from django.http import FileResponse, Http404
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from knox.auth import TokenAuthentication
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -13,6 +15,13 @@ from remediation.models import Remediation
 from remediation.serializers import RemediationSerializer, RemediationUploadSerializer
 from remediation.services import RemediationService
 from remediation.tasks import process_remediation, send_webhook_notification
+
+CONTENT_HASH_PARAM = OpenApiParameter(
+    "content_hash",
+    OpenApiTypes.STR,
+    OpenApiParameter.PATH,
+    description="The `document_id` returned when the document was submitted.",
+)
 
 
 class ServiceAccountRequiredMixin(APIView):
@@ -31,6 +40,10 @@ class ServiceAccountRequiredMixin(APIView):
 class StatusView(ServiceAccountRequiredMixin):
     """Placeholder; checks if user token is valid."""
 
+    @extend_schema(
+        summary="Check your token",
+        responses={200: inline_serializer("Status", {"status": serializers.CharField()})},
+    )
     def get(self, request: Request) -> Response:
         return Response({"status": "ok"})
 
@@ -62,6 +75,18 @@ class CreateRemediationView(ServiceAccountRequiredMixin):
         verification_results, download_url).
     """
 
+    @extend_schema(
+        summary="Submit a PDF for remediation",
+        request={"multipart/form-data": RemediationUploadSerializer},
+        responses={
+            200: RemediationSerializer,
+            201: RemediationSerializer,
+        },
+        description=(
+            "201 means a new job was queued. 200 means this exact file was already submitted "
+            "and the existing job is returned (unless `force` is true)."
+        ),
+    )
     def post(self, request: Request) -> Response:
         upload = RemediationUploadSerializer(data=request.data)
         upload.is_valid(raise_exception=True)
@@ -101,6 +126,11 @@ class DocumentStatusView(ServiceAccountRequiredMixin):
         Returns 404 if no remediation job for that file + that service account.
     """
 
+    @extend_schema(
+        summary="Get a document's status",
+        parameters=[CONTENT_HASH_PARAM],
+        responses={200: RemediationSerializer},
+    )
     def get(self, request: Request, content_hash: str) -> Response:
         remediation = RemediationService().latest_for_document(self.service_account, content_hash)
         if remediation is None:
@@ -123,6 +153,11 @@ class DocumentDownloadView(ServiceAccountRequiredMixin):
         account, or if nothing has been produced yet (e.g. still QUEUED/RUNNING).
     """
 
+    @extend_schema(
+        summary="Download the remediated PDF",
+        parameters=[CONTENT_HASH_PARAM],
+        responses={(200, "application/pdf"): OpenApiTypes.BINARY},
+    )
     def get(self, request: Request, content_hash: str) -> FileResponse:
         remediation = RemediationService().latest_for_document(self.service_account, content_hash)
         if remediation is None or not remediation.final_output_uri:

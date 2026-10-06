@@ -62,6 +62,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     "knox",
     "django_tasks_db",
     "accounts",
@@ -203,7 +205,23 @@ CSRF_COOKIE_SECURE = SECURE_COOKIES
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "knox.auth.TokenAuthentication",
-    ]
+    ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+# drf-spectacular — the OpenAPI schema (/api/schema/) and Swagger UI (/api/docs/).
+# The sidecar package serves Swagger UI's JS/CSS from our own static files, not a CDN.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "DICE Document Pipeline API",
+    "DESCRIPTION": (
+        "Submit PDFs for accessibility remediation and check on the results.\n\n"
+        "To try the endpoints, click **Authorize** and enter `Token <your token>` — "
+        "the word `Token`, a space, then the token itself."
+    ),
+    "VERSION": PIPELINE_VERSION,
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
 }
 
 # django-knox

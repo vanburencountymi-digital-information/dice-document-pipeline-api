@@ -31,6 +31,8 @@ repos:
           - Django==6.0.7
           - django-environ==0.14.0
           - django-rest-knox==5.1.0
+          - drf-spectacular==0.30.0
+          - drf-spectacular-sidecar==2026.10.1
           - djangorestframework==3.17.1
           - django-stubs==6.0.7
           - djangorestframework-stubs==3.17.0
