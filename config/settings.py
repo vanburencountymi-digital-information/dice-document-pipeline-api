@@ -220,6 +220,8 @@ SPECTACULAR_SETTINGS = {
     ),
     "VERSION": PIPELINE_VERSION,
     "SERVE_INCLUDE_SCHEMA": False,
+    # Without this, file fields are described as URLs (a text box) instead of uploads (a file picker).
+    "COMPONENT_SPLIT_REQUEST": True,
     "SWAGGER_UI_DIST": "SIDECAR",
     "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
 }
