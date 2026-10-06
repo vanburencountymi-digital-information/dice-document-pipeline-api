@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v4.1.1 (2026-10-06)
+
+### Bug Fixes
+
+- Filepicker was not working in test tool
+  ([`4a761a6`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/4a761a6c325fa4f033661719fcf87fcd34abac87))
+
+
 ## v4.1.0 (2026-10-06)
 
 ### Features
