@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from unittest.mock import patch
 
@@ -7,6 +8,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from parameterized import parameterized
 from rest_framework.test import APIRequestFactory
 
 from accounts.tests.factories import ServiceAccountFactory
@@ -223,9 +225,13 @@ class DocumentDownloadViewTests(TestCase):
         self.factory = APIRequestFactory()
         self.view = DocumentDownloadView.as_view()
 
-    def _get(self, content_hash):
+    def _get(self, content_hash, accept="*/*"):
         url = reverse("document-download", kwargs={"content_hash": content_hash})
-        request = self.factory.get(url, HTTP_AUTHORIZATION=f"Token {self.service_account.token}")
+        request = self.factory.get(
+            url,
+            HTTP_AUTHORIZATION=f"Token {self.service_account.token}",
+            HTTP_ACCEPT=accept,
+        )
         return self.view(request, content_hash=content_hash)
 
     @patch("api.views.RemediationService", autospec=True, spec_set=True)
@@ -281,3 +287,35 @@ class DocumentDownloadViewTests(TestCase):
         response = self._get("abc123")
 
         self.assertEqual(response.status_code, 404)
+
+    @parameterized.expand(
+        [("pdf", "application/pdf"), ("json", "application/json"), ("any", "*/*")]
+    )
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_serves_the_file_whatever_the_accept_header(
+        self, _name, accept, mock_service_cls
+    ) -> None:
+        output_path = default_storage.save("remediations/accept.pdf", ContentFile(b"%PDF-1.4"))
+        remediation = RemediationFactory.build(
+            content_hash="abc123",
+            status=Remediation.JobStatus.COMPLIANT,
+            final_output_uri=output_path,
+        )
+        mock_service_cls.return_value.latest_for_document.return_value = remediation
+
+        response = self._get("abc123", accept=accept)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("attachment", response["Content-Disposition"])
+
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_404_is_json_even_when_pdf_was_requested(self, mock_service_cls) -> None:
+        mock_service_cls.return_value.latest_for_document.return_value = None
+
+        response = self._get("abc123", accept="application/pdf")
+        response.render()
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response["Content-Type"], "application/json")
+        self.assertIn("detail", json.loads(response.content))

@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from remediation.models import Remediation, VerificationResult
 from remediation.services import build_download_url
+from remediation.webhook_client import UnsafeWebhookURLError, check_webhook_url
 
 
 class RemediationUploadSerializer(serializers.Serializer):
@@ -13,6 +14,14 @@ class RemediationUploadSerializer(serializers.Serializer):
     # Optional — `document-status`/`download_url` still
     # work regardless, for callers that prefer to poll.
     callback_url = serializers.URLField(required=False, allow_blank=True, default="")
+
+    def validate_callback_url(self, value: str) -> str:
+        if value:
+            try:
+                check_webhook_url(value)
+            except UnsafeWebhookURLError as exc:
+                raise serializers.ValidationError(str(exc)) from exc
+        return value
 
     def validate_file(self, value: UploadedFile) -> UploadedFile:
         if not value.name or not value.name.lower().endswith(".pdf"):

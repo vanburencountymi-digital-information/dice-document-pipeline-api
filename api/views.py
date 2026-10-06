@@ -6,11 +6,13 @@ from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serial
 from knox.auth import TokenAuthentication
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.renderers import JSONRenderer
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import ServiceAccount
+from api.renderers import PDFRenderer
 from remediation.models import Remediation
 from remediation.serializers import RemediationSerializer, RemediationUploadSerializer
 from remediation.services import RemediationService
@@ -153,10 +155,22 @@ class DocumentDownloadView(ServiceAccountRequiredMixin):
         account, or if nothing has been produced yet (e.g. still QUEUED/RUNNING).
     """
 
+    renderer_classes = [PDFRenderer, JSONRenderer]
+
+    def handle_exception(self, exc: Exception) -> Response:
+        # Errors (e.g. 404) are JSON even when the caller asked for a PDF; the PDF renderer
+        # can't render an error message.
+        self.request.accepted_renderer = JSONRenderer()
+        self.request.accepted_media_type = JSONRenderer.media_type
+        return super().handle_exception(exc)
+
     @extend_schema(
         summary="Download the remediated PDF",
         parameters=[CONTENT_HASH_PARAM],
-        responses={(200, "application/pdf"): OpenApiTypes.BINARY},
+        responses={
+            (200, "application/pdf"): OpenApiTypes.BINARY,
+            404: inline_serializer("NotFound", {"detail": serializers.CharField()}),
+        },
     )
     def get(self, request: Request, content_hash: str) -> FileResponse:
         remediation = RemediationService().latest_for_document(self.service_account, content_hash)
