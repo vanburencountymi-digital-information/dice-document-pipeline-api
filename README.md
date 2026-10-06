@@ -131,7 +131,18 @@ The API authenticates requests with a token tied to a `ServiceAccount`. To set o
 
 3. Need another token later (e.g. you lost it)? In the admin, go to **Service accounts**, tick the account, choose **Issue a new token** from the action menu, and click **Go**. The token appears in the message at the top of the page, only that once. Older tokens keep working.
 
+### In the browser
+
+The easiest way to try the API: open `http://localhost:8000/api/docs/` (or `/api/docs/` on wherever you've deployed it).
+
+1. Click **Authorize**, enter `Token <your token>` (the word `Token`, a space, then your token), and click **Authorize**.
+2. Pick an endpoint, click **Try it out**, fill it in (for `submit-document`, choose your PDF), and click **Execute**.
+
+Nothing to install. Your browser sends the file as-is. The page also lists every endpoint and what it returns.
+
 ### With Postman
+
+> Postman's web version can damage uploaded files (its Cloud Agent re-encodes them as text, so the PDF arrives corrupted). Use the browser page above, the Postman desktop app, or `curl` instead.
 
 #### Submit a document
 
