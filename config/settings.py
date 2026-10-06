@@ -253,6 +253,9 @@ TASKS = {
 # WEBHOOK_BACKOFF_BASE_SECONDS * 2^(attempt - 1) before each retry (30s, 60s, 120s, ...).
 MAX_WEBHOOK_ATTEMPTS = env.int("MAX_WEBHOOK_ATTEMPTS", default=5)
 WEBHOOK_BACKOFF_BASE_SECONDS = env.int("WEBHOOK_BACKOFF_BASE_SECONDS", default=30)
+# Webhooks only go to public https addresses. Set True ONLY on a local machine, to test against
+# a receiver on localhost/your network (also allows http://).
+WEBHOOK_ALLOW_PRIVATE_URLS = env.bool("WEBHOOK_ALLOW_PRIVATE_URLS", default=False)
 
 # ADR 0023 — only used by `manage.py run_queued_tasks` (the scheduled worker in deployed
 # environments): when there's work queued, how long to wait for the OCR sidecar to finish

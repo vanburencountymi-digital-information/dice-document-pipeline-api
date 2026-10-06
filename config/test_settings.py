@@ -18,3 +18,6 @@ STORAGES = {
     **STORAGES,  # noqa: F405
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }
+
+# Webhook URL checks look up DNS; tests that need them turn them on with `override_settings`.
+WEBHOOK_ALLOW_PRIVATE_URLS = True

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from django.test import SimpleTestCase, TestCase
+from unittest.mock import patch
+
+from django.test import SimpleTestCase, TestCase, override_settings
 from parameterized import parameterized
 
 from remediation.adapters.verification.severity import Severity
@@ -22,6 +24,19 @@ def _upload_serializer(
 
 
 class RemediationUploadSerializerTests(SimpleTestCase):
+    @override_settings(WEBHOOK_ALLOW_PRIVATE_URLS=False)
+    @patch("remediation.webhook_client.socket.getaddrinfo", autospec=True)
+    def test_rejects_a_callback_url_pointing_at_an_internal_address(self, mock_lookup) -> None:
+        mock_lookup.return_value = [(2, 1, 6, "", ("169.254.169.254", 443))]
+        upload = PdfUploadFactory(name="test.pdf")
+
+        serializer = RemediationUploadSerializer(
+            data={"file": upload, "callback_url": "https://sneaky.example.com/hook"}
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("callback_url", serializer.errors)
+
     def test_accepts_pdf_file(self) -> None:
         serializer = _upload_serializer("test.pdf")
 

@@ -138,7 +138,7 @@ The easiest way to try the API: open `http://localhost:8000/api/docs/` (or `/api
 1. Click **Authorize**, enter `Token <your token>` (the word `Token`, a space, then your token), and click **Authorize**.
 2. Pick an endpoint, click **Try it out**, fill it in (for `submit-document`, choose your PDF), and click **Execute**.
 
-Nothing to install. Your browser sends the file as-is. The page also lists every endpoint and what it returns.
+Nothing to install. Your browser sends the file as-is. The page also lists every endpoint and what it returns. For `document-download`, a **Download file** link appears under the response once it finishes.
 
 ### With Postman
 
@@ -181,11 +181,11 @@ You should see `status` in the response:
 1. New request: `GET http://localhost:8000/api/document-download/<document_id>/`, using the `document_id` from the submit response.
 2. Same `Authorization` header as above.
 
-This returns the actual PDF file, not JSON. It works even if the job is `noncompliant` or `error` — a partially-fixed document is still returned if any remediation happened before the problem.
+This returns the actual PDF file, not JSON. It works even if the job is `noncompliant` or `error` — a partially-fixed document is still returned if any remediation happened before the problem. If there's no file yet (still `queued` or `running`) or the `document_id` is unknown, you get a `404` with a short JSON message instead.
 
 #### Get a webhook instead of polling
 
-Add a `callback_url` key (type Text) to the submit request's `form-data` body. When the job finishes, we'll POST a small JSON notice to that URL instead of you having to poll `document-status`. It includes the job's `status`, a `download_url` you can `GET` right away, the `pipeline_version` that processed it, and its `verification_results` (the veraPDF checks, same as `document-status` shows). Multiple different callers can each submit the same document with their own `callback_url` and all get notified independently.
+Add a `callback_url` key (type Text) to the submit request's `form-data` body. It must be a public `https://` address; internal or private addresses are rejected with a `400`. When the job finishes, we'll POST a small JSON notice to that URL instead of you having to poll `document-status`. It includes the job's `status`, a `download_url` you can `GET` right away, the `pipeline_version` that processed it, and its `verification_results` (the veraPDF checks, same as `document-status` shows). Multiple different callers can each submit the same document with their own `callback_url` and all get notified independently.
 
 ## Worker Queue
 
@@ -219,6 +219,7 @@ Settings a deploy must set (app **and** worker):
 | `RUN_PRECHECK`, `RUN_OCR`, … `RUN_POSTCHECK` | Which pipeline steps are switched on. |
 | `OPENDATALOADER_HYBRID_URL` | Address of the OCR service. Must be private — reachable by the worker, not the internet. |
 | `ANTHROPIC_API_KEY` | Only if `RUN_ALT_TEXT=True`. |
+| `WEBHOOK_ALLOW_PRIVATE_URLS` | Optional, local use only. Webhooks (`callback_url`) normally only go to public `https://` addresses, so nobody can make the server call internal services. Set `True` to test against a receiver on your own machine. Never in staging or production. |
 | `CSRF_TRUSTED_ORIGINS` | Optional — only if the admin is reached through a different domain than the app itself. |
 
 The following are set by defaults: `DEBUG`: `False`,
