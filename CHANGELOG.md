@@ -2,6 +2,14 @@
 
 <!-- version list -->
 
+## v4.2.0 (2026-10-06)
+
+### Features
+
+- Allow document download to return files
+  ([`6ccc7fb`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/6ccc7fb4ccf52a6f34d7bde3a201333af2d2a947))
+
+
 ## v4.1.1 (2026-10-06)
 
 ### Bug Fixes
