@@ -43,6 +43,13 @@ class SchemaContentTests(SimpleTestCase):
         self.assertIn("multipart/form-data", post["requestBody"]["content"])
         self.assertEqual(set(post["responses"]), {"200", "201"})
 
+    def test_upload_file_field_is_binary_so_swagger_shows_a_file_picker(self) -> None:
+        file_field = self.schema["components"]["schemas"]["RemediationUploadRequest"]["properties"][
+            "file"
+        ]
+
+        self.assertEqual(file_field["format"], "binary")
+
     def test_token_auth_is_an_authorization_header(self) -> None:
         scheme = self.schema["components"]["securitySchemes"]["knoxToken"]
 
