@@ -31,6 +31,13 @@ class ServiceAccountServiceTests(TestCase):
 
         self.assertFalse(service_account.user.has_usable_password())
 
+    def test_create_generates_a_username_instead_of_using_the_name(self) -> None:
+        first, _ = ServiceAccountService().create(self.organization, "wordpress-prod")
+        second, _ = ServiceAccountService().create(OrganizationFactory(), "wordpress-prod")
+
+        self.assertNotEqual(first.user.username, "wordpress-prod")
+        self.assertNotEqual(first.user.username, second.user.username)
+
     def test_create_creates_auth_token(self) -> None:
         service_account, token = ServiceAccountService().create(
             organization=self.organization, service_name="wordpress-prod"
@@ -49,7 +56,7 @@ class ServiceAccountServiceTests(TestCase):
                 organization=self.organization, service_name="wordpress-prod"
             )
 
-        self.assertEqual(User.objects.filter(username="wordpress-prod").count(), 1)
+        self.assertEqual(User.objects.count(), 1)
         self.assertEqual(ServiceAccount.objects.count(), 1)
 
     def test_issue_token_adds_an_additional_token_without_disturbing_the_first(self) -> None:

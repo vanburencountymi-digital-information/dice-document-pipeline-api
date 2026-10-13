@@ -170,17 +170,10 @@ The container names `worker` and `ocr` matter — the pipeline updates them by n
 
 ## 11. Create your admin login and an API account
 
-Two one-off jobs, created like step 8 (same app image and settings). **Execute** each once; delete them afterwards if you like.
-
-1. **Admin login** — job `dice-create-admin`: command `python`, arguments `manage.py`, `createsuperuser`, `--noinput`. Add variables `DJANGO_SUPERUSER_USERNAME` (your choice) and `DJANGO_SUPERUSER_EMAIL`, and secret `DJANGO_SUPERUSER_PASSWORD` → `dice-superuser-password`.
-2. **API account** — job `dice-create-account`: command `python`, arguments `manage.py`, `shell`, `-c`, then this as one argument (change the names as needed):
-
-```
-from accounts.models import Organization; from accounts.services import ServiceAccountService; ServiceAccountService().create(Organization.objects.get_or_create(name="Test Org")[0], "test-service-account")
-```
-
-3. Log in at `APP_URL/admin/` → **Service accounts** → tick `test-service-account` → **Issue a new token** → **Go**. The token appears at the top of the page, **only this once** — save it. (The job also made a token, but on purpose it's never shown anywhere, so it can't end up in logs.)
-4. Open the account itself to see its **webhook secret**, if you'll use webhooks.
+1. **Admin login** — one-off job `dice-create-admin`, created like step 8 (same app image and settings): command `python`, arguments `manage.py`, `createsuperuser`, `--noinput`. Add variables `DJANGO_SUPERUSER_USERNAME` (your choice) and `DJANGO_SUPERUSER_EMAIL`, and secret `DJANGO_SUPERUSER_PASSWORD` → `dice-superuser-password`. **Execute** it once; delete it afterwards if you like.
+2. Log in at `APP_URL/admin/` → **Organizations** → **Add**, enter a name, and save.
+3. Go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`), and save. The token appears at the top of the page, **only this once** — save it.
+4. Open the account to see its **webhook secret**, if you'll use webhooks.
 
 ## 12. Test it end to end
 
