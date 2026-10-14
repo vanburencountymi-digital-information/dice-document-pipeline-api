@@ -1,4 +1,5 @@
 import secrets
+import uuid
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -13,7 +14,8 @@ class ServiceAccountService:
     @transaction.atomic
     def create(self, organization: Organization, service_name: str) -> tuple[ServiceAccount, str]:
         """Sets up a new ServiceAccount for the organization using the service_name provided."""
-        user = User.objects.create_user(username=service_name, password=None)
+        # Names are only unique per organization, but usernames are global.
+        user = User.objects.create_user(username=f"service-{uuid.uuid4().hex}", password=None)
         service_account = ServiceAccount.objects.create(
             organization=organization,
             user=user,

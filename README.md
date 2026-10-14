@@ -117,17 +117,7 @@ If all steps are enabled via environment variable, a document upload runs throug
 The API authenticates requests with a token tied to a `ServiceAccount`. To set one up:
 
 1. Create an admin login (first time only): `docker compose run --rm app python manage.py createsuperuser`, then log in at `http://localhost:8000/admin/`.
-2. Create an organization and service account. Open a Django shell (`make pyshell`) and run:
-
-    ```python
-    from accounts.models import Organization
-    from accounts.services import ServiceAccountService
-
-    org = Organization.objects.create(name="Test Org")
-    account, token = ServiceAccountService().create(org, "test-service-account")
-    print(token)  # save this — it can't be shown again
-    print(account.webhook_secret)  # only needed if you use webhooks, to check they came from us
-    ```
+2. In the admin, go to **Organizations** → **Add**, enter a name, and save. Then go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`), and save. The token appears at the top of the page, **only this once** — save it. Open the account to see its webhook secret (only needed if you use webhooks, to check they came from us).
 
 3. Need another token later (e.g. you lost it)? In the admin, go to **Service accounts**, tick the account, choose **Issue a new token** from the action menu, and click **Go**. The token appears in the message at the top of the page, only that once. Older tokens keep working.
 
@@ -156,7 +146,7 @@ The response will contain an `id` field with the remediation job id and a `docum
 
 #### Resubmit a document
 
-A document that has been processed by the pipeline is hashed, so that future attempts of the same file by the same organization return the previous result without re-running the whole pipeline.
+A document that has been processed by the pipeline is hashed, so that future attempts of the same file by the same service account return the previous result without re-running the whole pipeline.
 
 If you would like to force re-running the pipeline, such as during testing, click the radio button for `form-data` and next to the `file` key, add a second key, `force`, type Text, value `true`.
 
@@ -228,9 +218,9 @@ The following are set by defaults: `DEBUG`: `False`,
 
 ### Setting a Retry Floor
 
-By default, re-running the same document from the same organization returns the result from the previous run unless `force=True` has been passed in with the `POST`.
+By default, re-running the same document from the same service account returns the result from the previous run unless `force=True` has been passed in with the `POST`.
 
-However, upgrading a major dependency might mean that jobs that previously ended `noncompliant` or `error` would now pass with the current pipeline. You can set the retry floor to any version of the pipeline that has previously run a remediation job via the admin panel. If a file from a previous `noncompliant` or `error` job that was run on a version of the pipeline older than the floor is sent by the same organization, it will automatically be retried to see if the version change has corrected whatever previously caused the file to fail.
+However, upgrading a major dependency might mean that jobs that previously ended `noncompliant` or `error` would now pass with the current pipeline. You can set the retry floor to any version of the pipeline that has previously run a remediation job via the admin panel. If a file from a previous `noncompliant` or `error` job that was run on a version of the pipeline older than the floor is sent by the same service account, it will automatically be retried to see if the version change has corrected whatever previously caused the file to fail.
 
 ### OpenDataloader and Docling
 
