@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v4.4.1 (2026-10-14)
+
+### Bug Fixes
+
+- Add CONN_HEALTH_CHECKS for Neon
+  ([#25](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/25),
+  [`27998c0`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/27998c0546d1f8f79e6a0fb015f41cd12d8431e2))
+
+
 ## v4.4.0 (2026-10-14)
 
 ### Features
