@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v4.3.0 (2026-10-14)
+
+### Features
+
+- Add Organization and Service Account Creation to Admin Panel
+  ([#23](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/23),
+  [`6d334eb`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/6d334eb95ca2fa4cca55f1da399fd8a1c93b564a))
+
+
 ## v4.2.0 (2026-10-06)
 
 ### Features
