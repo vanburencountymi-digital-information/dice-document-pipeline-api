@@ -94,13 +94,15 @@ The bucket's name says "test" — fine for staging. Production should get its ow
 |---|---|
 | `dice-secret-key` | A long random string (50+ characters, e.g. from a password manager's generator). |
 | `dice-database-url` | `postgres://dice_app:PASSWORD@/%2Fcloudsql%2Fada-document-pipeline-staging%3Aus-central1%3Adice-staging/dice_document_pipeline` |
+| `dice-database-url-tcp` | Same as `dice-database-url` but for the Cloud Shell connection (appendix): `postgres://dice_app:PASSWORD@127.0.0.1:5432/dice_document_pipeline` |
 | `dice-s3-access-key` | R2 Access Key ID (step 5). |
 | `dice-s3-secret-key` | R2 Secret Access Key (step 5). |
 | `dice-sentry-dsn` | Your Sentry DSN. |
 | `dice-anthropic-api-key` | Your Anthropic key (only needed if alt text is on). |
-| `dice-superuser-password` | A password for your admin login (step 11). |
 
 In `dice-database-url`, replace only `PASSWORD`. The rest looks odd on purpose — on Cloud Run the database is reached through a local connection (`/cloudsql/...`), not a web address — so keep it exactly as written, including the `/` right after `@`.
+
+If the password has symbols (like `+ ; &`), they must be written in "percent" form in both database URLs, e.g. `+` becomes `%2B`, `;` becomes `%3B`, `&` becomes `%26`. Easiest: use a generated password with only letters and numbers.
 
 ## 7. Settings every piece needs
 
@@ -170,9 +172,9 @@ The container names `worker` and `ocr` matter — the pipeline updates them by n
 
 ## 11. Create your admin login and an API account
 
-1. **Admin login** — one-off job `dice-create-admin`, created like step 8 (same app image and settings): command `python`, arguments `manage.py`, `createsuperuser`, `--noinput`. Add variables `DJANGO_SUPERUSER_USERNAME` (your choice) and `DJANGO_SUPERUSER_EMAIL`, and secret `DJANGO_SUPERUSER_PASSWORD` → `dice-superuser-password`. **Execute** it once; delete it afterwards if you like.
+1. **Admin login** — the only step that needs a terminal. In **Cloud Shell**, follow [Django shell on staging](#appendix-django-shell-on-staging) up to the shell prompt, then run `python manage.py createsuperuser` and answer the questions. Type `exit` and stop the proxy when done.
 2. Log in at `APP_URL/admin/` → **Organizations** → **Add**, enter a name, and save.
-3. Go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`), and save. The token appears at the top of the page, **only this once** — save it.
+3. Go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`) and a name for its first token (e.g. `first-token`), and save. The token appears at the top of the page, **only this once** — save it.
 4. Open the account to see its **webhook secret**, if you'll use webhooks.
 
 ## 12. Test it end to end
@@ -228,6 +230,31 @@ While it's off, staging is fully down: the app returns errors, and nothing is lo
 
 - Clear out old task records daily: a job running `manage.py prune_db_task_results`, triggered by **Cloud Scheduler**.
 - Production: the same pipeline with its own project, database and bucket, plus a manual approval step before migrations ([ADR 0022](adrs/0022-automated-staging-deploys.md)).
+
+## Appendix: Django shell on staging
+
+Cloud Run can't open a shell inside a running container, so run the app image from **Cloud Shell** (the `>_` button in the Console) instead. Use it for the admin login, debugging or fixing data. You need these roles on your own Google account: Cloud SQL Client, Secret Manager Secret Accessor, Artifact Registry Reader (Owner/Editor also works).
+
+1. Start the database connection (run `gcloud auth login` first if asked), and wait for "ready for new connections":
+
+   ```bash
+   cloud-sql-proxy --gcloud-auth ada-document-pipeline-staging:us-central1:dice-staging &
+   ```
+
+2. Start the app image with a shell. The first pull takes a few minutes. Use `sh`, not `bash` (the image has no bash).
+
+   ```bash
+   gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+   docker run -it --rm --network host \
+     -e DATABASE_URL="$(gcloud secrets versions access latest --secret=dice-database-url-tcp)" \
+     -e SECRET_KEY="$(gcloud secrets versions access latest --secret=dice-secret-key)" \
+     us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/app:<tag> \
+     sh
+   ```
+
+3. Run what you need, e.g. `python manage.py createsuperuser` or `python manage.py shell`.
+4. Type `exit`, then `kill %1` to stop the connection.
 
 ## Appendix: building and deploying by hand
 

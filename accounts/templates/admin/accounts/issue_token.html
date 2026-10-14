@@ -1,0 +1,11 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<p>Issue a new token for <strong>{{ service_account }}</strong>. Older tokens keep working.</p>
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <input type="submit" value="Issue token" class="default">
+  <a href="{% url 'admin:accounts_serviceaccount_change' service_account.pk %}" class="button cancel-link">Cancel</a>
+</form>
+{% endblock %}

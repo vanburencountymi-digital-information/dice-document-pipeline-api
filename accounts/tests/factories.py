@@ -6,7 +6,7 @@ import factory
 from django.contrib.auth import get_user_model
 from knox.models import AuthToken
 
-from accounts.models import Organization, ServiceAccount
+from accounts.models import Organization, ServiceAccount, ServiceAccountToken
 
 User = get_user_model()
 
@@ -48,4 +48,18 @@ class ServiceAccountFactory(factory.django.DjangoModelFactory):
         # knox only stores a hash, so the raw value is stashed here as a plain in-memory
         # attribute purely for test convenience
         if create:
-            _, self.token = AuthToken.objects.create(user=self.user)
+            auth_token, self.token = AuthToken.objects.create(user=self.user)
+            ServiceAccountToken.objects.create(
+                service_account=self, name="default", auth_token=auth_token
+            )
+
+
+class ServiceAccountTokenFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = ServiceAccountToken
+
+    service_account = factory.SubFactory(ServiceAccountFactory)
+    name = factory.Sequence(lambda n: f"token-{n}")
+    auth_token = factory.LazyAttribute(
+        lambda obj: AuthToken.objects.create(user=obj.service_account.user)[0]
+    )
