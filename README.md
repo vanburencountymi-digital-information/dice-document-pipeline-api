@@ -117,9 +117,9 @@ If all steps are enabled via environment variable, a document upload runs throug
 The API authenticates requests with a token tied to a `ServiceAccount`. To set one up:
 
 1. Create an admin login (first time only): `docker compose run --rm app python manage.py createsuperuser`, then log in at `http://localhost:8000/admin/`.
-2. In the admin, go to **Organizations** → **Add**, enter a name, and save. Then go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`), and save. The token appears at the top of the page, **only this once** — save it. Open the account to see its webhook secret (only needed if you use webhooks, to check they came from us).
+2. In the admin, go to **Organizations** → **Add**, enter a name, and save. Then go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`) and a name for its first token (e.g. `first-token`), and save. The token appears at the top of the page, **only this once** — save it. Open the account to see its webhook secret (only needed if you use webhooks, to check they came from us).
 
-3. Need another token later (e.g. you lost it)? In the admin, go to **Service accounts**, tick the account, choose **Issue a new token** from the action menu, and click **Go**. The token appears in the message at the top of the page, only that once. Older tokens keep working.
+3. Need another token later (e.g. you lost it)? In the admin, go to **Service accounts**, open the account, and click **Issue a new token** (top right). Give the token a name. The token appears at the top of the page, only that once. Older tokens keep working. To switch a token off, go to **Service account tokens**, tick it, and delete it. **Regenerate webhook secret** (also top right of the account page) makes a new one, shown on the account page; whoever checks our webhooks must be updated.
 
 ### In the browser
 
@@ -137,7 +137,7 @@ Nothing to install. Your browser sends the file as-is. The page also lists every
 #### Submit a document
 
 1. New request: `POST http://localhost:8000/api/submit-document/` (or whatever URL you've deployed to)
-2. Headers: Key: `Authorization`, Value: `Token <the token you printed above>`
+2. Headers: Key: `Authorization`, Value: `Token <the token you saved from the admin>`
 3. Body: Choose `form-data` radio button. Add key `file`, change its type (in next column) from "Text" to `File`, and pick a PDF.
    - Optional: add a key `callback_url` (type Text) with the URL to notify when the job finishes, e.g. `https://example.com/webhooks/remediation`. See [Get a webhook instead of polling](#get-a-webhook-instead-of-polling) below.
 4. Send. The response is the remediation job, with `status` `queued`. The worker processes it in the background; check its status (below) or register a webhook to find out when it's done.
@@ -212,7 +212,7 @@ Settings a deploy must set (app **and** worker):
 | `WEBHOOK_ALLOW_PRIVATE_URLS` | Optional, local use only. Webhooks (`callback_url`) normally only go to public `https://` addresses, so nobody can make the server call internal services. Set `True` to test against a receiver on your own machine. Never in staging or production. |
 | `CSRF_TRUSTED_ORIGINS` | Optional — only if the admin is reached through a different domain than the app itself. |
 
-The following are set by defaults: `DEBUG`: `False`,
+`DEBUG` defaults to `False`; leave it that way outside local development.
 
 ## Dependency Upgrades
 

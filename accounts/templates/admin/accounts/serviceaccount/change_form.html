@@ -1,0 +1,30 @@
+{% extends "admin/change_form.html" %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <style>
+    /* Left-aligned under the title, styled like the admin's own Save buttons */
+    .object-tools { float: none; margin: 0 0 16px; padding: 0; text-align: left; }
+    .object-tools li { float: none; display: inline-block; margin: 0 8px 0 0; }
+    .object-tools a:link, .object-tools a:visited {
+      background: var(--button-bg);
+      color: var(--button-fg);
+      border-radius: 4px;
+      padding: 10px 15px;
+      font-size: 0.8125rem;
+      text-transform: none;
+    }
+    .object-tools a:hover, .object-tools a:focus {
+      background: var(--button-hover-bg);
+      color: var(--button-fg);
+    }
+  </style>
+{% endblock %}
+
+{% block object-tools-items %}
+  {% if original %}
+    <li><a href="{% url 'admin:accounts_serviceaccount_issue_token' original.pk %}">Issue a new token</a></li>
+    <li><a href="{% url 'admin:accounts_serviceaccount_regenerate_webhook_secret' original.pk %}">Regenerate webhook secret</a></li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

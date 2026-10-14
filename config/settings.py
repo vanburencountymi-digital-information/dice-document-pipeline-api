@@ -227,6 +227,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 # django-knox
+KNOX_TOKEN_MODEL = "knox.AuthToken"
 
 # Slide token expiration forward another year whenever used
 REST_KNOX = {
