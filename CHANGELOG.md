@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v4.4.0 (2026-10-14)
+
+### Features
+
+- Named tokens and token + webhooks secret management in admin
+  ([#24](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/24),
+  [`04f7e55`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/04f7e559b589fd2e263fe5640568be769cd29923))
+
+
 ## v4.3.0 (2026-10-14)
 
 ### Features
