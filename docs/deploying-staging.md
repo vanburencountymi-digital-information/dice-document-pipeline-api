@@ -11,23 +11,25 @@ Related: the image ([ADR 0021](adrs/0021-deployable-image.md)), the worker ([ADR
 ```
 Internet ──► dice-app (Cloud Run service, public)   ─┐
                                                      ├─► Neon (Postgres)
-dice-worker (Cloud Run job, every 20 min)          ─┤
+dice-worker (Cloud Run job, run by hand or scheduler)─┤
   ├── worker container: manage.py run_queued_tasks   └─► Cloudflare R2 bucket (PDFs)
   └── ocr container: opendataloader-hybrid :5002 (localhost only)
         ▲ started by Cloud Scheduler
 ```
 
 - **dice-app** — the website and API people call.
-- **dice-worker** — processes uploads in the background. Every 20 minutes it starts, checks for queued uploads, and exits straight away if there are none (seconds, almost free). If there are, it waits for OCR to load, processes them all, then exits ([ADR 0023](adrs/0023-scheduled-batch-worker.md)). OCR runs next to it as a second ("sidecar") container that only the worker can reach — never the internet.
+- **dice-worker** — processes uploads in the background. When it runs, it checks for queued uploads and exits straight away if there are none (seconds, almost free). If there are, it waits for OCR to load, processes them all, then exits ([ADR 0023](adrs/0023-scheduled-batch-worker.md)). OCR runs next to it as a second ("sidecar") container that only the worker can reach — never the internet.
 - The app and worker run the **same image**; only their command differs.
 
 **This isn't Google Cloud Tasks.** The upload queue lives in our own Postgres database ([ADR 0020](adrs/0020-database-backed-task-worker.md)); we don't use Google's task service, and its API never needs turning on. The worker is an ordinary Cloud Run *job* (a program that runs, finishes and exits) that Cloud Scheduler starts on a timer.
 
-**Timing:** an upload waits up to ~20 minutes for the next run, plus a minute or two for OCR to load. Callers get a webhook when it's done, so that's fine. Webhook retries also go out on the next run.
+**Timing:** the schedule is set up but kept **paused** on staging, so uploads wait until someone **Executes** `dice-worker` ([ADR 0029](adrs/0029-staging-worker-paused-by-default.md)). Once it runs, add a minute or two for OCR to load. Callers get a webhook when it's done. Webhook retries also go out on the next run. If you resume the schedule, a run starts every 20 minutes.
 
 **Cost:** roughly **$10/month** for staging at a few documents a day. The database is on [Neon](https://neon.com)'s free plan ($0) and the worker only costs anything while it's actually processing ([ADR 0028](adrs/0028-staging-database-on-neon.md)).
 
-**Why 20 minutes:** each worker run's "anything queued?" check wakes the database for about 5 minutes. The free plan allows 100 compute-hours a month; every 20 minutes uses about half. If usage heads for the limit, change the schedule to every 30 minutes.
+**Why paused, and why 20 minutes if resumed:** each worker run's "anything queued?" check wakes the database for about 5 minutes. The free plan allows 100 compute-hours a month; every 20 minutes uses about half. Running by hand uses far less. If you resume and usage heads for the limit, change the schedule to every 30 minutes.
+
+**Backups:** Neon's free plan can only restore to a point in the last **6 hours** — there are no nightly backup files. Don't keep anything on staging you'd mind losing.
 
 **How deploys work:** merge a PR → GitHub tags a new release (`vX.Y.Z`) → Cloud Build builds the app image, runs database migrations, then updates the app and worker. If migrations fail, it stops and nothing new is deployed.
 
@@ -165,7 +167,7 @@ Before step 5, the URL shows "Bad Request (400)" — expected.
    1 CPU, 2 GiB memory.
 3. **Add container**, named `ocr`: the OCR image. No settings. 3 CPU, 12 GiB memory. *(check — starting guess; watch its memory in the Metrics tab on the first real run.)* **Don't** set a startup dependency between the two containers — the worker waits for OCR itself, and only when there's work, so empty runs stay fast.
 4. Job settings: **Task timeout 60 minutes**, **Max retries 0** (the next scheduled run is the retry). Create.
-5. On the job's page → **Triggers** → **Add scheduler trigger**: frequency `*/20 * * * *` (every 20 minutes), time zone `America/Detroit`, service account `dice-staging-deployer` (it's allowed to start jobs). *(check)*
+5. On the job's page → **Triggers** → **Add scheduler trigger**: frequency `*/20 * * * *` (every 20 minutes), time zone `America/Detroit`, service account `dice-staging-deployer` (it's allowed to start jobs). *(check)* On staging, **Pause** the trigger straight after creating it and run the worker by hand (see [Pausing the worker](#pausing-the-worker)).
 6. Test it: **Execute** the job by hand. With nothing queued, it should finish within seconds with "Nothing queued." in its logs. **Also check the execution finishes, rather than running on until the 60-minute timeout** — that confirms the OCR container stops when the worker does. *(check)*
 
 The container names `worker` and `ocr` matter — the pipeline updates them by name.
@@ -181,7 +183,7 @@ The container names `worker` and `ocr` matter — the pipeline updates them by n
 
 1. `APP_URL/admin/` — the login page should be styled.
 2. Upload a PDF with Postman to `APP_URL/api/submit-document/` with your token and a [webhook.site](https://webhook.site) `callback_url` (see [Testing the API](../README.md#testing-the-api)).
-3. Within ~20 minutes (or **Execute** `dice-worker` to go now), its **Logs** show: work found, OCR ready, the pipeline running, the webhook sent, then the run ending.
+3. **Execute** `dice-worker` (or wait for the next run, if the schedule is resumed). Its **Logs** show: work found, OCR ready, the pipeline running, the webhook sent, then the run ending.
 4. Download the result from the `download_url` in the webhook.
 
 ## 13. Check the automatic deploy works
@@ -200,7 +202,7 @@ Merge any small PR to `main`. Within a few minutes:
 
 ## Pausing the worker
 
-If you want uploads to wait (e.g. while fixing something), or to stop the schedule using up Neon's free hours:
+On staging the trigger is kept paused, so the worker only runs when you start it. To control it:
 
 - **Pause:** **Cloud Scheduler** → the `dice-worker` trigger → **Pause**.
 - **Resume:** same place → **Resume**.
@@ -210,7 +212,7 @@ While paused, the app stays up: uploads are accepted and come back `queued`, and
 
 If a run is stopped mid-document (e.g. it hits the 60-minute timeout), that document stays at `running` — nothing picks it back up automatically yet — so resubmit it with `force=true`.
 
-**Once production is live:** staging won't need to check every 20 minutes. Plan to either make the schedule much less frequent (edit the trigger's frequency, e.g. hourly or a few times a day), or pause it and just **Execute** the worker by hand when needed — after a new deploy, or during manual testing.
+Run it by hand after a new deploy or during manual testing. To go back to automatic runs, **Resume** the trigger.
 
 ## Turning staging off completely
 
