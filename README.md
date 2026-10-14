@@ -191,7 +191,7 @@ Deploy via Docker. Each deploy runs the image two ways:
 
 - **App** — the image's default command (gunicorn). Serves the API and the admin, including the admin's styling (no separate file server needed).
 - **Worker** — same image, run one of two ways; without it, uploads are accepted but never processed:
-  - **Scheduled** (staging on Cloud Run): command `python manage.py run_queued_tasks`, started every 15 minutes. It exits straight away if nothing is queued, so it costs almost nothing when idle ([ADR 0023](docs/adrs/0023-scheduled-batch-worker.md)).
+  - **Scheduled** (staging on Cloud Run): command `python manage.py run_queued_tasks`, started every 20 minutes. It exits straight away if nothing is queued, so it costs almost nothing when idle ([ADR 0023](docs/adrs/0023-scheduled-batch-worker.md)).
   - **Always on** (local docker-compose, or any host where that's simpler): command `python manage.py db_worker`, restarted automatically if it crashes.
 
 On each deploy, run `python manage.py migrate` once, before the new version starts taking traffic. Also run `python manage.py prune_db_task_results` on a schedule (e.g. daily) to clear out old task records.

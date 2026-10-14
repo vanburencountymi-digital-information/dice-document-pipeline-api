@@ -10,22 +10,24 @@ Related: the image ([ADR 0021](adrs/0021-deployable-image.md)), the worker ([ADR
 
 ```
 Internet ──► dice-app (Cloud Run service, public)   ─┐
-                                                     ├─► Cloud SQL (Postgres)
-dice-worker (Cloud Run job, every 15 min)          ─┤
+                                                     ├─► Neon (Postgres)
+dice-worker (Cloud Run job, every 20 min)          ─┤
   ├── worker container: manage.py run_queued_tasks   └─► Cloudflare R2 bucket (PDFs)
   └── ocr container: opendataloader-hybrid :5002 (localhost only)
         ▲ started by Cloud Scheduler
 ```
 
 - **dice-app** — the website and API people call.
-- **dice-worker** — processes uploads in the background. Every 15 minutes it starts, checks for queued uploads, and exits straight away if there are none (seconds, almost free). If there are, it waits for OCR to load, processes them all, then exits ([ADR 0023](adrs/0023-scheduled-batch-worker.md)). OCR runs next to it as a second ("sidecar") container that only the worker can reach — never the internet.
+- **dice-worker** — processes uploads in the background. Every 20 minutes it starts, checks for queued uploads, and exits straight away if there are none (seconds, almost free). If there are, it waits for OCR to load, processes them all, then exits ([ADR 0023](adrs/0023-scheduled-batch-worker.md)). OCR runs next to it as a second ("sidecar") container that only the worker can reach — never the internet.
 - The app and worker run the **same image**; only their command differs.
 
 **This isn't Google Cloud Tasks.** The upload queue lives in our own Postgres database ([ADR 0020](adrs/0020-database-backed-task-worker.md)); we don't use Google's task service, and its API never needs turning on. The worker is an ordinary Cloud Run *job* (a program that runs, finishes and exits) that Cloud Scheduler starts on a timer.
 
-**Timing:** an upload waits up to ~15 minutes for the next run, plus a minute or two for OCR to load. Callers get a webhook when it's done, so that's fine. Webhook retries also go out on the next run.
+**Timing:** an upload waits up to ~20 minutes for the next run, plus a minute or two for OCR to load. Callers get a webhook when it's done, so that's fine. Webhook retries also go out on the next run.
 
-**Cost:** roughly **$20–25/month** for staging at a few documents a day — mostly the database (~$10–12). The worker only costs anything while it's actually processing.
+**Cost:** roughly **$10/month** for staging at a few documents a day. The database is on [Neon](https://neon.com)'s free plan ($0) and the worker only costs anything while it's actually processing ([ADR 0028](adrs/0028-staging-database-on-neon.md)).
+
+**Why 20 minutes:** each worker run's "anything queued?" check wakes the database for about 5 minutes. The free plan allows 100 compute-hours a month; every 20 minutes uses about half. If usage heads for the limit, change the schedule to every 30 minutes.
 
 **How deploys work:** merge a PR → GitHub tags a new release (`vX.Y.Z`) → Cloud Build builds the app image, runs database migrations, then updates the app and worker. If migrations fail, it stops and nothing new is deployed.
 
@@ -37,7 +39,7 @@ dice-worker (Cloud Run job, every 15 min)          ─┤
 | Region | `us-central1` | Use for everything |
 | R2 bucket | `ada-pipeline-test-bucket` | Exists |
 | Image repository | `dice` | Create (step 3) |
-| Database instance / database / user | `dice-staging` / `dice_document_pipeline` / `dice_app` | Create (step 4) |
+| Neon project / database / user | `dice-staging` / `dice_document_pipeline` / `dice_app` | Create (step 4) |
 | Runtime service account | `dice-staging-runtime` | Create (step 2) |
 | Build service account | `dice-staging-deployer` | Create (step 3) |
 | App / worker job / migrations job | `dice-app` / `dice-worker` / `dice-migrate` | Create (steps 8–10) |
@@ -48,12 +50,12 @@ The bucket's name says "test" — fine for staging. Production should get its ow
 
 ## 1. Turn on the services
 
-**APIs & Services → Enable APIs and services**, then enable each of: **Cloud Run Admin API**, **Cloud SQL Admin API**, **Artifact Registry API**, **Secret Manager API**, **Cloud Build API**, **Cloud Scheduler API**.
+**APIs & Services → Enable APIs and services**, then enable each of: **Cloud Run Admin API**, **Artifact Registry API**, **Secret Manager API**, **Cloud Build API**, **Cloud Scheduler API**.
 
 ## 2. Create the identity the app and worker run as
 
 1. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-runtime`.
-2. Grant it: **Cloud SQL Client**, **Secret Manager Secret Accessor**.
+2. Grant it: **Secret Manager Secret Accessor**.
 
 ## 3. Connect GitHub and set up automatic builds
 
@@ -75,10 +77,11 @@ The bucket's name says "test" — fine for staging. Production should get its ow
 
 ## 4. Create the database
 
-1. **SQL → Create instance → PostgreSQL**.
-2. Version **PostgreSQL 18**, edition **Enterprise** (not Enterprise Plus — the cheaper machine sizes only exist on Enterprise), region `us-central1`, machine **Shared core → db-f1-micro** (the smallest; fine for staging, ~$10/month). *(check it's offered for PostgreSQL 18 — if not, pick the smallest shared-core option shown.)* Production should use a dedicated-core size.
-3. When it's ready (several minutes): **Databases** tab → create `dice_document_pipeline`; **Users** tab → create `dice_app` with a password of **letters and numbers only** (it goes inside a web address later). Save it somewhere safe.
-4. Its **Connection name** (Overview page) will be `ada-document-pipeline-staging:us-central1:dice-staging`.
+Staging's database is on [Neon](https://neon.com) (free plan), not Google Cloud. Neon runs on AWS, but you don't need an AWS account.
+
+1. In the Neon console, **Create project**: name `dice-staging`, Postgres 18, region **AWS US East (Ohio) `aws-us-east-2`** (closest to `us-central1`). Database `dice_document_pipeline`, user `dice_app`.
+2. **Settings → Compute**: set minimum and maximum to **0.25 CU**, so it can't grow and use up the free hours faster. Leave scale-to-zero on (the default, after 5 minutes idle).
+3. **Connect**: turn **Connection pooling off** and copy the **direct** connection string. It ends in `?sslmode=require`. Keep that part.
 
 ## 5. Get keys for the R2 bucket (Cloudflare dashboard)
 
@@ -93,16 +96,13 @@ The bucket's name says "test" — fine for staging. Production should get its ow
 | Secret name | Value |
 |---|---|
 | `dice-secret-key` | A long random string (50+ characters, e.g. from a password manager's generator). |
-| `dice-database-url` | `postgres://dice_app:PASSWORD@/%2Fcloudsql%2Fada-document-pipeline-staging%3Aus-central1%3Adice-staging/dice_document_pipeline` |
-| `dice-database-url-tcp` | Same as `dice-database-url` but for the Cloud Shell connection (appendix): `postgres://dice_app:PASSWORD@127.0.0.1:5432/dice_document_pipeline` |
+| `dice-database-url` | The Neon direct connection string (step 4), ending in `?sslmode=require`. |
 | `dice-s3-access-key` | R2 Access Key ID (step 5). |
 | `dice-s3-secret-key` | R2 Secret Access Key (step 5). |
 | `dice-sentry-dsn` | Your Sentry DSN. |
 | `dice-anthropic-api-key` | Your Anthropic key (only needed if alt text is on). |
 
-In `dice-database-url`, replace only `PASSWORD`. The rest looks odd on purpose — on Cloud Run the database is reached through a local connection (`/cloudsql/...`), not a web address — so keep it exactly as written, including the `/` right after `@`.
-
-If the password has symbols (like `+ ; &`), they must be written in "percent" form in both database URLs, e.g. `+` becomes `%2B`, `;` becomes `%3B`, `&` becomes `%26`. Easiest: use a generated password with only letters and numbers.
+Paste Neon's string exactly as given. Neon passwords are already safe to use in a web address.
 
 ## 7. Settings every piece needs
 
@@ -129,7 +129,7 @@ You'll enter these in steps 8–11, on each form's **Variables & Secrets** tab.
 | `SENTRY_ENVIRONMENT` | `staging` |
 | `RUN_PRECHECK`, `RUN_OCR`, `RUN_FONT_REPAIR`, `RUN_FINALIZE_METADATA`, `RUN_LINK_TAG`, `RUN_ALT_TEXT`, `RUN_SCORING`, `RUN_POSTCHECK` | `True` for each step you want on |
 
-Also on every form: service account **`dice-staging-runtime`**, and under **Cloud SQL connections** add `dice-staging`.
+Also on every form: service account **`dice-staging-runtime`**.
 
 Don't set `DEBUG` — it's off by default, which is what staging needs.
 
@@ -165,14 +165,14 @@ Before step 5, the URL shows "Bad Request (400)" — expected.
    1 CPU, 2 GiB memory.
 3. **Add container**, named `ocr`: the OCR image. No settings. 3 CPU, 12 GiB memory. *(check — starting guess; watch its memory in the Metrics tab on the first real run.)* **Don't** set a startup dependency between the two containers — the worker waits for OCR itself, and only when there's work, so empty runs stay fast.
 4. Job settings: **Task timeout 60 minutes**, **Max retries 0** (the next scheduled run is the retry). Create.
-5. On the job's page → **Triggers** → **Add scheduler trigger**: frequency `*/15 * * * *` (every 15 minutes), time zone `America/Detroit`, service account `dice-staging-deployer` (it's allowed to start jobs). *(check)*
+5. On the job's page → **Triggers** → **Add scheduler trigger**: frequency `*/20 * * * *` (every 20 minutes), time zone `America/Detroit`, service account `dice-staging-deployer` (it's allowed to start jobs). *(check)*
 6. Test it: **Execute** the job by hand. With nothing queued, it should finish within seconds with "Nothing queued." in its logs. **Also check the execution finishes, rather than running on until the 60-minute timeout** — that confirms the OCR container stops when the worker does. *(check)*
 
 The container names `worker` and `ocr` matter — the pipeline updates them by name.
 
 ## 11. Create your admin login and an API account
 
-1. **Admin login** — the only step that needs a terminal. In **Cloud Shell**, follow [Django shell on staging](#appendix-django-shell-on-staging) up to the shell prompt, then run `python manage.py createsuperuser` and answer the questions. Type `exit` and stop the proxy when done.
+1. **Admin login** — the only step that needs a terminal. In **Cloud Shell**, follow [Django shell on staging](#appendix-django-shell-on-staging) up to the shell prompt, then run `python manage.py createsuperuser` and answer the questions. Type `exit` when done.
 2. Log in at `APP_URL/admin/` → **Organizations** → **Add**, enter a name, and save.
 3. Go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`) and a name for its first token (e.g. `first-token`), and save. The token appears at the top of the page, **only this once** — save it.
 4. Open the account to see its **webhook secret**, if you'll use webhooks.
@@ -181,7 +181,7 @@ The container names `worker` and `ocr` matter — the pipeline updates them by n
 
 1. `APP_URL/admin/` — the login page should be styled.
 2. Upload a PDF with Postman to `APP_URL/api/submit-document/` with your token and a [webhook.site](https://webhook.site) `callback_url` (see [Testing the API](../README.md#testing-the-api)).
-3. Within ~15 minutes (or **Execute** `dice-worker` to go now), its **Logs** show: work found, OCR ready, the pipeline running, the webhook sent, then the run ending.
+3. Within ~20 minutes (or **Execute** `dice-worker` to go now), its **Logs** show: work found, OCR ready, the pipeline running, the webhook sent, then the run ending.
 4. Download the result from the `download_url` in the webhook.
 
 ## 13. Check the automatic deploy works
@@ -200,7 +200,7 @@ Merge any small PR to `main`. Within a few minutes:
 
 ## Pausing the worker
 
-The worker costs almost nothing when idle, so there's usually no need. If you want uploads to wait (e.g. while fixing something):
+If you want uploads to wait (e.g. while fixing something), or to stop the schedule using up Neon's free hours:
 
 - **Pause:** **Cloud Scheduler** → the `dice-worker` trigger → **Pause**.
 - **Resume:** same place → **Resume**.
@@ -210,21 +210,17 @@ While paused, the app stays up: uploads are accepted and come back `queued`, and
 
 If a run is stopped mid-document (e.g. it hits the 60-minute timeout), that document stays at `running` — nothing picks it back up automatically yet — so resubmit it with `force=true`.
 
-**Once production is live:** staging won't need to check every 15 minutes. Plan to either make the schedule much less frequent (edit the trigger's frequency, e.g. hourly or a few times a day), or pause it and just **Execute** the worker by hand when needed — after a new deploy, or during manual testing.
+**Once production is live:** staging won't need to check every 20 minutes. Plan to either make the schedule much less frequent (edit the trigger's frequency, e.g. hourly or a few times a day), or pause it and just **Execute** the worker by hand when needed — after a new deploy, or during manual testing.
 
 ## Turning staging off completely
 
-For longer quiet stretches (e.g. once production is live). Most of staging already costs nothing when idle — the app scales to zero and empty worker runs cost fractions of a cent — so this really means stopping the database, the one part that's billed whether it's used or not. Saves roughly $10/month; you still pay ~$2/month for the database's disk, images and secrets.
+For longer quiet stretches. The Neon database goes to sleep by itself whenever nothing uses it, so the only thing to stop is the schedule that wakes it:
 
-**Off:**
-1. **Cloud Scheduler** → the `dice-worker` trigger → **Pause**. (Otherwise every scheduled run fails trying to reach the stopped database.)
-2. **SQL** → `dice-staging` → **Stop**.
+- **Off:** **Cloud Scheduler** → the `dice-worker` trigger → **Pause**. Neon then uses no compute hours unless someone uses the app or API.
+- **On:** same place → **Resume**.
+- **Run once without resuming:** **Cloud Run → Jobs → `dice-worker` → Execute** (e.g. after a deploy).
 
-**On:**
-1. **SQL** → `dice-staging` → **Start**. Wait until it shows as running (a few minutes).
-2. **Cloud Scheduler** → the `dice-worker` trigger → **Resume** (or **Execute** `dice-worker` to process anything waiting right away).
-
-While it's off, staging is fully down: the app returns errors, and nothing is lost — all data stays in the stopped database and the R2 bucket. A merge to `main` while it's off stops safely at the migration step (nothing new is deployed); once it's back on, **Run** the `dice-staging-deploy` trigger again for the latest tag.
+Nothing goes down and there's nothing to restart. The app stays up, uploads are accepted and stay `queued`, and deploys still work (migrations wake the database).
 
 ## Later, not blocking
 
@@ -233,28 +229,22 @@ While it's off, staging is fully down: the app returns errors, and nothing is lo
 
 ## Appendix: Django shell on staging
 
-Cloud Run can't open a shell inside a running container, so run the app image from **Cloud Shell** (the `>_` button in the Console) instead. Use it for the admin login, debugging or fixing data. You need these roles on your own Google account: Cloud SQL Client, Secret Manager Secret Accessor, Artifact Registry Reader (Owner/Editor also works).
+Cloud Run can't open a shell inside a running container, so run the app image from **Cloud Shell** (the `>_` button in the Console) instead. Use it for the admin login, debugging or fixing data. You need these roles on your own Google account: Secret Manager Secret Accessor, Artifact Registry Reader (Owner/Editor also works).
 
-1. Start the database connection (run `gcloud auth login` first if asked), and wait for "ready for new connections":
-
-   ```bash
-   cloud-sql-proxy --gcloud-auth ada-document-pipeline-staging:us-central1:dice-staging &
-   ```
-
-2. Start the app image with a shell. The first pull takes a few minutes. Use `sh`, not `bash` (the image has no bash).
+1. Start the app image with a shell (run `gcloud auth login` first if asked). It connects straight to Neon, so no extra connection is needed. The first pull takes a few minutes. Use `sh`, not `bash` (the image has no bash).
 
    ```bash
    gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
-   docker run -it --rm --network host \
-     -e DATABASE_URL="$(gcloud secrets versions access latest --secret=dice-database-url-tcp)" \
+   docker run -it --rm \
+     -e DATABASE_URL="$(gcloud secrets versions access latest --secret=dice-database-url)" \
      -e SECRET_KEY="$(gcloud secrets versions access latest --secret=dice-secret-key)" \
      us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/app:<tag> \
      sh
    ```
 
-3. Run what you need, e.g. `python manage.py createsuperuser` or `python manage.py shell`.
-4. Type `exit`, then `kill %1` to stop the connection.
+2. Run what you need, e.g. `python manage.py createsuperuser` or `python manage.py shell`.
+3. Type `exit`.
 
 ## Appendix: building and deploying by hand
 
