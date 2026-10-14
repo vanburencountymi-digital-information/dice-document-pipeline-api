@@ -8,11 +8,11 @@
 #        new is deployed — staging keeps running the previous version.
 #   4.   Point the app at the new image.
 #   5.   Point the worker job's `worker` container at the new image (ADR 0023: the worker
-#        is a Cloud Run job run every 15 minutes by Cloud Scheduler, not an always-on
+#        is a Cloud Run job run every 20 minutes by Cloud Scheduler, not an always-on
 #        service).
 #
 # Steps 3-5 use `update`, not `deploy`: they only swap the image, keeping the env vars,
-# secrets, Cloud SQL connection, OCR sidecar and schedule set up in the Console.
+# secrets, OCR sidecar and schedule set up in the Console.
 
 substitutions:
   _REGION: us-central1

@@ -114,6 +114,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": env.db_url("DATABASE_URL"),
 }
+# Neon closes idle connections when it scales to zero; check a reused connection is still
+# alive before using it, so the first request after a sleep doesn't error.
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 
 # Password validation

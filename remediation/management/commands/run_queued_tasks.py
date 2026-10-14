@@ -1,6 +1,6 @@
 """The scheduled worker for deployed environments (ADR 0023).
 
-Cloud Scheduler starts this as a Cloud Run job every 15 minutes, with the OCR server running
+Cloud Scheduler starts this as a Cloud Run job every 20 minutes, with the OCR server running
 beside it as a sidecar container. Each run:
 
 1. Exits straight away if nothing is queued — most runs, and why this costs almost nothing

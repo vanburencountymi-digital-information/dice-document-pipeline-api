@@ -1,7 +1,7 @@
 services:
   db:
-    # 18 = latest stable and Cloud SQL's current default, so local dev
-    # matches the eventual production target rather than trailing it.
+    # 18 = latest stable and what staging runs on Neon, so local dev
+    # matches the deployed target rather than trailing it.
     image: postgres:18-alpine
     environment:
       POSTGRES_DB: dice_document_pipeline
