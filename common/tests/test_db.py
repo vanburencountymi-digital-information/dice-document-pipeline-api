@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import create_autospec, patch
 
 from django.db import OperationalError
 from django.test import SimpleTestCase
@@ -7,7 +7,15 @@ from parameterized import parameterized
 from common.db import drop_connection_if_safe, retry_on_lost_connection
 
 
-@patch("common.db.connection", autospec=True, spec_set=True)
+def _target(*args: object, **kwargs: object) -> object:
+    """Stand-in for a repeatable write; autospec'd so the mock is a real function the
+    decorator can read `__qualname__` from.
+    """
+    return None
+
+
+# No autospec: `django.db.connection` is a lazy proxy, so its spec has no `in_atomic_block`.
+@patch("common.db.connection")
 class DropConnectionIfSafeTests(SimpleTestCase):
     @parameterized.expand(
         [
@@ -16,7 +24,7 @@ class DropConnectionIfSafeTests(SimpleTestCase):
         ]
     )
     def test_closes_connection_only_outside_a_transaction(
-        self, _name, in_atomic_block, expect_closed, mock_connection
+        self, mock_connection, _name, in_atomic_block, expect_closed
     ) -> None:
         mock_connection.in_atomic_block = in_atomic_block
 
@@ -26,10 +34,11 @@ class DropConnectionIfSafeTests(SimpleTestCase):
         self.assertEqual(mock_connection.close.called, expect_closed)
 
 
-@patch("common.db.connection", autospec=True, spec_set=True)
+# No autospec: `django.db.connection` is a lazy proxy, so its spec has no `in_atomic_block`.
+@patch("common.db.connection")
 class RetryOnLostConnectionTests(SimpleTestCase):
     def test_returns_result_without_retry_when_call_succeeds(self, mock_connection) -> None:
-        func = MagicMock(return_value="ok")
+        func = create_autospec(_target, return_value="ok")
 
         result = retry_on_lost_connection(func)("a", key="b")
 
@@ -41,7 +50,7 @@ class RetryOnLostConnectionTests(SimpleTestCase):
         self, mock_connection
     ) -> None:
         mock_connection.in_atomic_block = False
-        func = MagicMock(side_effect=[OperationalError("lost"), "ok"])
+        func = create_autospec(_target, side_effect=[OperationalError("lost"), "ok"])
 
         result = retry_on_lost_connection(func)()
 
@@ -51,7 +60,7 @@ class RetryOnLostConnectionTests(SimpleTestCase):
 
     def test_raises_when_retry_also_fails(self, mock_connection) -> None:
         mock_connection.in_atomic_block = False
-        func = MagicMock(side_effect=OperationalError("lost"))
+        func = create_autospec(_target, side_effect=OperationalError("lost"))
 
         with self.assertRaises(OperationalError):
             retry_on_lost_connection(func)()
@@ -60,7 +69,7 @@ class RetryOnLostConnectionTests(SimpleTestCase):
 
     def test_does_not_retry_inside_a_transaction(self, mock_connection) -> None:
         mock_connection.in_atomic_block = True
-        func = MagicMock(side_effect=OperationalError("lost"))
+        func = create_autospec(_target, side_effect=OperationalError("lost"))
 
         with self.assertRaises(OperationalError):
             retry_on_lost_connection(func)()
