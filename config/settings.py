@@ -261,6 +261,10 @@ WEBHOOK_BACKOFF_BASE_SECONDS = env.int("WEBHOOK_BACKOFF_BASE_SECONDS", default=3
 # a receiver on localhost/your network (also allows http://).
 WEBHOOK_ALLOW_PRIVATE_URLS = env.bool("WEBHOOK_ALLOW_PRIVATE_URLS", default=False)
 
+# Rate Limit Settings
+DEFAULT_MAX_IN_FLIGHT = env.int("DEFAULT_MAX_IN_FLIGHT", default=10)
+DEFAULT_RATE_LIMIT_COUNT = env.int("DEFAULT_RATE_LIMIT_COUNT", default=100)
+
 # ADR 0023 — only used by `manage.py run_queued_tasks` (the scheduled worker in deployed
 # environments): when there's work queued, how long to wait for the OCR sidecar to finish
 # loading before giving up (tasks stay queued for the next run), and how often to check.

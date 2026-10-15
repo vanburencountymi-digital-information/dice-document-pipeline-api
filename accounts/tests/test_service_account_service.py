@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from django.db import IntegrityError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from knox.models import AuthToken
+from parameterized import parameterized
 
-from accounts.models import ServiceAccount
-from accounts.services import ServiceAccountService, TokenNameTakenError
+from accounts.models import RateLimitPeriod, ServiceAccount
+from accounts.services import (
+    ServiceAccountNameTakenError,
+    ServiceAccountService,
+    TokenNameTakenError,
+)
 from accounts.tests.factories import OrganizationFactory
 
 User = get_user_model()
@@ -25,12 +30,89 @@ class ServiceAccountServiceTests(TestCase):
         self.assertEqual(service_account.organization, self.organization)
         self.assertEqual(service_account.name, "wordpress-prod")
 
+    @override_settings(DEFAULT_MAX_IN_FLIGHT=25, DEFAULT_RATE_LIMIT_COUNT=200)
+    def test_create_uses_the_default_limits_from_settings(self) -> None:
+        service_account, _ = ServiceAccountService().create(self.organization, "wordpress", "first")
+
+        self.assertFalse(service_account.unlimited)
+        self.assertEqual(service_account.in_flight_cap, 25)
+        self.assertEqual(service_account.rate_limit, f"200/{RateLimitPeriod.DAY}")
+
+    def test_create_saves_the_given_limits(self) -> None:
+        service_account, _ = ServiceAccountService().create(
+            self.organization,
+            "wordpress",
+            "first",
+            max_in_flight=50,
+            rate_limit_count=1000,
+            rate_limit_period=RateLimitPeriod.HOUR,
+        )
+
+        service_account.refresh_from_db()
+        self.assertEqual(service_account.in_flight_cap, 50)
+        self.assertEqual(service_account.rate_limit, "1000/hour")
+
+    def test_create_unlimited_allows_blank_values(self) -> None:
+        service_account, _ = ServiceAccountService().create(
+            self.organization,
+            "wordpress",
+            "first",
+            unlimited=True,
+            max_in_flight=None,
+            rate_limit_count=None,
+            rate_limit_period=None,
+        )
+
+        service_account.refresh_from_db()
+        self.assertIsNone(service_account.in_flight_cap)
+        self.assertIsNone(service_account.rate_limit)
+
+    @parameterized.expand(
+        [("typo", {"max_inflight": 5}), ("other_model_field", {"webhook_secret": "chosen"})]
+    )
+    def test_create_refuses_keywords_that_are_not_limit_fields(
+        self, _label: str, limits: dict
+    ) -> None:
+        with self.assertRaises(TypeError):
+            ServiceAccountService().create(self.organization, "wordpress", "first", **limits)
+
+        self.assertFalse(ServiceAccount.objects.filter(name="wordpress").exists())
+        self.assertFalse(User.objects.exists())
+
+    def test_create_refuses_blank_limits_without_unlimited(self) -> None:
+        with self.assertRaises(IntegrityError):
+            ServiceAccountService().create(
+                self.organization, "wordpress", "first", max_in_flight=None
+            )
+
+        self.assertFalse(ServiceAccount.objects.filter(name="wordpress").exists())
+
     def test_create_creates_user_with_unusable_password(self) -> None:
         service_account, _ = ServiceAccountService().create(
             organization=self.organization, service_name="wordpress-prod", token_name="first"
         )
 
         self.assertFalse(service_account.user.has_usable_password())
+
+    @parameterized.expand(
+        [("empty", ""), ("unusable_marker", "!"), ("guess", "password"), ("username", "service")]
+    )
+    def test_create_user_cannot_log_in_with_a_password(self, _label: str, password: str) -> None:
+        service_account, _ = ServiceAccountService().create(
+            organization=self.organization, service_name="wordpress-prod", token_name="first"
+        )
+
+        user = authenticate(username=service_account.user.username, password=password)
+
+        self.assertIsNone(user)
+
+    def test_create_user_is_not_staff_or_superuser(self) -> None:
+        service_account, _ = ServiceAccountService().create(
+            organization=self.organization, service_name="wordpress-prod", token_name="first"
+        )
+
+        self.assertFalse(service_account.user.is_staff)
+        self.assertFalse(service_account.user.is_superuser)
 
     def test_create_generates_a_username_instead_of_using_the_name(self) -> None:
         first, _ = ServiceAccountService().create(self.organization, "wordpress-prod", "first")
@@ -52,13 +134,23 @@ class ServiceAccountServiceTests(TestCase):
             organization=self.organization, service_name="wordpress-prod", token_name="first"
         )
 
-        with self.assertRaises(IntegrityError):
+        with self.assertRaises(ServiceAccountNameTakenError):
             ServiceAccountService().create(
                 organization=self.organization, service_name="wordpress-prod", token_name="first"
             )
 
         self.assertEqual(User.objects.count(), 1)
         self.assertEqual(ServiceAccount.objects.count(), 1)
+
+    def test_create_with_a_taken_name_in_another_organization_is_fine(self) -> None:
+        ServiceAccountService().create(self.organization, "wordpress-prod", "first")
+
+        service_account, _ = ServiceAccountService().create(
+            OrganizationFactory(), "wordpress-prod", "first"
+        )
+
+        self.assertEqual(ServiceAccount.objects.count(), 2)
+        self.assertEqual(service_account.name, "wordpress-prod")
 
     def test_create_names_the_first_token(self) -> None:
         service_account, _ = ServiceAccountService().create(

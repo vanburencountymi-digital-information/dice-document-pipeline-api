@@ -13,15 +13,17 @@ from django.urls import reverse
 from knox.models import AuthToken
 from parameterized import parameterized
 
-from accounts.admin import ServiceAccountAdmin, ServiceAccountTokenAdmin
-from accounts.models import ServiceAccount, ServiceAccountToken
-from accounts.services import TokenNameTakenError
+from accounts.admin import LimitDisplay, ServiceAccountAdmin, ServiceAccountTokenAdmin
+from accounts.models import LIMIT_FIELDS, RateLimitPeriod, ServiceAccount, ServiceAccountToken
+from accounts.services import ServiceAccountNameTakenError, TokenNameTakenError
 from accounts.tests.factories import (
     OrganizationFactory,
     ServiceAccountFactory,
     ServiceAccountTokenFactory,
     UserFactory,
 )
+
+ADD_FIELDS = ["organization", "name", *LIMIT_FIELDS, "token_name"]
 
 
 def _request():
@@ -43,18 +45,53 @@ class ServiceAccountAdminTests(TestCase):
         self.request.user = UserFactory(is_staff=True, is_superuser=True)
         self.assertTrue(self.admin.has_add_permission(self.request))
 
-    def test_add_form_only_asks_for_organization_and_name(self) -> None:
+    def test_add_form_only_asks_for_what_a_person_chooses(self) -> None:
         form_class = self.admin.get_form(self.request, None)
-        self.assertEqual(list(form_class.base_fields), ["organization", "name", "token_name"])
+        self.assertEqual(list(form_class.base_fields), ADD_FIELDS)
 
     def test_edit_form_shows_the_other_fields(self) -> None:
         fields = self.admin.get_fields(self.request, ServiceAccountFactory())
         self.assertIn("webhook_secret", fields)
+        self.assertIn("max_in_flight", fields)
+        self.assertIn("rate_limit_count", fields)
+        self.assertIn("rate_limit_period", fields)
 
-    def test_add_page_lists_only_organization_and_name(self) -> None:
-        self.assertEqual(
-            list(self.admin.get_fields(self.request, None)), ["organization", "name", "token_name"]
-        )
+    def test_add_page_lists_only_what_a_person_chooses(self) -> None:
+        self.assertEqual(list(self.admin.get_fields(self.request, None)), ADD_FIELDS)
+
+    @parameterized.expand(
+        [
+            ("defaults", {}, "10", "100/day"),
+            (
+                "custom",
+                {
+                    "max_in_flight": 50,
+                    "rate_limit_count": 5,
+                    "rate_limit_period": RateLimitPeriod.HOUR,
+                },
+                "50",
+                "5/hour",
+            ),
+            ("unlimited", {"unlimited": True}, LimitDisplay.UNLIMITED, LimitDisplay.UNLIMITED),
+            (
+                "incomplete_row",
+                {"max_in_flight": None, "rate_limit_count": None},
+                LimitDisplay.INCOMPLETE,
+                LimitDisplay.INCOMPLETE,
+            ),
+        ]
+    )
+    def test_list_columns_show_the_limits(
+        self, _label: str, fields: dict, in_flight_cap: str, rate_limit: str
+    ) -> None:
+        # Built unsaved: an "incomplete" row is refused by the database, but the list page must
+        # still cope with one rather than crash.
+        # Pinned so the "defaults" case doesn't depend on a local .env
+        with self.settings(DEFAULT_MAX_IN_FLIGHT=10, DEFAULT_RATE_LIMIT_COUNT=100):
+            account = ServiceAccount(**fields)
+
+        self.assertEqual(self.admin.in_flight_cap(account), in_flight_cap)
+        self.assertEqual(self.admin.rate_limit(account), rate_limit)
 
     def test_user_and_webhook_secret_are_read_only_when_editing(self) -> None:
         service_account = ServiceAccountFactory()
@@ -69,12 +106,25 @@ class ServiceAccountAdminTests(TestCase):
         organization = OrganizationFactory()
         created = ServiceAccountFactory(organization=organization, name="wordpress-prod")
         mock_service_cls.return_value.create.return_value = (created, "new-token")
-        obj = ServiceAccount(organization=organization, name="wordpress-prod")
+        obj = ServiceAccount(
+            organization=organization,
+            name="wordpress-prod",
+            unlimited=True,
+            max_in_flight=None,
+            rate_limit_count=5,
+            rate_limit_period=RateLimitPeriod.MINUTE,
+        )
 
         self.admin.save_model(self.request, obj, form=self.add_form, change=False)
 
         mock_service_cls.return_value.create.assert_called_once_with(
-            organization, "wordpress-prod", "first"
+            organization,
+            "wordpress-prod",
+            "first",
+            unlimited=True,
+            max_in_flight=None,
+            rate_limit_count=5,
+            rate_limit_period=RateLimitPeriod.MINUTE,
         )
         self.assertEqual(obj.pk, created.pk)
         self.assertIn("new-token", [m.message for m in get_messages(self.request)][0])
@@ -84,12 +134,27 @@ class ServiceAccountAdminTests(TestCase):
         service_account = ServiceAccountFactory(name="before")
         service_account.name = "after"
 
-        self.admin.save_model(self.request, service_account, form=None, change=True)
+        self.admin.save_model(
+            self.request, service_account, form=SimpleNamespace(changed_data=["name"]), change=True
+        )
 
         service_account.refresh_from_db()
         self.assertEqual(service_account.name, "after")
         mock_service_cls.return_value.create.assert_not_called()
         self.assertEqual(list(get_messages(self.request)), [])
+
+    def test_save_model_on_change_keeps_a_secret_regenerated_meanwhile(self) -> None:
+        stale = ServiceAccount.objects.get(pk=ServiceAccountFactory(max_in_flight=5).pk)
+        ServiceAccount.objects.filter(pk=stale.pk).update(webhook_secret="regenerated")
+        stale.max_in_flight = 7
+
+        self.admin.save_model(
+            self.request, stale, form=SimpleNamespace(changed_data=["max_in_flight"]), change=True
+        )
+
+        saved = ServiceAccount.objects.get(pk=stale.pk)
+        self.assertEqual(saved.max_in_flight, 7)
+        self.assertEqual(saved.webhook_secret, "regenerated")
 
     @patch("accounts.admin.ServiceAccountService", autospec=True, spec_set=True)
     def test_save_model_refuses_to_create_credentials_for_an_existing_account(
@@ -147,6 +212,31 @@ class ServiceAccountAdminViewTests(TestCase):
 
         self.assertContains(response, self.issue_url)
         self.assertContains(response, self.regenerate_url)
+
+    @patch("accounts.admin.ServiceAccountService", autospec=True, spec_set=True)
+    def test_add_with_a_name_taken_at_the_same_moment_shows_a_message_not_an_error(
+        self, mock_service_cls
+    ) -> None:
+        mock_service_cls.return_value.create.side_effect = ServiceAccountNameTakenError("x")
+        add_url = reverse("admin:accounts_serviceaccount_add")
+        data = {
+            "organization": OrganizationFactory().pk,
+            "name": "wordpress-prod",
+            "token_name": "first",
+            "max_in_flight": 10,
+            "rate_limit_count": 100,
+            "rate_limit_period": RateLimitPeriod.DAY,
+            # The page's (read-only) tokens inline still posts its management form
+            "tokens-TOTAL_FORMS": 0,
+            "tokens-INITIAL_FORMS": 0,
+            "tokens-MIN_NUM_FORMS": 0,
+            "tokens-MAX_NUM_FORMS": 0,
+        }
+
+        response = self.client.post(add_url, data, follow=True)
+
+        self.assertRedirects(response, add_url)
+        self.assertContains(response, "already has a service account with that name")
 
     def test_issue_token_page_shows_the_name_form(self) -> None:
         response = self.client.get(self.issue_url)
@@ -232,6 +322,45 @@ class ServiceAccountAddFormTests(TestCase):
     ) -> None:
         form = self.form_class(
             {"organization": getattr(self, org_attr).pk, "name": name, "token_name": token_name}
+        )
+
+        self.assertEqual(form.is_valid(), valid, form.errors)
+
+    @parameterized.expand(
+        [
+            ("all_set", False, "20", "5", RateLimitPeriod.MINUTE, True),
+            ("all_set_and_unlimited", True, "20", "5", RateLimitPeriod.MINUTE, True),
+            ("all_blank_and_unlimited", True, "", "", "", True),
+            ("all_blank_not_unlimited", False, "", "", "", False),
+            ("max_in_flight_blank", False, "", "5", RateLimitPeriod.HOUR, False),
+            ("count_blank", False, "10", "", RateLimitPeriod.DAY, False),
+            ("period_blank", False, "10", "100", "", False),
+            ("zero_in_flight", False, "0", "100", RateLimitPeriod.DAY, False),
+            ("negative_in_flight", False, "-1", "100", RateLimitPeriod.DAY, False),
+            ("unknown_period", False, "10", "100", "week", False),
+            ("zero_count", False, "10", "0", RateLimitPeriod.DAY, False),
+            ("negative_count", False, "10", "-1", RateLimitPeriod.DAY, False),
+        ]
+    )
+    def test_limits_validation(
+        self,
+        _label: str,
+        unlimited: bool,
+        max_in_flight: str,
+        count: str,
+        period: str,
+        valid: bool,
+    ) -> None:
+        form = self.form_class(
+            {
+                "organization": self.organization.pk,
+                "name": "wordpress-test",
+                "token_name": "first",
+                "unlimited": unlimited,
+                "max_in_flight": max_in_flight,
+                "rate_limit_count": count,
+                "rate_limit_period": period,
+            }
         )
 
         self.assertEqual(form.is_valid(), valid, form.errors)
