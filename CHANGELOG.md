@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v4.5.0 (2026-10-15)
+
+### Documentation
+
+- Update staging-deploy docs to reflect neon
+  ([#26](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/26),
+  [`96cfe2f`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/96cfe2fc188ab1fa203ccdb11d4f952a8c28946c))
+
+### Features
+
+- Add per-account rate limiting with admin-adjustable tiers
+  ([#27](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/27),
+  [`c909273`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/c9092731541709ca078a6addc427007b314939ec))
+
+
 ## v4.4.1 (2026-10-14)
 
 ### Bug Fixes
