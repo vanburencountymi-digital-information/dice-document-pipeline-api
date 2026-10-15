@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v4.5.1 (2026-10-15)
+
+### Bug Fixes
+
+- Retry DB writes after a dropped connection during long pipeline steps (DIC-2416)
+  ([#28](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/28),
+  [`44f3704`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/44f37047a9d2566adb46db0d7bd0f27e90657d58))
+
+- Retry DB writes after a dropped connection during long pipeline …
+  ([#28](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/28),
+  [`44f3704`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/44f37047a9d2566adb46db0d7bd0f27e90657d58))
+
+
 ## v4.5.0 (2026-10-15)
 
 ### Documentation
