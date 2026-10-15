@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 import tempfile
 from datetime import timedelta
-from unittest.mock import create_autospec
+from unittest.mock import create_autospec, patch
 
 import boto3
 from django.core.files.storage import default_storage
-from django.test import TestCase, override_settings
+from django.db import OperationalError
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from moto import mock_aws
 from parameterized import parameterized
@@ -1253,3 +1254,78 @@ class TaskQueueServiceTests(TestCase):
         )
 
         self.assertFalse(TaskQueueService().has_ready_tasks())
+
+
+class MarkStatusConnectionRetryTests(TransactionTestCase):
+    """`TransactionTestCase` so the service isn't inside an atomic block, which is when the
+    retry is allowed to swap the connection.
+    """
+
+    def setUp(self) -> None:
+        self.remediation = RemediationFactory()
+        self.service = ArtifactService()
+        self.service.step = RemediationArtifact.Step.OCR
+
+    @patch("common.db.drop_connection_if_safe", autospec=True, spec_set=True, return_value=True)
+    @patch.object(RemediationArtifact.objects, "update_or_create", autospec=True, spec_set=True)
+    def test_mark_completed_retries_once_after_lost_connection(
+        self, mock_upsert, mock_drop
+    ) -> None:
+        mock_upsert.side_effect = [
+            OperationalError("terminating connection due to administrator command"),
+            (RemediationArtifactFactory.build(), True),
+        ]
+
+        self.service.mark_completed(self.remediation, "local:///tmp/out.pdf")
+
+        self.assertEqual(mock_upsert.call_count, 2)
+        mock_drop.assert_called_once_with()
+
+    @patch("common.db.drop_connection_if_safe", autospec=True, spec_set=True, return_value=True)
+    @patch.object(
+        RemediationArtifact.objects,
+        "update_or_create",
+        autospec=True,
+        spec_set=True,
+        side_effect=OperationalError("terminating connection"),
+    )
+    def test_mark_completed_raises_if_retry_also_fails(self, mock_upsert, mock_drop) -> None:
+        with self.assertRaises(OperationalError):
+            self.service.mark_completed(self.remediation, "local:///tmp/out.pdf")
+
+        self.assertEqual(mock_upsert.call_count, 2)
+
+    @patch("common.db.drop_connection_if_safe", autospec=True, spec_set=True, return_value=True)
+    @patch.object(Remediation, "save", autospec=True, spec_set=True)
+    def test_run_level_status_write_retries_once_after_lost_connection(
+        self, mock_save, mock_drop
+    ) -> None:
+        mock_save.side_effect = [OperationalError("terminating connection"), None]
+
+        RemediationService().mark_error(self.remediation, "boom", final_output_uri="")
+
+        self.assertEqual(mock_save.call_count, 2)
+        mock_drop.assert_called_once_with()
+        self.assertEqual(self.remediation.status, Remediation.JobStatus.ERROR)
+
+
+class MarkStatusInsideTransactionTests(TestCase):
+    """`TestCase` wraps each test in a transaction, so a lost connection can't be swapped
+    and the error must surface instead of being retried.
+    """
+
+    @patch.object(
+        RemediationArtifact.objects,
+        "update_or_create",
+        autospec=True,
+        spec_set=True,
+        side_effect=OperationalError("terminating connection"),
+    )
+    def test_mark_completed_does_not_retry_inside_a_transaction(self, mock_upsert) -> None:
+        service = ArtifactService()
+        service.step = RemediationArtifact.Step.OCR
+
+        with self.assertRaises(OperationalError):
+            service.mark_completed(RemediationFactory(), "local:///tmp/out.pdf")
+
+        mock_upsert.assert_called_once()

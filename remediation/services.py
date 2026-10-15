@@ -16,6 +16,7 @@ from django_tasks_db.models import DBTaskResult
 from packaging.version import InvalidVersion, Version
 
 from accounts.models import ServiceAccount
+from common.db import retry_on_lost_connection
 from common.error_logging_client import ErrorLoggingClient
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import (
@@ -190,6 +191,7 @@ class RemediationService:
     def mark_error(self, remediation: Remediation, error: str, final_output_uri: str) -> None:
         self._mark_finished(remediation, Remediation.JobStatus.ERROR, final_output_uri, error=error)
 
+    @retry_on_lost_connection
     def _mark_finished(
         self,
         remediation: Remediation,
@@ -330,6 +332,7 @@ class ArtifactService:
     def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
         raise NotImplementedError
 
+    @retry_on_lost_connection
     def _mark_status(
         self, remediation: Remediation, status: RemediationArtifact.StepStatus, **fields: str
     ) -> RemediationArtifact:

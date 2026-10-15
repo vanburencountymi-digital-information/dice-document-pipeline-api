@@ -7,6 +7,7 @@ from django.conf import settings
 from django.tasks import task
 from django.utils import timezone
 
+from common.db import drop_connection_if_safe
 from remediation.models import Remediation, RemediationCallback
 from remediation.serializers import VerificationResultSerializer
 from remediation.services import (
@@ -133,6 +134,10 @@ def process_remediation(remediation_id: str) -> None:
     job_start = time.monotonic()
     try:
         for step_service_cls in PIPELINE_STEPS:
+            # Start each step on a fresh DB connection: the previous step (OCR) can run long
+            # enough for the database to close an idle one. Removing this brings back
+            # "terminating connection due to administrator command" (DIC-2416).
+            drop_connection_if_safe()
             # call the service name as a class
             step_service = step_service_cls()
 
