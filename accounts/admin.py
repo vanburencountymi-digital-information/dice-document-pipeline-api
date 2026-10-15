@@ -1,4 +1,6 @@
+from collections.abc import Callable
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
 from django import forms
@@ -13,16 +15,29 @@ from django.utils.html import format_html
 from knox.models import AuthToken
 
 from accounts.models import (
+    LIMIT_FIELDS,
     TOKEN_NAME_EXAMPLE,
     TOKEN_NAME_MAX_LENGTH,
+    IncompleteLimitsError,
     Organization,
     ServiceAccount,
     ServiceAccountToken,
 )
-from accounts.services import ServiceAccountService, TokenNameTakenError
+from accounts.services import (
+    ServiceAccountNameTakenError,
+    ServiceAccountService,
+    TokenNameTakenError,
+)
 
 # Tokens are only created and revoked through ServiceAccountService, never knox's own admin.
 admin.site.unregister(AuthToken)
+
+
+class LimitDisplay(StrEnum):
+    """What the account list shows in place of a number."""
+
+    UNLIMITED = "unlimited"
+    INCOMPLETE = "incomplete"
 
 
 class IssueTokenForm(forms.Form):
@@ -45,7 +60,7 @@ class ServiceAccountAddForm(forms.ModelForm):
 
     class Meta:
         model = ServiceAccount
-        fields = ("organization", "name")
+        fields = ("organization", "name", *LIMIT_FIELDS, "token_name")
 
 
 class TokenColumnsMixin:
@@ -81,8 +96,32 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 @admin.register(ServiceAccount)
 class ServiceAccountAdmin(admin.ModelAdmin):
-    list_display = ("name", "organization")
+    list_display = ("name", "organization", "in_flight_cap", "rate_limit")
     inlines = [TokenInline]
+
+    @staticmethod
+    def _limit_text(read: Callable[[], object]) -> str:
+        """Shows a limit for the list. A row missing a value must not crash the whole page, so
+        it reads as "incomplete" instead of raising.
+
+        Takes: a function that returns the limit (None means unlimited).
+        Returns: the text to show.
+        """
+        try:
+            value = read()
+        except IncompleteLimitsError:
+            return LimitDisplay.INCOMPLETE
+        return LimitDisplay.UNLIMITED if value is None else str(value)
+
+    @admin.display(description="Max at once")
+    def in_flight_cap(self, obj: ServiceAccount) -> str:
+        """Takes: a ServiceAccount. Returns: its in-flight cap as list text."""
+        return self._limit_text(lambda: obj.in_flight_cap)
+
+    @admin.display(description="Submission limit")
+    def rate_limit(self, obj: ServiceAccount) -> str:
+        """Takes: a ServiceAccount. Returns: its submission limit (e.g. 100/day) as list text."""
+        return self._limit_text(lambda: obj.rate_limit)
 
     @staticmethod
     def _token_message(account_name: str, token: str) -> str:
@@ -92,6 +131,27 @@ class ServiceAccountAdmin(admin.ModelAdmin):
             account_name,
             token,
         )
+
+    def add_view(
+        self, request: HttpRequest, form_url: str = "", extra_context: dict | None = None
+    ) -> HttpResponse:
+        """The Add form already refuses a name the organization uses. This catches the same name
+        arriving twice at once (a double-click on Save), which the form can't see, and shows a
+        message instead of a server error.
+
+        Takes: the Add request, the form URL and any extra template context.
+        Returns: the normal Add response, or, when the name was taken at the same moment, a
+        redirect back to the Add page with an error message.
+        """
+        try:
+            return super().add_view(request, form_url, extra_context)
+        except ServiceAccountNameTakenError:
+            self.message_user(
+                request,
+                "That organization already has a service account with that name.",
+                level=messages.ERROR,
+            )
+            return HttpResponseRedirect(request.path)
 
     def get_form(
         self,
@@ -103,7 +163,6 @@ class ServiceAccountAdmin(admin.ModelAdmin):
         """On Add, only ask for what a person chooses; the login and webhook secret are generated."""
         if obj is None:
             kwargs["form"] = ServiceAccountAddForm
-            kwargs["fields"] = ("organization", "name", "token_name")
         return super().get_form(request, obj, change=change, **kwargs)
 
     def get_readonly_fields(
@@ -115,20 +174,35 @@ class ServiceAccountAdmin(admin.ModelAdmin):
         self, request: HttpRequest, obj: ServiceAccount, form: ModelForm, change: bool
     ) -> None:
         """Creating credentials is opt-in: only an Add (`change` is False) does it. Anything
-        else is an ordinary save."""
+        else is an ordinary save of the edited fields.
+
+        Takes: the request, the ServiceAccount, its submitted form and whether this is an edit.
+        Returns: nothing. Add also queues a message with the first token.
+        """
         if not change:
             self._create_with_login(request, obj, form.cleaned_data["token_name"])
             return
-        super().save_model(request, obj, form, change)
+        # Save only edited fields so a stale form can't overwrite a webhook secret regenerated
+        # since it was opened. Limits are only edited here, so there's no service method for it.
+        obj.save(update_fields=form.changed_data)
 
     def _create_with_login(
         self, request: HttpRequest, obj: ServiceAccount, token_name: str
     ) -> None:
-        """Go through the service so the login, webhook secret and first token are always
-        created (a bare `obj.save()` would skip them)."""
+        """Creates through ServiceAccountService so login, webhook secret and first token are always
+        created (a bare `obj.save()` would skip them).
+
+        Takes: the request, the unsaved ServiceAccount (its limits are passed on) and the
+        first token's name.
+        Returns: nothing. `obj` becomes the saved row and a message shows the token once.
+        Raises: ValueError if `obj` is already saved.
+        """
         if obj.pk is not None:
             raise ValueError("Cannot create credentials for an account that already exists.")
-        created, token = ServiceAccountService().create(obj.organization, obj.name, token_name)
+        limits = {field: getattr(obj, field) for field in LIMIT_FIELDS}
+        created, token = ServiceAccountService().create(
+            obj.organization, obj.name, token_name, **limits
+        )
         # Admin carries on with `obj` after this (logging, redirect), so make it the saved row
         obj.__dict__.update(created.__dict__)
         self.message_user(request, self._token_message(obj.name, token), level=messages.WARNING)
