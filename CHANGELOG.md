@@ -2,6 +2,26 @@
 
 <!-- version list -->
 
+## v5.0.0 (2026-10-22)
+
+### Bug Fixes
+
+- Validate limit values from admin panel before saving
+  ([#31](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/31),
+  [`6a6e137`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/6a6e13703155540cf23133f51289477248ad4184))
+
+### Features
+
+- Add API throttling (per-account limits, failed-login lockout, per-IP backstop)
+  ([#31](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/31),
+  [`6a6e137`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/6a6e13703155540cf23133f51289477248ad4184))
+
+### Breaking Changes
+
+- GET /api/status/ is removed; callers read their limits from the X-RateLimit-* response headers
+  instead.
+
+
 ## v4.6.0 (2026-10-22)
 
 ### Documentation
