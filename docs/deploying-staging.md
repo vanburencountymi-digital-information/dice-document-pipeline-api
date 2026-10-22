@@ -35,16 +35,23 @@ dice-worker (Cloud Run job, run by hand or scheduler)─┤
 
 ## What already exists, and the names used here
 
-| Thing | Name | Status |
-|---|---|---|
-| Google Cloud project | `ada-document-pipeline-staging` | Exists |
-| Region | `us-central1` | Use for everything |
-| R2 bucket | `ada-pipeline-test-bucket` | Exists |
-| Image repository | `dice` | Create (step 3) |
-| Neon project / database / user | `dice-staging` / `dice_document_pipeline` / `dice_app` | Create (step 4) |
-| Runtime service account | `dice-staging-runtime` | Create (step 2) |
-| Build service account | `dice-staging-deployer` | Create (step 3) |
-| App / worker job / migrations job | `dice-app` / `dice-worker` / `dice-migrate` | Create (steps 8–10) |
+| Thing | Name | Status | Terraform |
+|---|---|---|---|
+| Google Cloud project | `ada-document-pipeline-staging` | Exists | Import |
+| Region | `us-central1` | Use for everything | — |
+| Turned-on services (APIs) | see step 1 | Create (step 1) | `google_project_service` |
+| Runtime service account | `dice-staging-runtime` | Create (step 2) | `google_service_account` + IAM |
+| Build service account | `dice-staging-deployer` | Create (step 2) | `google_service_account` + IAM |
+| Image repository | `dice` | Create (step 3) | `google_artifact_registry_repository` |
+| Build triggers | `dice-staging-deploy`, `dice-ocr-build` | Create (step 3) | `google_cloudbuild_trigger` (GitHub connection stays manual) |
+| Neon project / database / user | `dice-staging` / `dice_document_pipeline` / `dice_app` | Create (step 4) | Neon provider, or manual |
+| R2 bucket and API token | `ada-pipeline-test-bucket` | Exists (token: step 5) | Cloudflare provider, or manual |
+| Secrets | `dice-*` (step 6) | Create (step 6) | `google_secret_manager_secret` (values stay manual) |
+| Migrations job / app / worker job | `dice-migrate` / `dice-app` / `dice-worker` | Create (steps 8–10) | `google_cloud_run_v2_job` / `_service` |
+| Worker schedule | `dice-worker` trigger (paused) | Create (step 10) | `google_cloud_scheduler_job` |
+| Admin login, first account | — | Create (step 11) | Manual |
+
+The Terraform column is a starting point: [DIC-2329](https://linear.app/dicelabs/issue/DIC-2329) decides whether we use it.
 
 Make sure `ada-document-pipeline-staging` is selected in the project dropdown at the top left of the Console before each step.
 
@@ -54,27 +61,36 @@ The bucket's name says "test" — fine for staging. Production should get its ow
 
 **APIs & Services → Enable APIs and services**, then enable each of: **Cloud Run Admin API**, **Artifact Registry API**, **Secret Manager API**, **Cloud Build API**, **Cloud Scheduler API**.
 
-## 2. Create the identity the app and worker run as
+## 2. Create the service accounts
 
-1. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-runtime`.
-2. Grant it: **Secret Manager Secret Accessor**.
+1. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-runtime` (what the app and worker run as). Grant it: **Secret Manager Secret Accessor**.
+2. Create `dice-staging-deployer` (what builds run as, and what starts the worker on its schedule). Grant it: **Artifact Registry Writer**, **Cloud Run Developer**, **Logs Writer**. *(check)*
+3. Open `dice-staging-runtime` → **Permissions** → grant `dice-staging-deployer` the role **Service Account User** — this lets the build deploy things that run as the runtime account. Grant it on this account only, not project-wide.
+4. Check the deployer has every role it needs. Without **Cloud Run Developer** (`roles/run.developer`), the worker's schedule fails with `PERMISSION_DENIED` (`status code: 7`). In Cloud Shell:
 
-## 3. Connect GitHub and set up automatic builds
+   ```bash
+   gcloud projects get-iam-policy ada-document-pipeline-staging \
+     --flatten="bindings[].members" \
+     --filter="bindings.members:dice-staging-deployer" \
+     --format="value(bindings.role)"
+   ```
+
+   The list must include `roles/run.developer`. When you add a role, `gcloud` may ask about a condition: choose **None**. An expired condition would stop the role from ever applying.
+
+## 3. Image repository and automatic builds
 
 1. **Artifact Registry → Create repository**: name `dice`, format **Docker**, region `us-central1`.
-2. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-deployer` (what the build runs as). Grant it: **Artifact Registry Writer**, **Cloud Run Developer**, **Logs Writer**. *(check)*
-3. Open `dice-staging-runtime` → **Permissions** → grant `dice-staging-deployer` the role **Service Account User** — this lets the build deploy things that run as the runtime account.
-4. **Cloud Build → Repositories → Connect repository** → GitHub → pick `vanburencountymi-digital-information/dice-document-pipeline-api`. An organization admin may need to approve Google's "Cloud Build" GitHub App.
-5. **Cloud Build → Triggers → Create trigger** — the automatic deploy:
+2. **Cloud Build → Repositories → Connect repository** → GitHub → pick `vanburencountymi-digital-information/dice-document-pipeline-api`. An organization admin may need to approve Google's "Cloud Build" GitHub App.
+3. **Cloud Build → Triggers → Create trigger** — the automatic deploy:
    - Name `dice-staging-deploy`, region `us-central1`.
    - Event: **Push new tag**. Tag: `^v.*$`.
    - Configuration: **Cloud Build configuration file**, `cloudbuild.yaml`.
    - Service account: `dice-staging-deployer`.
-6. **Create trigger** again — the OCR image, run by hand only:
+4. **Create trigger** again — the OCR image, run by hand only:
    - Name `dice-ocr-build`, region `us-central1`.
    - Event: **Manual invocation**, branch `main`.
    - Configuration file: `cloudbuild-ocr.yaml`. Service account: `dice-staging-deployer`.
-7. **Build the first images:** on the Triggers page, **Run** `dice-ocr-build`, then **Run** `dice-staging-deploy` (pick the latest `v…` tag). OCR takes a while (~12 GB).
+5. **Build the first images:** on the Triggers page, **Run** `dice-ocr-build`, then **Run** `dice-staging-deploy` (pick the latest `v…` tag). OCR takes a while (~12 GB).
    **Both runs will fail at their last steps this first time** — they try to update the app, worker job and migrations job, which you create in steps 8–10. That's expected: what matters now is that the build and push steps succeed. Check **Artifact Registry → dice** shows an `app` and an `opendataloader-hybrid` image.
 
 ## 4. Create the database
@@ -108,7 +124,7 @@ Paste Neon's string exactly as given. Neon passwords are already safe to use in 
 
 ## 7. Settings every piece needs
 
-You'll enter these in steps 8–11, on each form's **Variables & Secrets** tab.
+You'll enter these in steps 8–10, on each form's **Variables & Secrets** tab.
 
 **Secrets** (**Reference a secret**, version **latest**):
 
@@ -135,7 +151,7 @@ Also on every form: service account **`dice-staging-runtime`**.
 
 Don't set `DEBUG` — it's off by default, which is what staging needs.
 
-Images for steps 8–11 (from step 3):
+Images for steps 8–10 (from step 3):
 - App: `us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/app:vX.Y.Z` (the tag you built)
 - OCR: `us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/opendataloader-hybrid:…` (pick the one in Artifact Registry)
 
@@ -168,7 +184,21 @@ Before step 5, the URL shows "Bad Request (400)" — expected.
 3. **Add container**, named `ocr`: the OCR image. No settings. 3 CPU, 12 GiB memory. *(check — starting guess; watch its memory in the Metrics tab on the first real run.)* **Don't** set a startup dependency between the two containers — the worker waits for OCR itself, and only when there's work, so empty runs stay fast.
 4. Job settings: **Task timeout 60 minutes**, **Max retries 0** (the next scheduled run is the retry). Create.
 5. On the job's page → **Triggers** → **Add scheduler trigger**: frequency `*/20 * * * *` (every 20 minutes), time zone `America/Detroit`, service account `dice-staging-deployer` (it's allowed to start jobs). *(check)* On staging, **Pause** the trigger straight after creating it and run the worker by hand (see [Pausing the worker](#pausing-the-worker)).
-6. Test it: **Execute** the job by hand. With nothing queued, it should finish within seconds with "Nothing queued." in its logs. **Also check the execution finishes, rather than running on until the 60-minute timeout** — that confirms the OCR container stops when the worker does. *(check)*
+   - The time zone can default to UTC. Check it on the trigger's page; to fix it from Cloud Shell: `gcloud scheduler jobs update http dice-worker-scheduler-trigger --location us-central1 --time-zone America/Detroit` (use your trigger's real name).
+6. Test the job by hand:
+   1. `dice-worker` → **Execute**. Or: `gcloud run jobs execute dice-worker --region us-central1 --wait`.
+   2. **The start can be slow.** The OCR image is ~12 GB and each run starts on a fresh machine, so it took 4–6 minutes to start when we first tried it. "Running" with blank logs meanwhile is normal.
+   3. Open the run → **Tasks** → task 0 → **View logs**. Logs arrive 30–60 seconds late.
+   4. **It passed if:** status is Succeeded, exit code 0, the logs say "Nothing queued.", and the task ends within about a minute of that line. If it runs on until the 60-minute timeout, the OCR container isn't stopping with the worker. *(check)*
+   5. **If it failed,** the last line of the error in the logs (or Sentry) is the reason. Common ones:
+
+      | Error says | Likely cause |
+      |---|---|
+      | `password authentication failed` | `dice-database-url` has the wrong password. |
+      | `connection is insecure` / SSL required | The URL is missing `?sslmode=require`. |
+      | `could not translate host name` / `invalid port` | The URL is mistyped (re-copy Neon's direct string). |
+      | `permission denied` on a secret | `dice-staging-runtime` is missing **Secret Manager Secret Accessor**. |
+7. Test the schedule (only once, then **Pause** it again): fire it with `gcloud scheduler jobs run dice-worker-scheduler-trigger --location us-central1`, then run `gcloud run jobs executions list --job dice-worker --region us-central1 --limit 2`. A new run should appear, started by `dice-staging-deployer`. If nothing appears, `gcloud scheduler jobs describe dice-worker-scheduler-trigger --location us-central1` shows why (`status code: 7` is the permission problem from step 2).
 
 The container names `worker` and `ocr` matter — the pipeline updates them by name.
 
@@ -179,11 +209,11 @@ The container names `worker` and `ocr` matter — the pipeline updates them by n
 3. Go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`) and a name for its first token (e.g. `first-token`), and save. The token appears at the top of the page, **only this once** — save it.
 4. Open the account to see its **webhook secret**, if you'll use webhooks.
 
-More in the [Admin guide](admin-guide.md). No separate account-creation job is needed; if an old `dice-create-account` Cloud Run job still exists, delete it.
+More in the [Admin guide](admin-guide.md).
 
 ## 12. Test it end to end
 
-1. `APP_URL/admin/` — the login page should be styled.
+1. `APP_URL/admin/` — the login page should be styled, and logging in should work (the login page alone doesn't touch the database).
 2. Upload a PDF with Postman to `APP_URL/api/submit-document/` with your token and a [webhook.site](https://webhook.site) `callback_url` (see [Testing the API](../README.md#testing-the-api)).
 3. **Execute** `dice-worker` (or wait for the next run, if the schedule is resumed). Its **Logs** show: work found, OCR ready, the pipeline running, the webhook sent, then the run ending.
 4. Download the result from the `download_url` in the webhook.
@@ -225,6 +255,13 @@ For longer quiet stretches. The Neon database goes to sleep by itself whenever n
 - **Run once without resuming:** **Cloud Run → Jobs → `dice-worker` → Execute** (e.g. after a deploy).
 
 Nothing goes down and there's nothing to restart. The app stays up, uploads are accepted and stay `queued`, and deploys still work (migrations wake the database).
+
+## Notes for Terraform
+
+- Cloud Build changes the image on `dice-app` and on the worker job's `worker` container (and `ocr` when rebuilt) on every deploy. Terraform must ignore image changes on those, or it will roll back deploys.
+- Secret **values** (step 6) stay out of Terraform and its state. Terraform creates the empty secrets only.
+- The worker's schedule is kept paused on staging. Terraform needs to match, or it will resume it.
+- Settings in step 7, and the sizes in steps 9–10 (memory, CPU, 60-minute timeout), are the values to copy. Worker timeout and CPU are due to change ([DIC-2480](https://linear.app/dicelabs/issue/DIC-2480)).
 
 ## Later, not blocking
 

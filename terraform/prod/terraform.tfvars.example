@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (not committed) and fill in.
+project_id      = "ada-document-pipeline-prod"
+public_hostname = "api.example.org"
+
+s3_bucket_name  = "REPLACE-with-prod-bucket"
+s3_endpoint_url = "https://ACCOUNT_ID.r2.cloudflarestorage.com"
+
+# Only if the project doesn't exist yet:
+# create_project  = true
+# billing_account = "000000-000000-000000"
+
+# Leave false for the first apply. See README.md.
+deploy_cloud_run = false
+# app_image        = "us-central1-docker.pkg.dev/ada-document-pipeline-prod/dice/app:v1.2.3"
+# ocr_image        = "us-central1-docker.pkg.dev/ada-document-pipeline-prod/dice/opendataloader-hybrid:abc1234"
