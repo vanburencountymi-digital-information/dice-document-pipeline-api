@@ -66,6 +66,16 @@ The bucket's name says "test" — fine for staging. Production should get its ow
 1. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-runtime` (what the app and worker run as). Grant it: **Secret Manager Secret Accessor**.
 2. Create `dice-staging-deployer` (what builds run as, and what starts the worker on its schedule). Grant it: **Artifact Registry Writer**, **Cloud Run Developer**, **Logs Writer**. *(check)*
 3. Open `dice-staging-runtime` → **Permissions** → grant `dice-staging-deployer` the role **Service Account User** — this lets the build deploy things that run as the runtime account. Grant it on this account only, not project-wide.
+4. Check the deployer has every role it needs. Without **Cloud Run Developer** (`roles/run.developer`), the worker's schedule fails with `PERMISSION_DENIED` (`status code: 7`). In Cloud Shell:
+
+   ```bash
+   gcloud projects get-iam-policy ada-document-pipeline-staging \
+     --flatten="bindings[].members" \
+     --filter="bindings.members:dice-staging-deployer" \
+     --format="value(bindings.role)"
+   ```
+
+   The list must include `roles/run.developer`. When you add a role, `gcloud` may ask about a condition: choose **None**. An expired condition would stop the role from ever applying.
 
 ## 3. Image repository and automatic builds
 
@@ -174,7 +184,21 @@ Before step 5, the URL shows "Bad Request (400)" — expected.
 3. **Add container**, named `ocr`: the OCR image. No settings. 3 CPU, 12 GiB memory. *(check — starting guess; watch its memory in the Metrics tab on the first real run.)* **Don't** set a startup dependency between the two containers — the worker waits for OCR itself, and only when there's work, so empty runs stay fast.
 4. Job settings: **Task timeout 60 minutes**, **Max retries 0** (the next scheduled run is the retry). Create.
 5. On the job's page → **Triggers** → **Add scheduler trigger**: frequency `*/20 * * * *` (every 20 minutes), time zone `America/Detroit`, service account `dice-staging-deployer` (it's allowed to start jobs). *(check)* On staging, **Pause** the trigger straight after creating it and run the worker by hand (see [Pausing the worker](#pausing-the-worker)).
-6. Test it: **Execute** the job by hand. With nothing queued, it should finish within seconds with "Nothing queued." in its logs. **Also check the execution finishes, rather than running on until the 60-minute timeout** — that confirms the OCR container stops when the worker does. *(check)*
+   - The time zone can default to UTC. Check it on the trigger's page; to fix it from Cloud Shell: `gcloud scheduler jobs update http dice-worker-scheduler-trigger --location us-central1 --time-zone America/Detroit` (use your trigger's real name).
+6. Test the job by hand:
+   1. `dice-worker` → **Execute**. Or: `gcloud run jobs execute dice-worker --region us-central1 --wait`.
+   2. **The start can be slow.** The OCR image is ~12 GB and each run starts on a fresh machine, so it took 4–6 minutes to start when we first tried it. "Running" with blank logs meanwhile is normal.
+   3. Open the run → **Tasks** → task 0 → **View logs**. Logs arrive 30–60 seconds late.
+   4. **It passed if:** status is Succeeded, exit code 0, the logs say "Nothing queued.", and the task ends within about a minute of that line. If it runs on until the 60-minute timeout, the OCR container isn't stopping with the worker. *(check)*
+   5. **If it failed,** the last line of the error in the logs (or Sentry) is the reason. Common ones:
+
+      | Error says | Likely cause |
+      |---|---|
+      | `password authentication failed` | `dice-database-url` has the wrong password. |
+      | `connection is insecure` / SSL required | The URL is missing `?sslmode=require`. |
+      | `could not translate host name` / `invalid port` | The URL is mistyped (re-copy Neon's direct string). |
+      | `permission denied` on a secret | `dice-staging-runtime` is missing **Secret Manager Secret Accessor**. |
+7. Test the schedule (only once, then **Pause** it again): fire it with `gcloud scheduler jobs run dice-worker-scheduler-trigger --location us-central1`, then run `gcloud run jobs executions list --job dice-worker --region us-central1 --limit 2`. A new run should appear, started by `dice-staging-deployer`. If nothing appears, `gcloud scheduler jobs describe dice-worker-scheduler-trigger --location us-central1` shows why (`status code: 7` is the permission problem from step 2).
 
 The container names `worker` and `ocr` matter — the pipeline updates them by name.
 
@@ -189,7 +213,7 @@ More in the [Admin guide](admin-guide.md).
 
 ## 12. Test it end to end
 
-1. `APP_URL/admin/` — the login page should be styled.
+1. `APP_URL/admin/` — the login page should be styled, and logging in should work (the login page alone doesn't touch the database).
 2. Upload a PDF with Postman to `APP_URL/api/submit-document/` with your token and a [webhook.site](https://webhook.site) `callback_url` (see [Testing the API](../README.md#testing-the-api)).
 3. **Execute** `dice-worker` (or wait for the next run, if the schedule is resumed). Its **Logs** show: work found, OCR ready, the pipeline running, the webhook sent, then the run ending.
 4. Download the result from the `download_url` in the webhook.
