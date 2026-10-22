@@ -179,6 +179,8 @@ The container names `worker` and `ocr` matter — the pipeline updates them by n
 3. Go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`) and a name for its first token (e.g. `first-token`), and save. The token appears at the top of the page, **only this once** — save it.
 4. Open the account to see its **webhook secret**, if you'll use webhooks.
 
+More in the [Admin guide](admin-guide.md). No separate account-creation job is needed; if an old `dice-create-account` Cloud Run job still exists, delete it.
+
 ## 12. Test it end to end
 
 1. `APP_URL/admin/` — the login page should be styled.

@@ -121,6 +121,8 @@ The API authenticates requests with a token tied to a `ServiceAccount`. To set o
 
 3. Need another token later (e.g. you lost it)? In the admin, go to **Service accounts**, open the account, and click **Issue a new token** (top right). Give the token a name. The token appears at the top of the page, only that once. Older tokens keep working. To switch a token off, go to **Service account tokens**, tick it, and delete it. **Regenerate webhook secret** (also top right of the account page) makes a new one, shown on the account page; whoever checks our webhooks must be updated.
 
+More on organizations, accounts, limits and the backfill account: [Admin guide](docs/admin-guide.md).
+
 ### In the browser
 
 The easiest way to try the API: open `http://localhost:8000/api/docs/` (or `/api/docs/` on wherever you've deployed it).

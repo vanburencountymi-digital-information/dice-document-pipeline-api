@@ -14,7 +14,13 @@ from knox.models import AuthToken
 from parameterized import parameterized
 
 from accounts.admin import LimitDisplay, ServiceAccountAdmin, ServiceAccountTokenAdmin
-from accounts.models import LIMIT_FIELDS, RateLimitPeriod, ServiceAccount, ServiceAccountToken
+from accounts.models import (
+    LIMIT_FIELDS,
+    Organization,
+    RateLimitPeriod,
+    ServiceAccount,
+    ServiceAccountToken,
+)
 from accounts.services import ServiceAccountNameTakenError, TokenNameTakenError
 from accounts.tests.factories import (
     OrganizationFactory,
@@ -364,6 +370,36 @@ class ServiceAccountAddFormTests(TestCase):
         )
 
         self.assertEqual(form.is_valid(), valid, form.errors)
+
+
+class OrganizationAdminTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.staff = UserFactory(is_staff=True, is_superuser=True)
+        cls.organization = OrganizationFactory()
+
+    def setUp(self) -> None:
+        self.client.force_login(self.staff)
+
+    def test_add_page_only_asks_for_a_name(self) -> None:
+        response = self.client.get(reverse("admin:accounts_organization_add"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["adminform"].form.fields), ["name"])
+
+    def test_adding_an_organization_saves_it(self) -> None:
+        response = self.client.post(reverse("admin:accounts_organization_add"), {"name": "Acme"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Organization.objects.filter(name="Acme").exists())
+
+    def test_a_taken_name_shows_an_error_not_a_crash(self) -> None:
+        response = self.client.post(
+            reverse("admin:accounts_organization_add"), {"name": self.organization.name}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["adminform"].form.errors["name"])
 
 
 class ServiceAccountTokenAdminTests(TestCase):
