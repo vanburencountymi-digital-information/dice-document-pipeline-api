@@ -36,12 +36,14 @@ class ServiceAccountService:
         Returns: the ServiceAccount and the first token string (it cannot be looked up later).
         Raises: TypeError if a keyword is not one of the LIMIT_FIELDS (so a typo fails here, not
         deep in the model). ServiceAccountNameTakenError if service_name is already used in the
-        organization. IntegrityError if unlimited is not True and a limit value is None.
-        Nothing is created in the last two cases.
+        organization. ValidationError if unlimited is not True and a limit is missing or out of
+        range. Nothing is created in the last two cases.
         """
         unknown = set(limits) - set(LIMIT_FIELDS)
         if unknown:
             raise TypeError(f"Unknown limit fields: {', '.join(sorted(unknown))}")
+        # Before the login user exists, so bad limits leave nothing behind.
+        ServiceAccount(**limits).validate_limits()
         # Names are only unique per organization, but usernames are global.
         user = User.objects.create_user(username=f"service-{uuid.uuid4().hex}", password=None)
         try:
@@ -56,7 +58,8 @@ class ServiceAccountService:
                 )
         except IntegrityError as error:
             # Asked rather than read from the error text, which differs by database, and the
-            # limits constraint raises IntegrityError too. The form checks the name first, so
+            # the limits constraint raises IntegrityError too (only if `validate_limits` was
+            # somehow skipped). The form checks the name first, so
             # this is only reached by two requests racing (e.g. a double-click on Save).
             if ServiceAccount.objects.filter(organization=organization, name=service_name).exists():
                 raise ServiceAccountNameTakenError(service_name) from error

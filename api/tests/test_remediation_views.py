@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
@@ -11,6 +11,7 @@ from django.urls import reverse
 from parameterized import parameterized
 from rest_framework.test import APIRequestFactory
 
+from accounts.models import IncompleteLimitsError, ServiceAccount
 from accounts.tests.factories import ServiceAccountFactory
 from api.views import CreateRemediationView, DocumentDownloadView, DocumentStatusView
 from remediation.models import Remediation
@@ -39,6 +40,121 @@ class CreateRemediationViewTests(TestCase):
             HTTP_AUTHORIZATION=f"Token {self.service_account.token}",
         )
         return self.view(request)
+
+    def _post_as(self, service_account, data):
+        request = self.factory.post(
+            self.url,
+            data,
+            format="multipart",
+            HTTP_AUTHORIZATION=f"Token {service_account.token}",
+        )
+        return self.view(request)
+
+    @staticmethod
+    def _makes_a_job_for_the_caller(service_account, _file, force=False, before_create=None):
+        """Stands in for `get_or_create_from_upload` making a real job for the caller (after
+        running the limit check the view hands it, as the real one does)."""
+        if before_create is not None:
+            before_create()
+        return RemediationFactory(service_account=service_account), True
+
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_over_the_rate_limit_returns_429_and_creates_nothing(
+        self, mock_service_cls, mock_process_remediation
+    ) -> None:
+        account = ServiceAccountFactory(rate_limit_count=1, rate_limit_period="day")
+        service = mock_service_cls.return_value
+        service.get_or_create_from_upload.side_effect = self._makes_a_job_for_the_caller
+        first = self._post_as(account, {"file": PdfUploadFactory()})
+
+        second = self._post_as(account, {"file": PdfUploadFactory()})
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(Remediation.objects.filter(service_account=account).count(), 1)
+        self.assertEqual(mock_process_remediation.enqueue.call_count, 1)
+        self.assertGreater(int(second["Retry-After"]), 0)
+        self.assertEqual(second.data["limit"], "rate")
+        self.assertEqual(second.data["remaining"], 0)
+        self.assertEqual(second["X-RateLimit-Remaining"], "0")
+        self.assertIn("resets_at", second.data)
+
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_a_limit_of_zero_rejects_every_submission(
+        self, mock_service_cls, mock_process_remediation
+    ) -> None:
+        account = ServiceAccountFactory(rate_limit_count=0, rate_limit_period="day")
+        service = mock_service_cls.return_value
+        service.get_or_create_from_upload.side_effect = self._makes_a_job_for_the_caller
+
+        response = self._post_as(account, {"file": PdfUploadFactory()})
+
+        self.assertEqual(response.status_code, 429)
+        self.assertFalse(Remediation.objects.filter(service_account=account).exists())
+        mock_process_remediation.enqueue.assert_not_called()
+
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_a_resubmit_of_an_accepted_file_is_not_turned_away_at_the_limit(
+        self, mock_service_cls, mock_process_remediation
+    ) -> None:
+        account = ServiceAccountFactory(rate_limit_count=1, rate_limit_period="day")
+        existing = RemediationFactory(service_account=account)  # the limit is now used up
+        service = mock_service_cls.return_value
+        service.get_or_create_from_upload.return_value = (existing, False)
+        service.claim_enqueue.return_value = False
+
+        responses = [self._post_as(account, {"file": PdfUploadFactory()}) for _ in range(3)]
+
+        self.assertEqual([r.status_code for r in responses], [200, 200, 200])
+        mock_process_remediation.enqueue.assert_not_called()
+
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_a_stuck_existing_job_is_queued_again(
+        self, mock_service_cls, mock_process_remediation
+    ) -> None:
+        remediation = RemediationFactory()
+        service = mock_service_cls.return_value
+        service.get_or_create_from_upload.return_value = (remediation, False)
+        service.claim_enqueue.return_value = True
+
+        response = self._post({"file": PdfUploadFactory()})
+
+        self.assertEqual(response.status_code, 200)
+        mock_process_remediation.enqueue.assert_called_once_with(str(remediation.id))
+
+    @patch("api.views.process_remediation", autospec=True, spec_set=True)
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_unlimited_account_is_not_throttled(
+        self, mock_service_cls, mock_process_remediation
+    ) -> None:
+        account = ServiceAccountFactory(unlimited=True)
+        mock_service_cls.return_value.get_or_create_from_upload.side_effect = (
+            self._makes_a_job_for_the_caller
+        )
+
+        responses = [self._post_as(account, {"file": PdfUploadFactory()}) for _ in range(3)]
+
+        self.assertEqual([r.status_code for r in responses], [201, 201, 201])
+        self.assertNotIn("X-RateLimit-Limit", responses[-1])
+
+    @patch("api.views.RemediationService", autospec=True, spec_set=True)
+    def test_incomplete_limits_are_denied(self, mock_service_cls) -> None:
+        account = ServiceAccountFactory()
+
+        with patch.object(
+            ServiceAccount,
+            "rate_limit",
+            new_callable=PropertyMock,
+            side_effect=IncompleteLimitsError(account.pk),
+        ):
+            response = self._post_as(account, {"file": PdfUploadFactory()})
+
+        self.assertEqual(response.status_code, 403)
+        mock_service_cls.return_value.get_or_create_from_upload.assert_not_called()
 
     @patch("api.views.RemediationService", autospec=True, spec_set=True)
     def test_create_remediation_without_file_returns_400(self, mock_service_cls) -> None:
@@ -139,6 +255,7 @@ class CreateRemediationViewTests(TestCase):
     ) -> None:
         remediation = RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, False)
+        mock_service_cls.return_value.claim_enqueue.return_value = False
         callback = RemediationCallbackFactory.build(remediation=remediation)
         mock_service_cls.return_value.register_callback.return_value = (callback, True)
 
@@ -154,6 +271,7 @@ class CreateRemediationViewTests(TestCase):
     ) -> None:
         remediation = RemediationFactory(status=Remediation.JobStatus.COMPLIANT)
         mock_service_cls.return_value.get_or_create_from_upload.return_value = (remediation, False)
+        mock_service_cls.return_value.claim_enqueue.return_value = False
         callback = RemediationCallbackFactory.build(remediation=remediation)
         mock_service_cls.return_value.register_callback.return_value = (callback, False)
 
@@ -171,6 +289,7 @@ class CreateRemediationViewTests(TestCase):
             remediation,
             False,
         )
+        mock_service_cls.return_value.claim_enqueue.return_value = False
 
         response = self._post({"file": PdfUploadFactory()})
 

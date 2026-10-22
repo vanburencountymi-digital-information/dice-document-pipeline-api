@@ -17,6 +17,8 @@ import environ
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 
+from common.throttle_scopes import ThrottleScope
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -203,12 +205,56 @@ SECURE_COOKIES = env.bool("SECURE_COOKIES", default=not DEBUG)
 SESSION_COOKIE_SECURE = SECURE_COOKIES
 CSRF_COOKIE_SECURE = SECURE_COOKIES
 
+# Where requests come from (ADR 0031). Throttles key on the caller's real IP address.
+# A load balancer or proxy run by the hosting platform adds the address that connected to it as
+# the last `X-Forwarded-For` entry, which a caller can't fake. This is how many such entries
+# the platform adds: 1 on Cloud Run, 0 (the default) when nothing sits in front of the app.
+# With 0 the header is ignored, so an unconfigured deployment can't be tricked by it.
+TRUSTED_PROXY_HOPS = env.int("TRUSTED_PROXY_HOPS", default=0)
+# Cloudflare's published address ranges (https://www.cloudflare.com/ips/). The
+# `CF-Connecting-IP` header is believed only when the connection came from one of these.
+# Rarely changes; last compared against that page on 2026-10-22.
+CLOUDFLARE_IP_RANGES = env.list(
+    "CLOUDFLARE_IP_RANGES",
+    default=[
+        "173.245.48.0/20",
+        "103.21.244.0/22",
+        "103.22.200.0/22",
+        "103.31.4.0/22",
+        "141.101.64.0/18",
+        "108.162.192.0/18",
+        "190.93.240.0/20",
+        "188.114.96.0/20",
+        "197.234.240.0/22",
+        "198.41.128.0/17",
+        "162.158.0.0/15",
+        "104.16.0.0/13",
+        "104.24.0.0/14",
+        "172.64.0.0/13",
+        "131.0.72.0/22",
+        "2400:cb00::/32",
+        "2606:4700::/32",
+        "2803:f800::/32",
+        "2405:b500::/32",
+        "2405:8100::/32",
+        "2a06:98c0::/29",
+        "2c0f:f248::/32",
+    ],
+)
+
 # REST_FRAMEWORK
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "knox.auth.TokenAuthentication",
+        "api.authentication.LockoutTokenAuthentication",
     ],
+    # ADR 0031. Only the failed-login limit lives here; per-account submission limits are
+    # stored on each ServiceAccount (ADR 0030).
+    "DEFAULT_THROTTLE_CLASSES": ["api.throttles.ClientIPThrottle"],
+    "DEFAULT_THROTTLE_RATES": {
+        ThrottleScope.FAILED_AUTH: env("FAILED_AUTH_RATE", default="100/hour"),
+        ThrottleScope.CLIENT_IP: env("CLIENT_IP_RATE", default="120/minute"),
+    },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
@@ -260,6 +306,12 @@ WEBHOOK_BACKOFF_BASE_SECONDS = env.int("WEBHOOK_BACKOFF_BASE_SECONDS", default=3
 # Webhooks only go to public https addresses. Set True ONLY on a local machine, to test against
 # a receiver on localhost/your network (also allows http://).
 WEBHOOK_ALLOW_PRIVATE_URLS = env.bool("WEBHOOK_ALLOW_PRIVATE_URLS", default=False)
+
+# A job with no progress for this long is queued again when its document is resubmitted (its
+# task was probably lost). Queued: longer than the scheduled worker's gap (ADR 0023). Running:
+# about the longest a job can legitimately run, so a slow job isn't queued twice.
+STUCK_QUEUED_MINUTES = env.int("STUCK_QUEUED_MINUTES", default=60)
+STUCK_RUNNING_MINUTES = env.int("STUCK_RUNNING_MINUTES", default=180)
 
 # Rate Limit Settings
 DEFAULT_MAX_IN_FLIGHT = env.int("DEFAULT_MAX_IN_FLIGHT", default=10)

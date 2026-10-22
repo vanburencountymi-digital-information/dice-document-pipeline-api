@@ -5,6 +5,8 @@ class KnoxTokenScheme(OpenApiAuthenticationExtension):
     """Tells the API docs that knox tokens go in the `Authorization` header, as `Token <key>`."""
 
     target_class = "knox.auth.TokenAuthentication"
+    # Our login class subclasses knox's (api.authentication); without this the docs lose it.
+    match_subclasses = True
     name = "knoxToken"
 
     def get_security_definition(self, auto_schema: object) -> dict[str, str]:

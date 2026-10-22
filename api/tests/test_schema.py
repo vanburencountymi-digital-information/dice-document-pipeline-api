@@ -1,10 +1,10 @@
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from drf_spectacular.generators import SchemaGenerator
 from parameterized import parameterized
 
 
-class ApiDocsTests(SimpleTestCase):
+class ApiDocsTests(TestCase):
     @parameterized.expand([("schema",), ("docs",)])
     def test_docs_pages_are_public(self, url_name: str) -> None:
         response = self.client.get(reverse(url_name))
@@ -26,11 +26,10 @@ class SchemaContentTests(SimpleTestCase):
         super().setUpClass()
         cls.schema = SchemaGenerator().get_schema(request=None, public=True)
 
-    def test_documents_all_four_endpoints(self) -> None:
+    def test_documents_all_three_endpoints(self) -> None:
         self.assertEqual(
             set(self.schema["paths"]),
             {
-                "/api/status/",
                 "/api/submit-document/",
                 "/api/document-status/{content_hash}/",
                 "/api/document-download/{content_hash}/",
@@ -41,7 +40,22 @@ class SchemaContentTests(SimpleTestCase):
         post = self.schema["paths"]["/api/submit-document/"]["post"]
 
         self.assertIn("multipart/form-data", post["requestBody"]["content"])
-        self.assertEqual(set(post["responses"]), {"200", "201"})
+        self.assertEqual(set(post["responses"]), {"200", "201", "403", "429"})
+
+    def test_every_endpoint_documents_403_and_429(self) -> None:
+        for path, operations in self.schema["paths"].items():
+            for method, operation in operations.items():
+                with self.subTest(path=path, method=method):
+                    self.assertIn("403", operation["responses"])
+                    self.assertIn("429", operation["responses"])
+
+    def test_429_documents_the_rate_limited_body(self) -> None:
+        schema = self.schema["components"]["schemas"]["SubmissionLimit"]
+
+        self.assertEqual(
+            set(schema["properties"]),
+            {"detail", "limit", "retry_after", "remaining", "resets_at"},
+        )
 
     def test_upload_file_field_is_binary_so_swagger_shows_a_file_picker(self) -> None:
         file_field = self.schema["components"]["schemas"]["RemediationUploadRequest"]["properties"][

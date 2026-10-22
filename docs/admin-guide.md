@@ -31,7 +31,7 @@ Open the account and edit:
 - **Submission limit per time period** and **Time period**: e.g. 100 per day.
 - **Service Account has no limits**: skips both. Use only for large one-off jobs. Untick it to go back to the saved numbers.
 
-Leaving a number blank does not mean "no limits". Tick the box.
+Leaving a number blank does not mean "no limits". Tick the box. A number of **0** blocks all submissions.
 
 ## Backfill account
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 from datetime import timedelta
@@ -108,7 +109,11 @@ class RemediationServiceTests(TestCase):
         self.assertEqual(remediation.pipeline_version, "1.4.2")
 
     def test_latest_for_document_returns_most_recent_attempt(self) -> None:
-        RemediationFactory(service_account=self.service_account, content_hash="abc123")
+        RemediationFactory(
+            service_account=self.service_account,
+            content_hash="abc123",
+            status=Remediation.JobStatus.COMPLIANT,
+        )
         newest = RemediationFactory(service_account=self.service_account, content_hash="abc123")
 
         found = RemediationService().latest_for_document(self.service_account, "abc123")
@@ -256,6 +261,111 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
         self.assertEqual(Remediation.objects.count(), 1)
         self.assertEqual(remediation.source_pdf_uri, original_path)
 
+    def test_before_create_runs_once_when_a_new_attempt_is_made(self) -> None:
+        calls: list[int] = []
+
+        RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(), before_create=lambda: calls.append(1)
+        )
+
+        self.assertEqual(calls, [1])
+
+    def test_before_create_does_not_run_when_an_existing_attempt_is_reused(self) -> None:
+        content = b"same bytes"
+        RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(content=content)
+        )
+        calls: list[int] = []
+
+        _, created = RemediationService().get_or_create_from_upload(
+            self.service_account,
+            PdfUploadFactory(content=content),
+            before_create=lambda: calls.append(1),
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(calls, [])
+
+    def test_an_attempt_made_while_before_create_waited_is_returned_not_duplicated(self) -> None:
+        content = b"same bytes"
+        content_hash = hashlib.sha256(content).hexdigest()
+
+        def another_request_made_it_meanwhile() -> None:
+            RemediationFactory(service_account=self.service_account, content_hash=content_hash)
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account,
+            PdfUploadFactory(content=content),
+            before_create=another_request_made_it_meanwhile,
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(remediation.content_hash, content_hash)
+        self.assertEqual(Remediation.objects.count(), 1)
+
+    def test_nothing_is_made_if_before_create_refuses(self) -> None:
+        def refuse() -> None:
+            raise PermissionError("over the limit")
+
+        with self.assertRaises(PermissionError):
+            RemediationService().get_or_create_from_upload(
+                self.service_account, PdfUploadFactory(), before_create=refuse
+            )
+
+        self.assertFalse(Remediation.objects.exists())
+
+    def test_force_on_an_unfinished_attempt_returns_it_instead_of_making_another(self) -> None:
+        content = b"same bytes"
+        running, _ = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account,
+            PdfUploadFactory(name="test.pdf", content=content),
+            force=True,
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(remediation, running)
+        self.assertEqual(Remediation.objects.count(), 1)
+
+    def test_force_on_an_unfinished_attempt_never_runs_the_limit_check(self) -> None:
+        content = b"same bytes"
+        running, _ = RemediationService().get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+        calls: list[int] = []
+
+        remediation, created = RemediationService().get_or_create_from_upload(
+            self.service_account,
+            PdfUploadFactory(name="test.pdf", content=content),
+            force=True,
+            before_create=lambda: calls.append(1),
+        )
+
+        self.assertEqual((remediation, created, calls), (running, False, []))
+
+    def test_a_clash_with_an_attempt_made_at_the_same_moment_returns_that_attempt(self) -> None:
+        content = b"same bytes"
+        service = RemediationService()
+        first, first_created = service.get_or_create_from_upload(
+            self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+        )
+
+        # The race: our lookup finds nothing, then making the attempt clashes with `first`.
+        with patch.object(
+            RemediationService, "latest_for_document", autospec=True, side_effect=[None, first]
+        ):
+            second, second_created = service.get_or_create_from_upload(
+                self.service_account, PdfUploadFactory(name="test.pdf", content=content)
+            )
+
+        self.assertTrue(first_created)
+        self.assertFalse(second_created)
+        self.assertEqual(second, first)
+        self.assertEqual(Remediation.objects.count(), 1)
+
     def test_force_retries_a_complete_remediation(self) -> None:
         content = b"same bytes"
         existing, _ = RemediationService().get_or_create_from_upload(
@@ -364,6 +474,169 @@ class RemediationServiceGetOrCreateFromUploadTests(TestCase):
 
         self.assertFalse(created)
         self.assertEqual(remediation, existing)
+
+
+class RemediationServiceRecentSubmissionsTests(TestCase):
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.service_account = ServiceAccountFactory()
+
+    def _attempt(self, age: timedelta, account=None) -> Remediation:
+        remediation = RemediationFactory(
+            service_account=account or self.service_account,
+            status=Remediation.JobStatus.COMPLIANT,
+        )
+        # auto_now_add can't be set on create
+        Remediation.objects.filter(pk=remediation.pk).update(created_at=timezone.now() - age)
+        return remediation
+
+    def test_counts_only_this_accounts_attempts_inside_the_window(self) -> None:
+        self._attempt(timedelta(hours=1))
+        self._attempt(timedelta(hours=23))
+        self._attempt(timedelta(hours=25))
+        self._attempt(timedelta(hours=1), account=ServiceAccountFactory())
+
+        usage = RemediationService().recent_submissions(self.service_account, 24 * 3600)
+
+        self.assertEqual(usage.count, 2)
+
+    def test_oldest_is_when_the_earliest_counted_attempt_was_made(self) -> None:
+        self._attempt(timedelta(hours=1))
+        oldest = self._attempt(timedelta(hours=5))
+        oldest.refresh_from_db()
+
+        usage = RemediationService().recent_submissions(self.service_account, 24 * 3600)
+
+        self.assertEqual(usage.oldest, oldest.created_at)
+
+    def test_no_attempts_gives_zero_and_no_oldest(self) -> None:
+        usage = RemediationService().recent_submissions(self.service_account, 3600)
+
+        self.assertEqual((usage.count, usage.oldest), (0, None))
+
+    def test_lock_needs_a_transaction(self) -> None:
+        # TestCase wraps each test in one, so locking works here.
+        usage = RemediationService().recent_submissions(self.service_account, 3600, lock=True)
+
+        self.assertEqual(usage.count, 0)
+
+
+@override_settings(STUCK_QUEUED_MINUTES=60, STUCK_RUNNING_MINUTES=180)
+class RemediationServiceClaimEnqueueTests(TestCase):
+    def _attempt(
+        self,
+        status,
+        created_ago: int,
+        started_ago: int | None = None,
+        enqueued_ago: int | None = None,
+    ) -> Remediation:
+        now = timezone.now()
+        remediation = RemediationFactory(status=status)
+        Remediation.objects.filter(pk=remediation.pk).update(
+            created_at=now - timedelta(minutes=created_ago),
+            started_at=now - timedelta(minutes=started_ago) if started_ago else None,
+            last_enqueued_at=now - timedelta(minutes=enqueued_ago) if enqueued_ago else None,
+        )
+        remediation.refresh_from_db()
+        return remediation
+
+    @parameterized.expand(
+        [
+            ("queued_past_its_limit", Remediation.JobStatus.QUEUED, 90, None, None, True),
+            ("queued_within_its_limit", Remediation.JobStatus.QUEUED, 30, None, None, False),
+            ("running_past_its_limit", Remediation.JobStatus.RUNNING, 300, 240, None, True),
+            ("running_within_its_limit", Remediation.JobStatus.RUNNING, 300, 120, None, False),
+            (
+                "running_is_judged_from_its_start",
+                Remediation.JobStatus.RUNNING,
+                500,
+                5,
+                None,
+                False,
+            ),
+            (
+                "running_without_a_start_uses_creation",
+                Remediation.JobStatus.RUNNING,
+                240,
+                None,
+                None,
+                True,
+            ),
+            (
+                "queued_again_recently_is_progress",
+                Remediation.JobStatus.QUEUED,
+                500,
+                None,
+                10,
+                False,
+            ),
+            (
+                "queued_again_long_ago_is_stuck_again",
+                Remediation.JobStatus.QUEUED,
+                500,
+                None,
+                90,
+                True,
+            ),
+            ("compliant_is_never_stuck", Remediation.JobStatus.COMPLIANT, 500, None, None, False),
+            ("error_is_never_stuck", Remediation.JobStatus.ERROR, 500, None, None, False),
+        ]
+    )
+    def test_a_reused_attempt_is_claimed_only_if_it_is_stuck(
+        self, _label, status, created_ago, started_ago, enqueued_ago, expected
+    ) -> None:
+        remediation = self._attempt(status, created_ago, started_ago, enqueued_ago)
+
+        self.assertEqual(RemediationService().claim_enqueue(remediation, created=False), expected)
+
+    def test_a_new_attempt_is_always_queued(self) -> None:
+        self.assertTrue(RemediationService().claim_enqueue(RemediationFactory(), created=True))
+
+    def test_a_stuck_attempt_is_marked_when_claimed(self) -> None:
+        remediation = self._attempt(Remediation.JobStatus.QUEUED, created_ago=90)
+
+        RemediationService().claim_enqueue(remediation, created=False)
+
+        remediation.refresh_from_db()
+        self.assertIsNotNone(remediation.last_enqueued_at)
+
+    def test_it_is_not_claimed_again_until_another_full_wait_has_passed(self) -> None:
+        remediation = self._attempt(Remediation.JobStatus.QUEUED, created_ago=90)
+        service = RemediationService()
+
+        first = service.claim_enqueue(remediation, created=False)
+        second = service.claim_enqueue(Remediation.objects.get(pk=remediation.pk), created=False)
+
+        self.assertEqual((first, second), (True, False))
+
+    def test_only_one_of_two_resubmits_that_saw_it_stuck_claims_it(self) -> None:
+        saw_it_first = self._attempt(Remediation.JobStatus.QUEUED, created_ago=90)
+        saw_it_second = Remediation.objects.get(
+            pk=saw_it_first.pk
+        )  # both read before either claims
+        service = RemediationService()
+
+        results = [
+            service.claim_enqueue(saw_it_first, created=False),
+            service.claim_enqueue(saw_it_second, created=False),
+        ]
+
+        self.assertEqual(results, [True, False])
+
+    def test_it_is_not_claimed_if_it_finished_in_the_meantime(self) -> None:
+        remediation = self._attempt(Remediation.JobStatus.QUEUED, created_ago=90)
+        Remediation.objects.filter(pk=remediation.pk).update(status=Remediation.JobStatus.COMPLIANT)
+
+        self.assertFalse(RemediationService().claim_enqueue(remediation, created=False))
+
+
+class RemediationStatusSetsTests(TestCase):
+    def test_finished_and_unfinished_statuses_cover_every_status_exactly_once(self) -> None:
+        finished = set(Remediation.FINISHED_STATUSES)
+        unfinished = set(Remediation.UNFINISHED_STATUSES)
+
+        self.assertFalse(finished & unfinished)
+        self.assertEqual(finished | unfinished, set(Remediation.JobStatus))
 
 
 class ArtifactServiceTests(TestCase):
