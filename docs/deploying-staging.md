@@ -35,16 +35,23 @@ dice-worker (Cloud Run job, run by hand or scheduler)─┤
 
 ## What already exists, and the names used here
 
-| Thing | Name | Status |
-|---|---|---|
-| Google Cloud project | `ada-document-pipeline-staging` | Exists |
-| Region | `us-central1` | Use for everything |
-| R2 bucket | `ada-pipeline-test-bucket` | Exists |
-| Image repository | `dice` | Create (step 3) |
-| Neon project / database / user | `dice-staging` / `dice_document_pipeline` / `dice_app` | Create (step 4) |
-| Runtime service account | `dice-staging-runtime` | Create (step 2) |
-| Build service account | `dice-staging-deployer` | Create (step 3) |
-| App / worker job / migrations job | `dice-app` / `dice-worker` / `dice-migrate` | Create (steps 8–10) |
+| Thing | Name | Status | Terraform |
+|---|---|---|---|
+| Google Cloud project | `ada-document-pipeline-staging` | Exists | Import |
+| Region | `us-central1` | Use for everything | — |
+| Turned-on services (APIs) | see step 1 | Create (step 1) | `google_project_service` |
+| Runtime service account | `dice-staging-runtime` | Create (step 2) | `google_service_account` + IAM |
+| Build service account | `dice-staging-deployer` | Create (step 2) | `google_service_account` + IAM |
+| Image repository | `dice` | Create (step 3) | `google_artifact_registry_repository` |
+| Build triggers | `dice-staging-deploy`, `dice-ocr-build` | Create (step 3) | `google_cloudbuild_trigger` (GitHub connection stays manual) |
+| Neon project / database / user | `dice-staging` / `dice_document_pipeline` / `dice_app` | Create (step 4) | Neon provider, or manual |
+| R2 bucket and API token | `ada-pipeline-test-bucket` | Exists (token: step 5) | Cloudflare provider, or manual |
+| Secrets | `dice-*` (step 6) | Create (step 6) | `google_secret_manager_secret` (values stay manual) |
+| Migrations job / app / worker job | `dice-migrate` / `dice-app` / `dice-worker` | Create (steps 8–10) | `google_cloud_run_v2_job` / `_service` |
+| Worker schedule | `dice-worker` trigger (paused) | Create (step 10) | `google_cloud_scheduler_job` |
+| Admin login, first account | — | Create (step 11) | Manual |
+
+The Terraform column is a starting point: [DIC-2329](https://linear.app/dicelabs/issue/DIC-2329) decides whether we use it.
 
 Make sure `ada-document-pipeline-staging` is selected in the project dropdown at the top left of the Console before each step.
 
@@ -54,27 +61,26 @@ The bucket's name says "test" — fine for staging. Production should get its ow
 
 **APIs & Services → Enable APIs and services**, then enable each of: **Cloud Run Admin API**, **Artifact Registry API**, **Secret Manager API**, **Cloud Build API**, **Cloud Scheduler API**.
 
-## 2. Create the identity the app and worker run as
+## 2. Create the service accounts
 
-1. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-runtime`.
-2. Grant it: **Secret Manager Secret Accessor**.
+1. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-runtime` (what the app and worker run as). Grant it: **Secret Manager Secret Accessor**.
+2. Create `dice-staging-deployer` (what builds run as, and what starts the worker on its schedule). Grant it: **Artifact Registry Writer**, **Cloud Run Developer**, **Logs Writer**. *(check)*
+3. Open `dice-staging-runtime` → **Permissions** → grant `dice-staging-deployer` the role **Service Account User** — this lets the build deploy things that run as the runtime account. Grant it on this account only, not project-wide.
 
-## 3. Connect GitHub and set up automatic builds
+## 3. Image repository and automatic builds
 
 1. **Artifact Registry → Create repository**: name `dice`, format **Docker**, region `us-central1`.
-2. **IAM & Admin → Service Accounts → Create service account**: `dice-staging-deployer` (what the build runs as). Grant it: **Artifact Registry Writer**, **Cloud Run Developer**, **Logs Writer**. *(check)*
-3. Open `dice-staging-runtime` → **Permissions** → grant `dice-staging-deployer` the role **Service Account User** — this lets the build deploy things that run as the runtime account.
-4. **Cloud Build → Repositories → Connect repository** → GitHub → pick `vanburencountymi-digital-information/dice-document-pipeline-api`. An organization admin may need to approve Google's "Cloud Build" GitHub App.
-5. **Cloud Build → Triggers → Create trigger** — the automatic deploy:
+2. **Cloud Build → Repositories → Connect repository** → GitHub → pick `vanburencountymi-digital-information/dice-document-pipeline-api`. An organization admin may need to approve Google's "Cloud Build" GitHub App.
+3. **Cloud Build → Triggers → Create trigger** — the automatic deploy:
    - Name `dice-staging-deploy`, region `us-central1`.
    - Event: **Push new tag**. Tag: `^v.*$`.
    - Configuration: **Cloud Build configuration file**, `cloudbuild.yaml`.
    - Service account: `dice-staging-deployer`.
-6. **Create trigger** again — the OCR image, run by hand only:
+4. **Create trigger** again — the OCR image, run by hand only:
    - Name `dice-ocr-build`, region `us-central1`.
    - Event: **Manual invocation**, branch `main`.
    - Configuration file: `cloudbuild-ocr.yaml`. Service account: `dice-staging-deployer`.
-7. **Build the first images:** on the Triggers page, **Run** `dice-ocr-build`, then **Run** `dice-staging-deploy` (pick the latest `v…` tag). OCR takes a while (~12 GB).
+5. **Build the first images:** on the Triggers page, **Run** `dice-ocr-build`, then **Run** `dice-staging-deploy` (pick the latest `v…` tag). OCR takes a while (~12 GB).
    **Both runs will fail at their last steps this first time** — they try to update the app, worker job and migrations job, which you create in steps 8–10. That's expected: what matters now is that the build and push steps succeed. Check **Artifact Registry → dice** shows an `app` and an `opendataloader-hybrid` image.
 
 ## 4. Create the database
@@ -108,7 +114,7 @@ Paste Neon's string exactly as given. Neon passwords are already safe to use in 
 
 ## 7. Settings every piece needs
 
-You'll enter these in steps 8–11, on each form's **Variables & Secrets** tab.
+You'll enter these in steps 8–10, on each form's **Variables & Secrets** tab.
 
 **Secrets** (**Reference a secret**, version **latest**):
 
@@ -135,7 +141,7 @@ Also on every form: service account **`dice-staging-runtime`**.
 
 Don't set `DEBUG` — it's off by default, which is what staging needs.
 
-Images for steps 8–11 (from step 3):
+Images for steps 8–10 (from step 3):
 - App: `us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/app:vX.Y.Z` (the tag you built)
 - OCR: `us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/opendataloader-hybrid:…` (pick the one in Artifact Registry)
 
@@ -179,7 +185,7 @@ The container names `worker` and `ocr` matter — the pipeline updates them by n
 3. Go to **Service accounts** → **Add**, pick the organization, enter a name for the account (e.g. `test-service-account`) and a name for its first token (e.g. `first-token`), and save. The token appears at the top of the page, **only this once** — save it.
 4. Open the account to see its **webhook secret**, if you'll use webhooks.
 
-More in the [Admin guide](admin-guide.md). No separate account-creation job is needed; if an old `dice-create-account` Cloud Run job still exists, delete it.
+More in the [Admin guide](admin-guide.md).
 
 ## 12. Test it end to end
 
@@ -225,6 +231,13 @@ For longer quiet stretches. The Neon database goes to sleep by itself whenever n
 - **Run once without resuming:** **Cloud Run → Jobs → `dice-worker` → Execute** (e.g. after a deploy).
 
 Nothing goes down and there's nothing to restart. The app stays up, uploads are accepted and stay `queued`, and deploys still work (migrations wake the database).
+
+## Notes for Terraform
+
+- Cloud Build changes the image on `dice-app` and on the worker job's `worker` container (and `ocr` when rebuilt) on every deploy. Terraform must ignore image changes on those, or it will roll back deploys.
+- Secret **values** (step 6) stay out of Terraform and its state. Terraform creates the empty secrets only.
+- The worker's schedule is kept paused on staging. Terraform needs to match, or it will resume it.
+- Settings in step 7, and the sizes in steps 9–10 (memory, CPU, 60-minute timeout), are the values to copy. Worker timeout and CPU are due to change ([DIC-2480](https://linear.app/dicelabs/issue/DIC-2480)).
 
 ## Later, not blocking
 
