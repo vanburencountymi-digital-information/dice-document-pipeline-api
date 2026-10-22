@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v4.6.0 (2026-10-22)
+
+### Documentation
+
+- Add plain-English admin guide; test Organization admin
+  ([#29](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/29),
+  [`1450fba`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/1450fba5d4f06affcd0f18c368c6c70832a2b1ea))
+
+- Add worker test steps, IAM and scheduler checks to staging guide
+  ([#30](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/30),
+  [`9a0d8a9`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/9a0d8a930cfa14be63d397e74d5b587692a5cb16))
+
+- Restructure staging deploy guide as a Terraform starting point
+  ([#30](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/30),
+  [`9a0d8a9`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/9a0d8a930cfa14be63d397e74d5b587692a5cb16))
+
+### Features
+
+- Add draft Terraform for the production Google Cloud setup
+  ([#30](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/30),
+  [`9a0d8a9`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/9a0d8a930cfa14be63d397e74d5b587692a5cb16))
+
+
 ## v4.5.1 (2026-10-15)
 
 ### Bug Fixes
