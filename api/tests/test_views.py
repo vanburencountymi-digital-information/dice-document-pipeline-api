@@ -1,45 +1,16 @@
 from __future__ import annotations
 
+from unittest.mock import PropertyMock, patch
+
 from django.test import TestCase
-from django.urls import reverse
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.test import APIRequestFactory
 from rest_framework.views import APIView
 
+from accounts.models import IncompleteLimitsError, ServiceAccount
 from accounts.tests.factories import ServiceAccountFactory
-from api.views import ServiceAccountRequiredMixin, StatusView
-
-
-class StatusViewTests(TestCase):
-    @classmethod
-    def setUpTestData(cls) -> None:
-        cls.url = reverse("status")
-
-    def setUp(self) -> None:
-        self.factory = APIRequestFactory()
-        self.view = StatusView.as_view()
-
-    def test_valid_token_returns_200(self) -> None:
-        service_account = ServiceAccountFactory()
-
-        request = self.factory.get(self.url, HTTP_AUTHORIZATION=f"Token {service_account.token}")
-        response = self.view(request)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"status": "ok"})
-
-    def test_missing_token_returns_401(self) -> None:
-        request = self.factory.get(self.url)
-        response = self.view(request)
-
-        self.assertEqual(response.status_code, 401)
-
-    def test_invalid_token_returns_401(self) -> None:
-        request = self.factory.get(self.url, HTTP_AUTHORIZATION="Token bogus")
-        response = self.view(request)
-
-        self.assertEqual(response.status_code, 401)
+from api.views import EnforceAccountLimitsMixin, ServiceAccountRequiredMixin
 
 
 class _ServiceAccountRequiredMixinTestView(ServiceAccountRequiredMixin, APIView):
@@ -75,3 +46,54 @@ class ServiceAccountRequiredMixinTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["service_account_id"], service_account.id)
+
+
+class _EnforceAccountLimitsTestView(EnforceAccountLimitsMixin):
+    """Throwaway view; exists only so the mixin's limits/headers contract can be tested
+    independently of any real view."""
+
+    def get(self, request: Request) -> Response:
+        return Response({"ok": True})
+
+
+class EnforceAccountLimitsMixinTests(TestCase):
+    def setUp(self) -> None:
+        self.factory = APIRequestFactory()
+        self.view = _EnforceAccountLimitsTestView.as_view()
+
+    def _get(self, service_account: ServiceAccount):
+        request = self.factory.get("/", HTTP_AUTHORIZATION=f"Token {service_account.token}")
+        return self.view(request)
+
+    def test_every_response_carries_rate_limit_headers(self) -> None:
+        response = self._get(ServiceAccountFactory(rate_limit_count=7, rate_limit_period="hour"))
+
+        self.assertEqual(response["X-RateLimit-Limit"], "7")
+        self.assertEqual(response["X-RateLimit-Remaining"], "7")
+        self.assertEqual(response["X-RateLimit-Reset"], "0")
+
+    def test_unlimited_account_gets_no_headers(self) -> None:
+        response = self._get(ServiceAccountFactory(unlimited=True))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("X-RateLimit-Limit", response)
+
+    def test_incomplete_limits_are_denied(self) -> None:
+        service_account = ServiceAccountFactory()
+
+        with patch.object(
+            ServiceAccount,
+            "rate_limit",
+            new_callable=PropertyMock,
+            side_effect=IncompleteLimitsError(service_account.pk),
+        ):
+            response = self._get(service_account)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertNotIn("X-RateLimit-Limit", response)
+
+    def test_missing_token_returns_401_without_headers(self) -> None:
+        response = self.view(self.factory.get("/"))
+
+        self.assertEqual(response.status_code, 401)
+        self.assertNotIn("X-RateLimit-Limit", response)

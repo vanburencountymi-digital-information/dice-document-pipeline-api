@@ -7,22 +7,34 @@ from django.db.models.base import ModelBase
 from remediation.adapters.verification.severity import SEVERITY_RANK, Severity
 
 
-class Remediation(models.Model):
-    class JobStatus(models.TextChoices):
-        QUEUED = "queued", "Queued"
-        RUNNING = "running", "Running"
-        COMPLIANT = "compliant", "Compliant"
-        NONCOMPLIANT = "noncompliant", "Noncompliant"
-        ERROR = "error", "Error"
-        SKIPPED = "skipped", "Skipped"
+class JobStatus(models.TextChoices):
+    QUEUED = "queued", "Queued"
+    RUNNING = "running", "Running"
+    COMPLIANT = "compliant", "Compliant"
+    NONCOMPLIANT = "noncompliant", "Noncompliant"
+    ERROR = "error", "Error"
+    SKIPPED = "skipped", "Skipped"
 
-    # Every status a job can end in — see ADR 0024.
-    FINISHED_STATUSES = (
-        JobStatus.COMPLIANT,
-        JobStatus.NONCOMPLIANT,
-        JobStatus.ERROR,
-        JobStatus.SKIPPED,
-    )
+
+# Every status a job can end in — see ADR 0024.
+FINISHED_STATUSES = (
+    JobStatus.COMPLIANT,
+    JobStatus.NONCOMPLIANT,
+    JobStatus.ERROR,
+    JobStatus.SKIPPED,
+)
+# Waiting or being worked on. Module level so the database constraint below can use it.
+UNFINISHED_STATUSES = (JobStatus.QUEUED, JobStatus.RUNNING)
+
+
+class Remediation(models.Model):
+    # The module-level names above exist because `Meta` (below) can't see this class's own
+    # attributes, and so type annotations can say `JobStatus` (an alias isn't a type).
+    # `remediation/services.py` imports them. Everything else uses these:
+    # `Remediation.JobStatus`, `Remediation.FINISHED_STATUSES`, `Remediation.UNFINISHED_STATUSES`.
+    JobStatus = JobStatus
+    FINISHED_STATUSES = FINISHED_STATUSES
+    UNFINISHED_STATUSES = UNFINISHED_STATUSES
 
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     service_account = models.ForeignKey(
@@ -41,12 +53,28 @@ class Remediation(models.Model):
     pipeline_version = models.CharField(max_length=20, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+    # When this attempt was last queued *again* because its task looked lost (see
+    # `RemediationService.claim_enqueue`); None if it never was.
+    last_enqueued_at = models.DateTimeField(null=True, blank=True)
     started_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["service_account", "content_hash"])]
+        indexes = [
+            models.Index(fields=["service_account", "content_hash"]),
+            # For counting an account's recent submissions (ADR 0031).
+            models.Index(fields=["service_account", "created_at"]),
+        ]
+        constraints = [
+            # A document can't have two unfinished attempts at once, even if the same file
+            # arrives twice at the same moment (or is forced while still running).
+            models.UniqueConstraint(
+                fields=["service_account", "content_hash"],
+                condition=models.Q(status__in=UNFINISHED_STATUSES),
+                name="one_unfinished_attempt_per_document",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.service_account}: {self.source_pdf_uri} ({self.status})"

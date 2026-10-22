@@ -1,3 +1,4 @@
+from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -5,7 +6,7 @@ from parameterized import parameterized
 from rest_framework.throttling import SimpleRateThrottle
 
 from accounts.models import LIMIT_FIELDS, IncompleteLimitsError, RateLimitPeriod, ServiceAccount
-from accounts.tests.factories import ServiceAccountFactory
+from accounts.tests.factories import ServiceAccountFactory, UserFactory
 
 
 class ServiceAccountLimitsTests(SimpleTestCase):
@@ -71,6 +72,36 @@ class ServiceAccountLimitsTests(SimpleTestCase):
     def test_missing_in_flight_cap_without_unlimited_is_an_error_not_unlimited(self) -> None:
         with self.assertRaises(IncompleteLimitsError):
             _ = ServiceAccount(max_in_flight=None).in_flight_cap
+
+
+class ServiceAccountForUserTests(TestCase):
+    def test_returns_the_users_service_account(self) -> None:
+        account = ServiceAccountFactory()
+
+        self.assertEqual(ServiceAccount.for_user(account.user), account)
+
+    def test_returns_none_for_a_user_with_no_service_account(self) -> None:
+        self.assertIsNone(ServiceAccount.for_user(UserFactory()))
+
+    def test_returns_none_for_an_anonymous_user(self) -> None:
+        self.assertIsNone(ServiceAccount.for_user(AnonymousUser()))
+
+
+class ServiceAccountIsUnlimitedTests(SimpleTestCase):
+    @parameterized.expand(
+        [
+            ("ticked", True, None, True),
+            ("ticked_with_values", True, 5, True),
+            ("not_ticked", False, 5, False),
+            ("not_ticked_and_half_filled_is_not_unlimited", False, None, False),
+        ]
+    )
+    def test_is_unlimited_is_only_the_ticked_box(
+        self, _label: str, unlimited: bool, in_flight: int | None, expected: bool
+    ) -> None:
+        account = ServiceAccount(unlimited=unlimited, max_in_flight=in_flight)
+
+        self.assertEqual(account.is_unlimited, expected)
 
 
 class LimitFieldsTests(SimpleTestCase):

@@ -109,8 +109,10 @@ class ServiceAccount(models.Model):
         return f"{self.organization}: {self.name}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        """Custom .save() method that includes .validate_limits()
+        """Saves the account, but only after checking its limits (see `validate_limits`).
 
+        The admin form is not the only thing that writes accounts (the service, scripts), so the
+        model guards itself too. Takes: the usual `save` arguments. Returns: nothing.
         Raises: ValidationError, so an account with half-filled limits can never be saved.
         """
         self.validate_limits()
@@ -127,6 +129,25 @@ class ServiceAccount(models.Model):
         self.clean_fields(exclude=other_fields)
         self.validate_constraints(exclude=other_fields)
 
+    @classmethod
+    def for_user(cls, user: Any) -> "ServiceAccount | None":
+        """Takes: a user (or an anonymous user). Returns: their service account, or None.
+
+        The one place that says how a request's user maps to a service account.
+        """
+        # A user with no service account, or an anonymous user, has no `serviceaccount`
+        # attribute: Django's missing-relation error is also an AttributeError, so getattr's
+        # default catches it.
+        account: ServiceAccount | None = getattr(user, "serviceaccount", None)
+        return account
+
+    @property
+    def is_unlimited(self) -> bool:
+        """Returns: True only if the "no limits" box is ticked. A half-filled account is not
+        unlimited (it is an error: see `in_flight_cap` and `rate_limit`). Use this, not the raw
+        field, so what "unlimited" means lives in one place."""
+        return self.unlimited
+
     @property
     def in_flight_cap(self) -> int | None:
         """The most documents this account may have waiting or being worked on.
@@ -135,7 +156,7 @@ class ServiceAccount(models.Model):
         Raises: IncompleteLimitsError if the value is missing without `unlimited`. The
         database and admin refuse that state; if it exists anyway, callers must deny.
         """
-        if self.unlimited:
+        if self.is_unlimited:
             return None
         if self.max_in_flight is None:
             raise IncompleteLimitsError(self.pk)
@@ -149,7 +170,7 @@ class ServiceAccount(models.Model):
         Raises: IncompleteLimitsError if the count or period is missing without `unlimited`.
         The database and admin refuse that state; if it exists anyway, callers must deny.
         """
-        if self.unlimited:
+        if self.is_unlimited:
             return None
         if self.rate_limit_count is None or self.rate_limit_period is None:
             raise IncompleteLimitsError(self.pk)
