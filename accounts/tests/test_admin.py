@@ -341,10 +341,10 @@ class ServiceAccountAddFormTests(TestCase):
             ("max_in_flight_blank", False, "", "5", RateLimitPeriod.HOUR, False),
             ("count_blank", False, "10", "", RateLimitPeriod.DAY, False),
             ("period_blank", False, "10", "100", "", False),
-            ("zero_in_flight", False, "0", "100", RateLimitPeriod.DAY, False),
+            ("zero_in_flight_blocks_all", False, "0", "100", RateLimitPeriod.DAY, True),
             ("negative_in_flight", False, "-1", "100", RateLimitPeriod.DAY, False),
             ("unknown_period", False, "10", "100", "week", False),
-            ("zero_count", False, "10", "0", RateLimitPeriod.DAY, False),
+            ("zero_count_blocks_all", False, "10", "0", RateLimitPeriod.DAY, True),
             ("negative_count", False, "10", "-1", RateLimitPeriod.DAY, False),
         ]
     )

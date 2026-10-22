@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import authenticate, get_user_model
-from django.db import IntegrityError
+from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 from knox.models import AuthToken
 from parameterized import parameterized
@@ -80,12 +80,13 @@ class ServiceAccountServiceTests(TestCase):
         self.assertFalse(User.objects.exists())
 
     def test_create_refuses_blank_limits_without_unlimited(self) -> None:
-        with self.assertRaises(IntegrityError):
+        with self.assertRaises(ValidationError):
             ServiceAccountService().create(
                 self.organization, "wordpress", "first", max_in_flight=None
             )
 
         self.assertFalse(ServiceAccount.objects.filter(name="wordpress").exists())
+        self.assertFalse(User.objects.exists())
 
     def test_create_creates_user_with_unusable_password(self) -> None:
         service_account, _ = ServiceAccountService().create(

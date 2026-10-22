@@ -1,5 +1,6 @@
+from typing import Any
+
 from django.conf import settings
-from django.core.validators import MinValueValidator
 from django.db import models
 
 TOKEN_NAME_MAX_LENGTH = 50
@@ -64,16 +65,17 @@ class ServiceAccount(models.Model):
         null=True,
         blank=True,
         default=default_max_in_flight,
-        validators=[MinValueValidator(1)],
-        help_text="Most documents this account can have waiting or being worked on at once.",
+        help_text=(
+            "Most documents this account can have waiting or being worked on at once. "
+            "0 blocks all submissions."
+        ),
     )
     rate_limit_count = models.PositiveIntegerField(
         "Submission limit per time period",
         null=True,
         blank=True,
         default=default_rate_limit_count,
-        validators=[MinValueValidator(1)],
-        help_text="Most submissions allowed in each time period.",
+        help_text="Most submissions allowed in each time period. 0 blocks all submissions.",
     )
     # NULL (not "") is the "not set" state the limits_set_unless_unlimited constraint checks
     rate_limit_period = models.CharField(  # noqa: DJ001
@@ -105,6 +107,25 @@ class ServiceAccount(models.Model):
 
     def __str__(self) -> str:
         return f"{self.organization}: {self.name}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        """Custom .save() method that includes .validate_limits()
+
+        Raises: ValidationError, so an account with half-filled limits can never be saved.
+        """
+        self.validate_limits()
+        super().save(*args, **kwargs)
+
+    def validate_limits(self) -> None:
+        """Checks the limit fields the same way the admin form does.
+
+        Raises: ValidationError if a limit is missing without `unlimited`, is negative, or the
+        period is not one of RateLimitPeriod. The database constraint also refuses a missing
+        value, but only as a last resort, with a less helpful error.
+        """
+        other_fields = {field.name for field in self._meta.fields} - set(LIMIT_FIELDS)
+        self.clean_fields(exclude=other_fields)
+        self.validate_constraints(exclude=other_fields)
 
     @property
     def in_flight_cap(self) -> int | None:
