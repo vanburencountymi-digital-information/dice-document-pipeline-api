@@ -43,3 +43,10 @@ media/
 # OS junk
 .DS_Store
 Thumbs.db
+
+# Terraform — local state, plugins and per-person settings
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+backend.hcl
