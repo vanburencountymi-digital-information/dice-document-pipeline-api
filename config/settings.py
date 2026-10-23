@@ -14,9 +14,8 @@ from datetime import timedelta
 from pathlib import Path
 
 import environ
-import sentry_sdk
-from sentry_sdk.integrations.django import DjangoIntegration
 
+from common.error_logging_client import ErrorLoggingClient
 from common.throttle_scopes import ThrottleScope
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -62,12 +61,10 @@ PIPELINE_VERSION = env.str("PIPELINE_VERSION", default="0.0.0")
 # ADR 0017 — error monitoring. An empty SENTRY_DSN (the local/test default) makes the SDK
 # a no-op, so this is safe to leave wired up unconditionally rather than gating it behind
 # an extra "is monitoring enabled" flag.
-sentry_sdk.init(
+ErrorLoggingClient().configure(
     dsn=env.str("SENTRY_DSN", default=""),
-    integrations=[DjangoIntegration()],
     environment=env.str("SENTRY_ENVIRONMENT", default="development"),
     release=PIPELINE_VERSION,
-    send_default_pii=False,
 )
 
 
@@ -348,10 +345,10 @@ RUN_ALT_TEXT = env.bool("RUN_ALT_TEXT", default=False)
 RUN_SCORING = env.bool("RUN_SCORING", default=False)
 RUN_POSTCHECK = env.bool("RUN_POSTCHECK", default=False)
 
-# ADR 0004's OpenDataLoader hybrid AI backend — docker-compose.yml overrides this to the
-# `opendataloader-hybrid` service's own DNS name; this default only matters if that
-# override is ever missing.
-OPENDATALOADER_HYBRID_URL = env.str("OPENDATALOADER_HYBRID_URL", default="http://localhost:5002")
+# ADR 0004's OpenDataLoader hybrid AI backend — docker-compose.yml sets this to the
+# `opendataloader-hybrid` service's own DNS name. No default, so a deployment that forgets it
+# is reported at startup (common/startup_warnings.py) instead of quietly aiming at localhost.
+OPENDATALOADER_HYBRID_URL = env.str("OPENDATALOADER_HYBRID_URL", default="")
 
 # ADR 0005's alt-text engine — Claude Vision. Empty default (rather than a required env
 # var) so Django can still start/test without a key; ClaudeVisionClient only fails on an
