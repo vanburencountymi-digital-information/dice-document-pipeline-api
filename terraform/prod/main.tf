@@ -32,6 +32,7 @@ locals {
       S3_ENDPOINT_URL      = var.s3_endpoint_url
       S3_ADDRESSING_STYLE  = "path"
       SENTRY_ENVIRONMENT   = "production"
+      TRUSTED_PROXY_HOPS   = "1" # Cloud Run adds one X-Forwarded-For entry (ADR 0031)
       ALLOWED_HOSTS        = local.allowed_hosts
       CSRF_TRUSTED_ORIGINS = "https://${var.public_hostname}"
       PUBLIC_BASE_URL      = "https://${var.public_hostname}"

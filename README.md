@@ -12,6 +12,8 @@ Docker only — the current implementation depends on Postgres, Java/veraPDF, an
 cp .env.example .env   # then set SECRET_KEY (see comment in the file); DATABASE_URL is prefilled
 ```
 
+For local development, set `REQUIRE_HTTPS=False` to `.env`.
+
 Other make commands include:
 
 ```bash
@@ -212,7 +214,9 @@ Settings a deploy must set (app **and** worker):
 | `OPENDATALOADER_HYBRID_URL` | Address of the OCR service. Must be private — reachable by the worker, not the internet. |
 | `ANTHROPIC_API_KEY` | Only if `RUN_ALT_TEXT=True`. |
 | `WEBHOOK_ALLOW_PRIVATE_URLS` | Optional, local use only. Webhooks (`callback_url`) normally only go to public `https://` addresses, so nobody can make the server call internal services. Set `True` to test against a receiver on your own machine. Never in staging or production. |
-| `CSRF_TRUSTED_ORIGINS` | Optional — only if the admin is reached through a different domain than the app itself. |
+| `REQUIRE_HTTPS` | Leave unset (on). Redirects http to https and makes cookies https-only; only local development sets it to `False`. |
+| `TRUSTED_PROXY_HOPS` | Set to `1` on Cloud Run. Leave unset (`0`) for local development. If a deployment forgets it, every caller shares one throttle counter ([ADR 0031](docs/adrs/0031-api-throttling.md)). |
+| `CSRF_TRUSTED_ORIGINS` | Optional. Set it to the full address (e.g. `https://pipeline.example.org`) if you put a custom domain in front of the app. Without it, admin login fails with a 403 "CSRF verification failed" error. |
 
 `DEBUG` defaults to `False`; leave it that way outside local development.
 

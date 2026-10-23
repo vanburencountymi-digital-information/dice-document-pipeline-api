@@ -27,5 +27,14 @@ jobs:
       - name: Start database
         run: docker compose up -d --wait db
 
+      # The .env key above is too short for Django's key check (needs 50+ characters), so this
+      # step passes a realistic throwaway one; a warning here fails the build (ADR 0032).
+      - name: Check deployment settings
+        run: >
+          docker compose run --rm --no-deps
+          -e DEBUG=False
+          -e SECRET_KEY=ci-deploy-check-0123456789-abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKL
+          app python manage.py check --deploy --fail-level WARNING
+
       - name: Run Django test suite
         run: docker compose run --rm --no-deps app python manage.py test --settings=config.test_settings

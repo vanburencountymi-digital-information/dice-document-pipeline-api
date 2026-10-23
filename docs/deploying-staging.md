@@ -145,6 +145,7 @@ You'll enter these in steps 8–10, on each form's **Variables & Secrets** tab.
 | `S3_ENDPOINT_URL` | The R2 S3 endpoint (step 5) |
 | `S3_ADDRESSING_STYLE` | `path` (R2 needs this) |
 | `SENTRY_ENVIRONMENT` | `staging` |
+| `TRUSTED_PROXY_HOPS` | `1` (Cloud Run adds one `X-Forwarded-For` entry; leaving it at 0 makes every caller share one throttle counter) |
 | `RUN_PRECHECK`, `RUN_OCR`, `RUN_FONT_REPAIR`, `RUN_FINALIZE_METADATA`, `RUN_LINK_TAG`, `RUN_ALT_TEXT`, `RUN_SCORING`, `RUN_POSTCHECK` | `True` for each step you want on |
 
 Also on every form: service account **`dice-staging-runtime`**.

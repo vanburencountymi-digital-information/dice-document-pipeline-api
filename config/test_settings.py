@@ -21,3 +21,6 @@ STORAGES = {
 
 # Webhook URL checks look up DNS; tests that need them turn them on with `override_settings`.
 WEBHOOK_ALLOW_PRIVATE_URLS = True
+
+# The test client speaks plain http, which the https redirect would turn into a 301.
+SECURE_SSL_REDIRECT = False

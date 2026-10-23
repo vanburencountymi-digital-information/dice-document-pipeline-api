@@ -115,17 +115,3 @@ def build_counter_key(scope: ThrottleScope, request: Request) -> str:
     """Takes: a throttle scope and the request. Returns: the key that scope counts this caller
     under (e.g. `client_ip:9.9.9.9`), short enough for `ThrottleCounter.key`."""
     return f"{scope}:{client_ip(request)}"
-
-
-def warn_if_proxy_hops_unset() -> None:
-    """Logs a warning at startup if the app is probably behind a proxy but is told it isn't.
-
-    With `TRUSTED_PROXY_HOPS` at 0 every caller behind the platform's proxy looks like the
-    same address, so they share one failed-login counter and one backstop count (ADR 0031).
-    Local development (`DEBUG` on) doesn't need it.
-    """
-    if not settings.DEBUG and settings.TRUSTED_PROXY_HOPS == 0:
-        LOGGER.warning(
-            "TRUSTED_PROXY_HOPS is 0, so callers behind a proxy share one IP address for "
-            "throttling. Set it to 1 on Cloud Run (see ADR 0031)."
-        )
