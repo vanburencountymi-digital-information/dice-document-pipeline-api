@@ -213,6 +213,8 @@ Settings a deploy must set (app **and** worker):
 | `RUN_PRECHECK`, `RUN_OCR`, … `RUN_POSTCHECK` | Which pipeline steps are switched on. |
 | `OPENDATALOADER_HYBRID_URL` | Address of the OCR service. Must be private — reachable by the worker, not the internet. |
 | `ANTHROPIC_API_KEY` | Only if `RUN_ALT_TEXT=True`. |
+
+If `S3_BUCKET_NAME` is missing, or a step is on without the setting it needs, the app still starts but sends a warning to Sentry ([ADR 0035](docs/adrs/0035-startup-config-warnings.md)).
 | `WEBHOOK_ALLOW_PRIVATE_URLS` | Optional, local use only. Webhooks (`callback_url`) normally only go to public `https://` addresses, so nobody can make the server call internal services. Set `True` to test against a receiver on your own machine. Never in staging or production. |
 | `REQUIRE_HTTPS` | Leave unset (on). Redirects http to https and makes cookies https-only; only local development sets it to `False`. |
 | `TRUSTED_PROXY_HOPS` | Set to `1` on Cloud Run. Leave unset (`0`) for local development. If a deployment forgets it, every caller shares one throttle counter ([ADR 0031](docs/adrs/0031-api-throttling.md)). |
