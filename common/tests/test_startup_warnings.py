@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase, override_settings
 from parameterized import parameterized
 
-from common.startup_warnings import config_warnings, report_config_warnings
+from common.startup_warnings import (
+    config_warnings,
+    report_config_warnings,
+    report_worker_config_warnings,
+    worker_config_warnings,
+)
 
 HEALTHY = {
     "S3_BUCKET_NAME": "bucket",
@@ -25,7 +30,6 @@ class ConfigWarningsTests(SimpleTestCase):
         [
             ("no_bucket", {"S3_BUCKET_NAME": ""}, "S3_BUCKET_NAME"),
             ("no_api_key", {"ANTHROPIC_API_KEY": ""}, "ANTHROPIC_API_KEY"),
-            ("no_ocr_url", {"OPENDATALOADER_HYBRID_URL": ""}, "OPENDATALOADER_HYBRID_URL"),
             ("no_origin_secret", {"ORIGIN_LOCK_SECRET": ""}, "ORIGIN_LOCK_SECRET"),
         ]
     )
@@ -39,13 +43,42 @@ class ConfigWarningsTests(SimpleTestCase):
     @parameterized.expand(
         [
             ("alt_text_off", {"RUN_ALT_TEXT": False, "ANTHROPIC_API_KEY": ""}),
-            ("ocr_off", {"RUN_OCR": False, "OPENDATALOADER_HYBRID_URL": ""}),
             ("local_dev", {"REQUIRE_HTTPS": False, "ORIGIN_LOCK_SECRET": ""}),
         ]
     )
     def test_no_warning_for_a_missing_setting_whose_step_is_off(self, _name, overrides) -> None:
         with override_settings(**{**HEALTHY, **overrides}):
             self.assertEqual(config_warnings(), [])
+
+    @override_settings(**{**HEALTHY, "RUN_OCR": True, "OPENDATALOADER_HYBRID_URL": ""})
+    def test_web_warnings_ignore_the_ocr_url(self) -> None:
+        self.assertEqual(config_warnings(), [])
+
+
+class WorkerConfigWarningsTests(SimpleTestCase):
+    @parameterized.expand(
+        [
+            ("ocr_url_set", {"RUN_OCR": True, "OPENDATALOADER_HYBRID_URL": "http://ocr:5002"}, 0),
+            ("ocr_off", {"RUN_OCR": False, "OPENDATALOADER_HYBRID_URL": ""}, 0),
+            ("ocr_on_no_url", {"RUN_OCR": True, "OPENDATALOADER_HYBRID_URL": ""}, 1),
+        ]
+    )
+    def test_warns_only_when_ocr_is_on_without_a_url(self, _name, overrides, expected) -> None:
+        with override_settings(**overrides):
+            warnings = worker_config_warnings()
+
+        self.assertEqual(len(warnings), expected)
+        for warning in warnings:
+            self.assertIn("OPENDATALOADER_HYBRID_URL", warning)
+
+    @override_settings(RUN_OCR=True, OPENDATALOADER_HYBRID_URL="")
+    @patch("common.startup_warnings.ErrorLoggingClient", autospec=True, spec_set=True)
+    def test_reports_the_warning(self, mock_client_cls: MagicMock) -> None:
+        report_worker_config_warnings()
+
+        mock_report = mock_client_cls.return_value.report_warning
+        mock_report.assert_called_once()
+        self.assertIn("OPENDATALOADER_HYBRID_URL", mock_report.call_args.args[0])
 
 
 class ReportConfigWarningsTests(SimpleTestCase):

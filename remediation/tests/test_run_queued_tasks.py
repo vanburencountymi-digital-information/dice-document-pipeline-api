@@ -11,13 +11,14 @@ COMMAND_MODULE = "remediation.management.commands.run_queued_tasks"
 
 
 def patch_boundaries(test):
-    """Mocks the command's three collaborators; the test receives them as
-    (..., mock_queue_cls, mock_client_cls, mock_call_command).
+    """Mocks the command's four collaborators; the test receives them as
+    (..., mock_queue_cls, mock_client_cls, mock_call_command, mock_report_warnings).
     """
     # Innermost patch = first mock argument, so apply them in argument order.
     test = patch(f"{COMMAND_MODULE}.TaskQueueService", autospec=True)(test)
     test = patch(f"{COMMAND_MODULE}.OpenDataLoaderHybridClient", autospec=True)(test)
-    return patch(f"{COMMAND_MODULE}.call_command", autospec=True)(test)
+    test = patch(f"{COMMAND_MODULE}.call_command", autospec=True)(test)
+    return patch(f"{COMMAND_MODULE}.report_worker_config_warnings", autospec=True)(test)
 
 
 @override_settings(
@@ -32,7 +33,7 @@ class RunQueuedTasksCommandTests(SimpleTestCase):
 
     @patch_boundaries
     def test_empty_queue_exits_without_waiting_for_ocr_or_running_worker(
-        self, mock_queue_cls, mock_client_cls, mock_call_command
+        self, mock_queue_cls, mock_client_cls, mock_call_command, mock_report_warnings
     ) -> None:
         mock_queue_cls.return_value.has_ready_tasks.return_value = False
 
@@ -40,6 +41,7 @@ class RunQueuedTasksCommandTests(SimpleTestCase):
 
         mock_client_cls.assert_not_called()
         mock_call_command.assert_not_called()
+        mock_report_warnings.assert_not_called()
 
     @parameterized.expand(
         [
@@ -49,7 +51,14 @@ class RunQueuedTasksCommandTests(SimpleTestCase):
     )
     @patch_boundaries
     def test_queued_work_runs_batch_worker(
-        self, _name, run_ocr, expect_wait, mock_queue_cls, mock_client_cls, mock_call_command
+        self,
+        _name,
+        run_ocr,
+        expect_wait,
+        mock_queue_cls,
+        mock_client_cls,
+        mock_call_command,
+        mock_report_warnings,
     ) -> None:
         mock_queue_cls.return_value.has_ready_tasks.return_value = True
 
@@ -63,6 +72,7 @@ class RunQueuedTasksCommandTests(SimpleTestCase):
             )
         else:
             mock_client_cls.assert_not_called()
+        mock_report_warnings.assert_called_once_with()
         mock_call_command.assert_called_once_with(
             "db_worker", batch=True, startup_delay=False, reload=False
         )
@@ -70,7 +80,7 @@ class RunQueuedTasksCommandTests(SimpleTestCase):
     @override_settings(RUN_OCR=True)
     @patch_boundaries
     def test_ocr_never_ready_fails_the_run_without_running_worker(
-        self, mock_queue_cls, mock_client_cls, mock_call_command
+        self, mock_queue_cls, mock_client_cls, mock_call_command, mock_report_warnings
     ) -> None:
         mock_queue_cls.return_value.has_ready_tasks.return_value = True
         mock_client_cls.return_value.wait_until_ready.side_effect = HybridServerNotReady("down")
