@@ -5,7 +5,7 @@ from parameterized import parameterized
 from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
 
-from api.client_ip import UNKNOWN_IP, client_ip, warn_if_proxy_hops_unset
+from api.client_ip import UNKNOWN_IP, client_ip
 
 CLOUDFLARE_EDGE = "104.16.0.5"
 CLOUDFLARE_EDGE_V6 = "2606:4700::1"
@@ -136,20 +136,3 @@ class ClientIPDefaultTests(SimpleTestCase):
         )
 
         self.assertEqual(client_ip(request), "1.2.3.4")
-
-
-class ProxyHopsWarningTests(SimpleTestCase):
-    @override_settings(DEBUG=False, TRUSTED_PROXY_HOPS=0)
-    def test_warns_when_not_debugging_and_hops_is_zero(self) -> None:
-        with self.assertLogs("api.client_ip", level="WARNING"):
-            warn_if_proxy_hops_unset()
-
-    @override_settings(DEBUG=False, TRUSTED_PROXY_HOPS=1)
-    def test_quiet_when_hops_is_set(self) -> None:
-        with self.assertNoLogs("api.client_ip", level="WARNING"):
-            warn_if_proxy_hops_unset()
-
-    @override_settings(DEBUG=True, TRUSTED_PROXY_HOPS=0)
-    def test_quiet_in_local_development(self) -> None:
-        with self.assertNoLogs("api.client_ip", level="WARNING"):
-            warn_if_proxy_hops_unset()

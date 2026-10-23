@@ -35,6 +35,23 @@ SECRET_KEY = env.str("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG", default=False)
 
+# Whether to insist on HTTPS. On by default, so a deployment that sets nothing is secure; local
+# development must set REQUIRE_HTTPS=False in `.env`, or http://localhost won't work. Separate
+# from DEBUG so that error pages and security are decided independently.
+REQUIRE_HTTPS = env.bool("REQUIRE_HTTPS", default=True)
+
+# Everything REQUIRE_HTTPS controls, in one place (ADR 0032).
+# Only send login/CSRF cookies over HTTPS.
+SESSION_COOKIE_SECURE = REQUIRE_HTTPS
+CSRF_COOKIE_SECURE = REQUIRE_HTTPS
+# Send plain-http requests to https. Cloud Run already refuses http, so this matters on hosts
+# that don't (SECURE_PROXY_SSL_HEADER, further down, tells Django which were really https).
+SECURE_SSL_REDIRECT = REQUIRE_HTTPS
+# Tell browsers to use https only, for this many seconds. Starts at an hour so a mistake is
+# short-lived; browsers can't be told to forget it early. Raise it (a year is 31536000) once
+# the site has run cleanly over https for a while. 0 turns it off.
+SECURE_HSTS_SECONDS = env.int("SECURE_HSTS_SECONDS", default=3600 if REQUIRE_HTTPS else 0)
+
 ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 # The nearest git tag at image build time (ADR 0012) — baked in by the Dockerfile's
@@ -192,18 +209,18 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
-# Running behind a proxy (ADR 0021). Cloud Run handles HTTPS and forwards plain HTTP to the
-# app, with an X-Forwarded-Proto header saying the original request was HTTPS — this tells
-# Django to trust that header, so the admin login's CSRF check sees an HTTPS request.
+# HTTPS and Security
+
+# Cloud Run forwards plain HTTP and says in this header if it was HTTPS (ADR 0021).
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-# Only needed if the admin is reached from a different origin than the app itself (e.g. a
-# custom domain in front of it). Full origins, e.g. https://pipeline.example.org
+# Only for a custom domain in front of the app, e.g. https://pipeline.example.org
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
-# Only send login/CSRF cookies over HTTPS. On whenever DEBUG is off (staging, production);
-# off with DEBUG on, so local admin login still works over plain http://localhost.
-SECURE_COOKIES = env.bool("SECURE_COOKIES", default=not DEBUG)
-SESSION_COOKIE_SECURE = SECURE_COOKIES
-CSRF_COOKIE_SECURE = SECURE_COOKIES
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+# `check --deploy` also asks for HSTS on all subdomains and for browser-preload-list
+# eligibility. Both are effectively permanent and reach beyond this app, so they're left off
+# until we choose to commit to them (ADR 0032).
+SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W021"]
 
 # Where requests come from (ADR 0031). Throttles key on the caller's real IP address.
 # A load balancer or proxy run by the hosting platform adds the address that connected to it as
@@ -213,34 +230,32 @@ CSRF_COOKIE_SECURE = SECURE_COOKIES
 TRUSTED_PROXY_HOPS = env.int("TRUSTED_PROXY_HOPS", default=0)
 # Cloudflare's published address ranges (https://www.cloudflare.com/ips/). The
 # `CF-Connecting-IP` header is believed only when the connection came from one of these.
-# Rarely changes; last compared against that page on 2026-10-22.
-CLOUDFLARE_IP_RANGES = env.list(
-    "CLOUDFLARE_IP_RANGES",
-    default=[
-        "173.245.48.0/20",
-        "103.21.244.0/22",
-        "103.22.200.0/22",
-        "103.31.4.0/22",
-        "141.101.64.0/18",
-        "108.162.192.0/18",
-        "190.93.240.0/20",
-        "188.114.96.0/20",
-        "197.234.240.0/22",
-        "198.41.128.0/17",
-        "162.158.0.0/15",
-        "104.16.0.0/13",
-        "104.24.0.0/14",
-        "172.64.0.0/13",
-        "131.0.72.0/22",
-        "2400:cb00::/32",
-        "2606:4700::/32",
-        "2803:f800::/32",
-        "2405:b500::/32",
-        "2405:8100::/32",
-        "2a06:98c0::/29",
-        "2c0f:f248::/32",
-    ],
-)
+# Rarely changes, so it lives in code where a change is reviewed; last compared against that
+# page on 2026-10-22 (ADR 0034).
+CLOUDFLARE_IP_RANGES = [
+    "173.245.48.0/20",
+    "103.21.244.0/22",
+    "103.22.200.0/22",
+    "103.31.4.0/22",
+    "141.101.64.0/18",
+    "108.162.192.0/18",
+    "190.93.240.0/20",
+    "188.114.96.0/20",
+    "197.234.240.0/22",
+    "198.41.128.0/17",
+    "162.158.0.0/15",
+    "104.16.0.0/13",
+    "104.24.0.0/14",
+    "172.64.0.0/13",
+    "131.0.72.0/22",
+    "2400:cb00::/32",
+    "2606:4700::/32",
+    "2803:f800::/32",
+    "2405:b500::/32",
+    "2405:8100::/32",
+    "2a06:98c0::/29",
+    "2c0f:f248::/32",
+]
 
 # REST_FRAMEWORK
 
