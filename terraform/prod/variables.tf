@@ -84,7 +84,7 @@ variable "run_steps" {
 
 variable "app_min_instances" {
   type    = number
-  default = 1
+  default = 0
 }
 
 variable "app_max_instances" {
@@ -109,10 +109,11 @@ variable "worker_schedule_paused" {
   default     = false
 }
 
-# Starting values copied from staging. The timeout and CPU are due to change (DIC-2480).
+# Timeout raised to 3 hours so long documents aren't killed (DIC-2480). The CPU and memory
+# values are still staging's, until a long document has been timed with more.
 variable "worker_timeout_seconds" {
   type    = number
-  default = 3600
+  default = 10800
 }
 
 variable "worker_cpu" {
@@ -126,8 +127,9 @@ variable "worker_memory" {
 }
 
 variable "ocr_cpu" {
-  type    = string
-  default = "3"
+  description = "Cloud Run only accepts 1, 2, 4, 6 or 8 here."
+  type        = string
+  default     = "4"
 }
 
 variable "ocr_memory" {

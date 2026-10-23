@@ -1,0 +1,6 @@
+# Lets the prod project make Cloud Run public ("allUsers"), which our org policy blocks by
+# default. Applies to this project only. See README.md, "Allow public access".
+name: projects/ada-document-pipeline-prod/policies/iam.allowedPolicyMemberDomains
+spec:
+  rules:
+  - allowAll: true
