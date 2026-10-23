@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.2.0 (2026-10-23)
+
+### Features
+
+- Warn at startup about misconfigured settings (DIC-2321)
+  ([#33](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/33),
+  [`b7d7df0`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/b7d7df0e62813e3cddc3d1b141e7255a496a583c))
+
+
 ## v5.1.0 (2026-10-23)
 
 ### Features
