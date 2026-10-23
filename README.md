@@ -189,39 +189,9 @@ Finished task records pile up in that table over time. Clear out old ones with `
 
 ## Deploying
 
-Staging runs on Google Cloud Run — setup is in [docs/deploying-staging.md](docs/deploying-staging.md). After setup, every merge to `main` deploys to staging automatically ([ADR 0022](docs/adrs/0022-automated-staging-deploys.md)).
-
-Deploy via Docker. Each deploy runs the image two ways:
-
-- **App** — the image's default command (gunicorn). Serves the API and the admin, including the admin's styling (no separate file server needed).
-- **Worker** — same image, run one of two ways; without it, uploads are accepted but never processed:
-  - **Scheduled** (staging on Cloud Run): command `python manage.py run_queued_tasks`, started every 20 minutes. It exits straight away if nothing is queued, so it costs almost nothing when idle ([ADR 0023](docs/adrs/0023-scheduled-batch-worker.md)).
-  - **Always on** (local docker-compose, or any host where that's simpler): command `python manage.py db_worker`, restarted automatically if it crashes.
-
-On each deploy, run `python manage.py migrate` once, before the new version starts taking traffic. Also run `python manage.py prune_db_task_results` on a schedule (e.g. daily) to clear out old task records.
-
-Settings a deploy must set (app **and** worker):
-
-| Setting | What it's for |
-|---|---|
-| `SECRET_KEY` | Long random string; keep it secret. See `.env.example` for how to generate one. |
-| `ALLOWED_HOSTS` | The domain(s) the app is served from, comma-separated. |
-| `PUBLIC_BASE_URL` | The app's public address, e.g. `https://pipeline.example.org` — used in webhook download links. |
-| `DATABASE_URL` | Postgres connection string. |
-| `S3_BUCKET_NAME`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (+ other `S3_*` as needed) | Where uploaded and finished PDFs are stored ([ADR 0018](docs/adrs/0018-s3-compatible-storage-backend.md)). |
-| `SENTRY_DSN`, `SENTRY_ENVIRONMENT` | Error reporting, e.g. environment `staging` or `production`. |
-| `RUN_PRECHECK`, `RUN_OCR`, … `RUN_POSTCHECK` | Which pipeline steps are switched on. |
-| `OPENDATALOADER_HYBRID_URL` | Address of the OCR service. Must be private — reachable by the worker, not the internet. |
-| `ANTHROPIC_API_KEY` | Only if `RUN_ALT_TEXT=True`. |
-
-If `S3_BUCKET_NAME` is missing, or a step is on without the setting it needs, the app still starts but sends a warning to Sentry ([ADR 0035](docs/adrs/0035-startup-config-warnings.md)).
-| `WEBHOOK_ALLOW_PRIVATE_URLS` | Optional, local use only. Webhooks (`callback_url`) normally only go to public `https://` addresses, so nobody can make the server call internal services. Set `True` to test against a receiver on your own machine. Never in staging or production. |
-| `REQUIRE_HTTPS` | Leave unset (on). Redirects http to https and makes cookies https-only; only local development sets it to `False`. |
-| `TRUSTED_PROXY_HOPS` | Set to `1` on Cloud Run. Leave unset (`0`) for local development. If a deployment forgets it, every caller shares one throttle counter ([ADR 0031](docs/adrs/0031-api-throttling.md)). |
-| `ORIGIN_LOCK_SECRET` | Optional. If Cloudflare is in front, set this to a long random string and have Cloudflare add it as an `X-Origin-Secret` header. Requests without it get a 403, so the raw `run.app` address can't be used to skip Cloudflare ([ADR 0036](docs/adrs/0036-origin-lock.md)). |
-| `CSRF_TRUSTED_ORIGINS` | Optional. Set it to the full address (e.g. `https://pipeline.example.org`) if you put a custom domain in front of the app. Without it, admin login fails with a 403 "CSRF verification failed" error. |
-
-`DEBUG` defaults to `False`; leave it that way outside local development.
+- **Staging** updates itself on every merge to `main`: [docs/deploying-staging.md](docs/deploying-staging.md) ([ADR 0022](docs/adrs/0022-automated-staging-deploys.md)).
+- **Production** is set up once, then you promote a version that is already running on staging: [docs/deploying-prod.md](docs/deploying-prod.md).
+- **What each deploy setting means** (`SECRET_KEY`, `ALLOWED_HOSTS`, `S3_*` and so on): [Settings reference](docs/deploying-prod.md#settings-reference).
 
 ## Dependency Upgrades
 
