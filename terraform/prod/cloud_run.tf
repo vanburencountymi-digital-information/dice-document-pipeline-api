@@ -1,6 +1,6 @@
 # Everything here waits for var.deploy_cloud_run: Cloud Run refuses to start without its
 # images and secret values. After the first apply, Cloud Build changes the images on every
-# release, so Terraform ignores them (otherwise it would roll back each deploy).
+# release, so OpenTofu ignores them (otherwise it would roll back each deploy).
 
 locals {
   secret_env = local.secrets

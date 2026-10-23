@@ -13,7 +13,7 @@ locals {
   ]
 
   # Empty secrets are made here. Their values are added by hand (README.md) so they never
-  # enter Terraform or its state. Maps the app's variable name to the secret's name.
+  # enter OpenTofu or its state. Maps the app's variable name to the secret's name.
   secrets = {
     SECRET_KEY         = "dice-secret-key"
     DATABASE_URL       = "dice-database-url"

@@ -1,4 +1,5 @@
 terraform {
+  # We run this with OpenTofu (`tofu`); the `terraform` block name is what it reads too.
   # 1.10+ for `use_lockfile` (state locking on R2, which has no DynamoDB).
   required_version = ">= 1.10"
 
@@ -10,7 +11,7 @@ terraform {
   }
 
   # Where the state lives: a Cloudflare R2 bucket. The details (bucket, endpoint) are not
-  # written here; pass them with `terraform init -backend-config=backend.hcl`
+  # written here; pass them with `tofu init -backend-config=backend.hcl`
   # (see backend.hcl.example).
   backend "s3" {}
 }
