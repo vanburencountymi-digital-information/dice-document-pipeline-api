@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase, override_settings
+from django.urls import reverse
 from parameterized import parameterized
 
 from common.middleware import HEADER_META_KEY, OriginLockMiddleware
@@ -52,6 +53,26 @@ class OriginLockMiddlewareTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.get_response.assert_called_once()
+
+    @parameterized.expand([("get", "get"), ("head", "head")])
+    @override_settings(ORIGIN_LOCK_SECRET="s3cret")
+    def test_lets_the_ping_url_through_without_the_secret(self, _name, method) -> None:
+        response = self.middleware(getattr(RequestFactory(), method)("/ping/"))
+
+        self.assertEqual(response.status_code, 200)
+        self.get_response.assert_called_once()
+
+    @parameterized.expand([("post", "post"), ("put", "put"), ("delete", "delete")])
+    @override_settings(ORIGIN_LOCK_SECRET="s3cret")
+    def test_still_locks_other_methods_on_the_ping_url(self, _name, method) -> None:
+        response = self.middleware(getattr(RequestFactory(), method)("/ping/"))
+
+        self.assertEqual(response.status_code, 403)
+        self.get_response.assert_not_called()
+
+    def test_the_ping_url_name_resolves(self) -> None:
+        # The lock looks the URL up by name; a rename would break every request while it is on.
+        self.assertEqual(reverse("ping"), "/ping/")
 
     @override_settings(ORIGIN_LOCK_SECRET="")
     def test_does_nothing_when_no_secret_is_configured(self) -> None:
