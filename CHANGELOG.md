@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.1.0 (2026-10-23)
+
+### Features
+
+- Add HTTPS security settings and check --deploy in CI (DIC-2320)
+  ([#32](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/32),
+  [`7537000`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/75370002b700389eadf79ebd96afdff05e41eb19))
+
+
 ## v5.0.0 (2026-10-22)
 
 ### Bug Fixes
