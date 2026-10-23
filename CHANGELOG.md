@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.5.1 (2026-10-23)
+
+### Bug Fixes
+
+- Keep run_ocr warning from running in services that don't use the OCR container
+  ([#38](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/38),
+  [`b5a4bb0`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/b5a4bb0ba43d87f481191990e8e2c259a53887bb))
+
+
 ## v5.5.0 (2026-10-23)
 
 ### Documentation
