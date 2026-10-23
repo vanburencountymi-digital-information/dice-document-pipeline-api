@@ -2,6 +2,19 @@
 
 <!-- version list -->
 
+## v5.3.0 (2026-10-23)
+
+### Features
+
+- Add origin lock so run.app URL can't bypass Cloudflare (DIC-2324)
+  ([#34](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/34),
+  [`95f1b88`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/95f1b88f4dd140e6d82356cdff0ea2d087cc6b1c))
+
+- Log rejected origin-lock requests and warn when the secret is unset (DIC-2324)
+  ([#34](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/34),
+  [`95f1b88`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/95f1b88f4dd140e6d82356cdff0ea2d087cc6b1c))
+
+
 ## v5.2.0 (2026-10-23)
 
 ### Features
