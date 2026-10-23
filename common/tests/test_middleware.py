@@ -30,6 +30,23 @@ class OriginLockMiddlewareTests(SimpleTestCase):
         self.get_response.assert_not_called()
 
     @override_settings(ORIGIN_LOCK_SECRET="s3cret")
+    def test_logs_rejections_without_the_header_value(self) -> None:
+        with self.assertLogs("common.middleware", level="WARNING") as logs:
+            self._call(**{HEADER_META_KEY: "nope"})
+
+        self.assertIn("GET '/api/'", logs.output[0])
+        self.assertNotIn("nope", logs.output[0])
+
+    @override_settings(ORIGIN_LOCK_SECRET="s3cret")
+    def test_logged_path_cannot_forge_log_lines(self) -> None:
+        request = RequestFactory().get("/%0aERROR%20fake")
+
+        with self.assertLogs("common.middleware", level="WARNING") as logs:
+            self.middleware(request)
+
+        self.assertEqual(len(logs.output[0].splitlines()), 1)
+
+    @override_settings(ORIGIN_LOCK_SECRET="s3cret")
     def test_passes_requests_with_the_secret(self) -> None:
         response = self._call(**{HEADER_META_KEY: "s3cret"})
 
