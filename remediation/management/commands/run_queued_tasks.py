@@ -21,6 +21,7 @@ from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 
+from common.startup_warnings import report_worker_config_warnings
 from remediation.hybrid_client import HybridServerNotReady, OpenDataLoaderHybridClient
 from remediation.services import TaskQueueService
 
@@ -32,6 +33,8 @@ class Command(BaseCommand):
         if not TaskQueueService().has_ready_tasks():
             self.stdout.write("Nothing queued.")
             return
+
+        report_worker_config_warnings()
 
         if settings.RUN_OCR and settings.OPENDATALOADER_HYBRID_URL:
             self.stdout.write("Work queued; waiting for the OCR server to be ready...")

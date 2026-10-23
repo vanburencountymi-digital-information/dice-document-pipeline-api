@@ -149,4 +149,4 @@ The app **and** the worker need these:
 
 Leave `DEBUG` alone (off by default) outside local development.
 
-If a value is missing, the app still starts but sends a warning to Sentry ([ADR 0035](adrs/0035-startup-config-warnings.md)). That covers no `S3_BUCKET_NAME`, alt text on without `ANTHROPIC_API_KEY`, OCR on without `OPENDATALOADER_HYBRID_URL`, and HTTPS on without `ORIGIN_LOCK_SECRET`. Sentry only shows them if `SENTRY_DSN` is set.
+If a value is missing, the app still starts but sends a warning to Sentry ([ADR 0035](adrs/0035-startup-config-warnings.md)). That covers no `S3_BUCKET_NAME`, alt text on without `ANTHROPIC_API_KEY`, and HTTPS on without `ORIGIN_LOCK_SECRET`. The worker also warns if OCR is on without `OPENDATALOADER_HYBRID_URL` ([ADR 0038](adrs/0038-worker-only-ocr-url-warning.md)). Sentry only shows them if `SENTRY_DSN` is set.
