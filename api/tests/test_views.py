@@ -10,7 +10,9 @@ from rest_framework.views import APIView
 
 from accounts.models import IncompleteLimitsError, ServiceAccount
 from accounts.tests.factories import ServiceAccountFactory
-from api.views import EnforceAccountLimitsMixin, ServiceAccountRequiredMixin
+from api.tests.helpers import with_throttle_rate
+from api.views import EnforceAccountLimitsMixin, PingView, ServiceAccountRequiredMixin
+from common.throttle_scopes import ThrottleScope
 
 
 class _ServiceAccountRequiredMixinTestView(ServiceAccountRequiredMixin, APIView):
@@ -97,3 +99,26 @@ class EnforceAccountLimitsMixinTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
         self.assertNotIn("X-RateLimit-Limit", response)
+
+
+class PingViewTests(TestCase):
+    def setUp(self) -> None:
+        self.view = PingView.as_view()
+
+    def test_answers_pong_without_a_token(self) -> None:
+        response = self.view(APIRequestFactory().get("/ping/"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"pong!")
+
+    def test_ignores_a_bad_token(self) -> None:
+        request = APIRequestFactory().get("/ping/", HTTP_AUTHORIZATION="Token bogus")
+
+        self.assertEqual(self.view(request).status_code, 200)
+
+    @with_throttle_rate(ThrottleScope.CLIENT_IP, "1/minute")
+    def test_is_throttled_per_ip(self) -> None:
+        request = APIRequestFactory().get("/ping/", REMOTE_ADDR="1.1.1.1")
+
+        self.assertEqual(self.view(request).status_code, 200)
+        self.assertEqual(self.view(request).status_code, 429)

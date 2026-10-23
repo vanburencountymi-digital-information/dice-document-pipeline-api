@@ -1,12 +1,12 @@
 from typing import Any
 
 from django.core.files.storage import default_storage
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers, status
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.renderers import JSONRenderer
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -244,3 +244,18 @@ class DocumentDownloadView(EnforceAccountLimitsMixin):
             filename=remediation.original_filename or "document.pdf",
             as_attachment=True,
         )
+
+
+@extend_schema(exclude=True)
+class PingView(APIView):
+    """Answers `pong!` to anyone, for Cloud Run's probes and scripts that wake the app up
+    (ADR 0037). It checks no login and no other service. The default per-IP throttle still
+    applies, since this is a public URL.
+    """
+
+    authentication_classes: list[Any] = []
+    permission_classes = [AllowAny]
+
+    def get(self, request: Request) -> HttpResponse:
+        """Takes: the request. Returns: a plain-text `200 pong!`."""
+        return HttpResponse("pong!", content_type="text/plain")

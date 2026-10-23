@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import ipaddress
-import logging
 from functools import lru_cache
 
 from django.conf import settings
 from rest_framework.request import Request
 
 from common.throttle_scopes import ThrottleScope
-
-LOGGER = logging.getLogger(__name__)
 
 UNKNOWN_IP = "unknown"
 
@@ -98,13 +95,6 @@ def client_ip(request: Request) -> str:
 
     Takes: the request. Returns: the caller's IP address (or IPv6 /64) as text.
     """
-    # TEMPORARY (DIC-2318): to confirm TRUSTED_PROXY_HOPS on staging. Remove after reading it.
-    LOGGER.warning(
-        "TEMP client_ip: X-Forwarded-For=%r REMOTE_ADDR=%r CF-Connecting-IP=%r",
-        request.META.get("HTTP_X_FORWARDED_FOR", "")[:300],
-        request.META.get("REMOTE_ADDR", ""),
-        request.META.get("HTTP_CF_CONNECTING_IP", "")[:100],
-    )
     connecting = _connecting_address(request)
     if _is_cloudflare(connecting):
         return _caller_key(_valid_ip(request.META.get("HTTP_CF_CONNECTING_IP")) or connecting)

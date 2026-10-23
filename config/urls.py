@@ -18,8 +18,11 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from api.views import PingView
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api-auth/", include("rest_framework.urls")),
     path("api/", include("api.urls")),
+    path("ping/", PingView.as_view(), name="ping"),
 ]
