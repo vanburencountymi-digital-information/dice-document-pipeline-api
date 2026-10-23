@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v5.5.0 (2026-10-23)
+
+### Documentation
+
+- Switch prod infrastructure setup to OpenTofu and fix first apply (DIC-2330)
+  ([#36](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/36),
+  [`fd82329`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/fd8232916035a8078f86422c3532aafa31455a76))
+
+### Features
+
+- Add a deploy script to promote staging to prod
+  ([#37](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/37),
+  [`925d37d`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/925d37dec8eb01fe5b090984ab205b5370389903))
+
+
 ## v5.4.0 (2026-10-23)
 
 ### Features
