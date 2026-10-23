@@ -124,7 +124,7 @@ Paste Neon's string exactly as given. Neon passwords are already safe to use in 
 
 ## 7. Settings every piece needs
 
-You'll enter these in steps 8–10, on each form's **Variables & Secrets** tab.
+You'll enter these in steps 8–10, on each form's **Variables & Secrets** tab. What each setting means: [Settings reference](deploying-prod.md#settings-reference).
 
 **Secrets** (**Reference a secret**, version **latest**):
 
