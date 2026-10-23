@@ -15,12 +15,13 @@ locals {
   # Empty secrets are made here. Their values are added by hand (README.md) so they never
   # enter Terraform or its state. Maps the app's variable name to the secret's name.
   secrets = {
-    SECRET_KEY        = "dice-secret-key"
-    DATABASE_URL      = "dice-database-url"
-    S3_ACCESS_KEY     = "dice-s3-access-key"
-    S3_SECRET_KEY     = "dice-s3-secret-key"
-    SENTRY_DSN        = "dice-sentry-dsn"
-    ANTHROPIC_API_KEY = "dice-anthropic-api-key"
+    SECRET_KEY         = "dice-secret-key"
+    DATABASE_URL       = "dice-database-url"
+    S3_ACCESS_KEY      = "dice-s3-access-key"
+    S3_SECRET_KEY      = "dice-s3-secret-key"
+    SENTRY_DSN         = "dice-sentry-dsn"
+    ANTHROPIC_API_KEY  = "dice-anthropic-api-key"
+    ORIGIN_LOCK_SECRET = "dice-origin-lock-secret"
   }
 
   allowed_hosts = join(",", concat([var.public_hostname], var.extra_allowed_hosts))
