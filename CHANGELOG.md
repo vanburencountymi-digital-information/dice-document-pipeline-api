@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.4.0 (2026-10-23)
+
+### Features
+
+- Add unauthenticated /ping/ endpoint (DIC-2325)
+  ([#35](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/35),
+  [`cc7f794`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/cc7f794c70daa6f7a92c3e11bf0b03cd74068b8c))
+
+
 ## v5.3.0 (2026-10-23)
 
 ### Features
