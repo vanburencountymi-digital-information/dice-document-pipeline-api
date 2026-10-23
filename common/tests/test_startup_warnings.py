@@ -11,6 +11,8 @@ HEALTHY = {
     "ANTHROPIC_API_KEY": "key",
     "RUN_OCR": True,
     "OPENDATALOADER_HYBRID_URL": "http://ocr:5002",
+    "REQUIRE_HTTPS": True,
+    "ORIGIN_LOCK_SECRET": "s3cret",
 }
 
 
@@ -24,6 +26,7 @@ class ConfigWarningsTests(SimpleTestCase):
             ("no_bucket", {"S3_BUCKET_NAME": ""}, "S3_BUCKET_NAME"),
             ("no_api_key", {"ANTHROPIC_API_KEY": ""}, "ANTHROPIC_API_KEY"),
             ("no_ocr_url", {"OPENDATALOADER_HYBRID_URL": ""}, "OPENDATALOADER_HYBRID_URL"),
+            ("no_origin_secret", {"ORIGIN_LOCK_SECRET": ""}, "ORIGIN_LOCK_SECRET"),
         ]
     )
     def test_warns_about_each_missing_setting(self, _name, overrides, expected) -> None:
@@ -37,6 +40,7 @@ class ConfigWarningsTests(SimpleTestCase):
         [
             ("alt_text_off", {"RUN_ALT_TEXT": False, "ANTHROPIC_API_KEY": ""}),
             ("ocr_off", {"RUN_OCR": False, "OPENDATALOADER_HYBRID_URL": ""}),
+            ("local_dev", {"REQUIRE_HTTPS": False, "ORIGIN_LOCK_SECRET": ""}),
         ]
     )
     def test_no_warning_for_a_missing_setting_whose_step_is_off(self, _name, overrides) -> None:

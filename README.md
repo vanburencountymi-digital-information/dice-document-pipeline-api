@@ -218,6 +218,7 @@ If `S3_BUCKET_NAME` is missing, or a step is on without the setting it needs, th
 | `WEBHOOK_ALLOW_PRIVATE_URLS` | Optional, local use only. Webhooks (`callback_url`) normally only go to public `https://` addresses, so nobody can make the server call internal services. Set `True` to test against a receiver on your own machine. Never in staging or production. |
 | `REQUIRE_HTTPS` | Leave unset (on). Redirects http to https and makes cookies https-only; only local development sets it to `False`. |
 | `TRUSTED_PROXY_HOPS` | Set to `1` on Cloud Run. Leave unset (`0`) for local development. If a deployment forgets it, every caller shares one throttle counter ([ADR 0031](docs/adrs/0031-api-throttling.md)). |
+| `ORIGIN_LOCK_SECRET` | Optional. If Cloudflare is in front, set this to a long random string and have Cloudflare add it as an `X-Origin-Secret` header. Requests without it get a 403, so the raw `run.app` address can't be used to skip Cloudflare ([ADR 0036](docs/adrs/0036-origin-lock.md)). |
 | `CSRF_TRUSTED_ORIGINS` | Optional. Set it to the full address (e.g. `https://pipeline.example.org`) if you put a custom domain in front of the app. Without it, admin login fails with a 403 "CSRF verification failed" error. |
 
 `DEBUG` defaults to `False`; leave it that way outside local development.

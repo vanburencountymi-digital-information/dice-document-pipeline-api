@@ -89,6 +89,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First, so a request that skipped Cloudflare is refused before anything else runs (ADR 0036).
+    "common.middleware.OriginLockMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves static files (the admin's CSS/JS) straight from the app, so deploys need no
     # separate static file host or bucket (ADR 0021). Must sit right after SecurityMiddleware.
@@ -210,6 +212,10 @@ STORAGES = {
 
 # Cloud Run forwards plain HTTP and says in this header if it was HTTPS (ADR 0021).
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# When Cloudflare sits in front, it adds a secret `X-Origin-Secret` header (a Cloudflare
+# Transform Rule) and requests without it are refused, so the raw `run.app` address can't be
+# used to get around Cloudflare. Empty (the default) turns the check off (ADR 0036).
+ORIGIN_LOCK_SECRET = env.str("ORIGIN_LOCK_SECRET", default="")
 # Only for a custom domain in front of the app, e.g. https://pipeline.example.org
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 SECURE_CONTENT_TYPE_NOSNIFF = True

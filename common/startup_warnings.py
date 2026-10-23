@@ -17,6 +17,11 @@ def config_warnings() -> list[str]:
         warnings.append("RUN_ALT_TEXT is on but ANTHROPIC_API_KEY is not set.")
     if settings.RUN_OCR and not settings.OPENDATALOADER_HYBRID_URL:
         warnings.append("RUN_OCR is on but OPENDATALOADER_HYBRID_URL is not set.")
+    if settings.REQUIRE_HTTPS and not settings.ORIGIN_LOCK_SECRET:
+        warnings.append(
+            "ORIGIN_LOCK_SECRET is not set, so requests that skip Cloudflare (e.g. via the "
+            "run.app address) are not refused. Ignore this if the app isn't behind Cloudflare."
+        )
     return warnings
 
 
