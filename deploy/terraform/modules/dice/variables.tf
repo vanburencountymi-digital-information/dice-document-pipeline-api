@@ -110,6 +110,12 @@ variable "image_cleanup_dry_run" {
   default     = false
 }
 
+variable "cpu_idle" {
+  description = "true: the app's CPU is only allocated while it handles requests (cheaper when idle). null: leave Cloud Run's default, which keeps CPU allocated all the time."
+  type        = bool
+  default     = null
+}
+
 variable "startup_cpu_boost" {
   description = "Give the app extra CPU while a container starts (faster first request after idle). Billed for the boosted CPU during startup only."
   type        = bool

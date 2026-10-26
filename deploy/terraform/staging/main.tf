@@ -28,6 +28,7 @@ module "dice" {
 
   # Staging is public through Cloud Run's invoker setting: the organization policy blocks the
   # `allUsers` grant that prod uses. Old images are cleaned up (OCR images are ~12 GB).
+  cpu_idle                      = true
   startup_cpu_boost             = true
   invoker_iam_disabled          = true
   delete_images_older_than_days = 30
