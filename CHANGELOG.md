@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v5.6.0 (2026-10-26)
+
+### Bug Fixes
+
+- Update claude.md to not create migrations
+  ([#39](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/39),
+  [`c3be8cd`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/c3be8cdc2d96b7c3b5943fe5abb87041eec7c3ea))
+
+### Features
+
+- Add nightly database backup to R2 (DIC-2540)
+  ([#39](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/39),
+  [`c3be8cd`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/c3be8cdc2d96b7c3b5943fe5abb87041eec7c3ea))
+
+### Refactoring
+
+- Tidy the nightly backup after review (DIC-2540)
+  ([#39](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/39),
+  [`c3be8cd`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/c3be8cdc2d96b7c3b5943fe5abb87041eec7c3ea))
+
+
 ## v5.5.1 (2026-10-23)
 
 ### Bug Fixes
