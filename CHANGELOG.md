@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.6.1 (2026-10-26)
+
+### Bug Fixes
+
+- Ignore disallowed host errors from sentry
+  ([#40](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/40),
+  [`e0ebf56`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/e0ebf564d5e4836568189a431b27c734d8f4d992))
+
+
 ## v5.6.0 (2026-10-26)
 
 ### Bug Fixes
