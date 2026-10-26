@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v5.7.0 (2026-10-26)
+
+### Bug Fixes
+
+- Add terraform deployment for staging
+  ([#41](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/41),
+  [`b6ee251`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/b6ee2510291ff7f0f9fabf72ceaed727f7c618fc))
+
+- Move terraform prod into a shared module
+  ([#41](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/41),
+  [`b6ee251`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/b6ee2510291ff7f0f9fabf72ceaed727f7c618fc))
+
+### Features
+
+- Add terraform deployment for staging
+  ([#41](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/41),
+  [`b6ee251`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/b6ee2510291ff7f0f9fabf72ceaed727f7c618fc))
+
+
 ## v5.6.1 (2026-10-26)
 
 ### Bug Fixes
