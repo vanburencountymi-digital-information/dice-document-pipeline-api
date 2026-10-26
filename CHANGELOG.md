@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.7.1 (2026-10-26)
+
+### Bug Fixes
+
+- Update staging app url
+  ([#42](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/42),
+  [`3d3f672`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/3d3f672964765b1026476a15690ab3676796d73d))
+
+
 ## v5.7.0 (2026-10-26)
 
 ### Bug Fixes
