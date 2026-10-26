@@ -1,6 +1,6 @@
 # Deploying to prod
 
-Setting up prod on Google Cloud, and putting new versions live on it. Staging works differently; see [deploying-staging.md](deploying-staging.md). The OpenTofu files are in [`deploy/terraform/prod/`](../deploy/terraform/prod/README.md). Run `tofu` commands from that folder. Settings that apply to any deployment are explained in the [Settings reference](#settings-reference) at the end.
+Setting up prod on Google Cloud, and putting new versions live on it. Staging is set up the same way, from [`deploy/terraform/staging/`](../deploy/terraform/staging/README.md); see [deploying-staging.md](deploying-staging.md). The OpenTofu files are in [`deploy/terraform/prod/`](../deploy/terraform/prod/README.md). Run `tofu` commands from that folder. Settings that apply to any deployment are explained in the [Settings reference](#settings-reference) at the end.
 
 Prod does not update on its own: you promote a version that is already running on staging.
 
@@ -87,6 +87,8 @@ Last: **Execute** `dice-migrate`, then create the admin login and accounts.
 
 OpenTofu ignores image changes on purpose, so it won't undo a promotion. Use OpenTofu for everything else (settings, sizes, schedule).
 
+After a promotion, `tofu plan` shows one harmless line on `dice-app`: `revision = "dice-app-0000N-xxx" -> null`. Each deploy gives the new revision a generated name, and OpenTofu would clear it. Nothing is actually different, so there is nothing to fix.
+
 **Once, before the first run:** add the tagged address to `terraform.tfvars` and apply. The script checks the new version at this address before any users see it, and the app refuses addresses it doesn't know.
 
 ```hcl
@@ -136,7 +138,13 @@ Every night at 3am (Detroit) the `dice-db-backup` job copies the whole database 
 
 **To restore:** run `python manage.py dbrestore --noinput --servername dice` with `DATABASE_URL` pointing at an **empty** database and the same `DB_BACKUP_*` settings as the backup job. It takes the newest backup. If the database already has tables, the restore stops with an error and changes nothing. Practise on a test database first.
 
-## Part 4: Cloudflare Worker
+## Part 4: Old images and app CPU
+
+OpenTofu deletes images from the registry that are older than 30 days, but always keeps the newest 2 of each. That leaves one version to roll back to. Anything older has to be copied back from staging, which cleans up the same way, so very old releases can't be recovered.
+
+The app's CPU is allocated only while it handles requests (cheaper when idle), with extra CPU while a new container starts. Both are set in `deploy/terraform/prod/main.tf`.
+
+## Part 5: Cloudflare Worker
 
 Cloud Run needs its own address in each request, so the public hostname goes through a small Cloudflare Worker, made by OpenTofu ([ADR 0041](adrs/0041-cloudflare-worker-reaches-cloud-run.md)). Staging has none.
 
@@ -180,7 +188,7 @@ The app **and** the worker need these:
 | `OPENDATALOADER_HYBRID_URL` | Address of the OCR service. Keep it private: the worker reaches it, the internet doesn't. |
 | `ANTHROPIC_API_KEY` | Only if `RUN_ALT_TEXT=True`. |
 | `TRUSTED_PROXY_HOPS` | `1` on Cloud Run. Leave unset locally. If it's missing in a deployment, every caller shares one throttle counter ([ADR 0031](adrs/0031-api-throttling.md)). |
-| `ORIGIN_LOCK_SECRET` | Optional. With Cloudflare in front, set a long random string and have the Cloudflare Worker send it as an `X-Origin-Secret` header (Part 4). Requests without it get a 403, so nobody can skip Cloudflare through the raw `run.app` address ([ADR 0036](adrs/0036-origin-lock.md)). |
+| `ORIGIN_LOCK_SECRET` | Optional. With Cloudflare in front, set a long random string and have the Cloudflare Worker send it as an `X-Origin-Secret` header (Part 5). Requests without it get a 403, so nobody can skip Cloudflare through the raw `run.app` address ([ADR 0036](adrs/0036-origin-lock.md)). |
 | `USE_X_FORWARDED_HOST` | `True` in prod only, where the Cloudflare Worker sends the public hostname in `X-Forwarded-Host`. Leave off elsewhere, and only turn on with `ORIGIN_LOCK_SECRET` set ([ADR 0041](adrs/0041-cloudflare-worker-reaches-cloud-run.md)). |
 | `REQUIRE_HTTPS` | Leave unset (on). Only local development sets it to `False`. |
 | `DB_BACKUP_BUCKET_NAME`, `DB_BACKUP_ACCESS_KEY`, `DB_BACKUP_SECRET_KEY` | Only the nightly backup job needs these: the backup bucket and its own token. Without a bucket the job fails with an error. |
