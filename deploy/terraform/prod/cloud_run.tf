@@ -224,3 +224,102 @@ resource "google_cloud_scheduler_job" "worker" {
 
   depends_on = [google_project_iam_member.deployer]
 }
+
+# Nightly database backup to the backup bucket (DIC-2540). Uses the app image, which has
+# `pg_dump`; deploy-prod.sh updates its image with the others. The command itself deletes
+# all but the newest `DBBACKUP_CLEANUP_KEEP` backups (settings.py).
+resource "google_cloud_run_v2_job" "db_backup" {
+  count               = var.deploy_cloud_run ? 1 : 0
+  name                = "dice-db-backup"
+  location            = var.region
+  deletion_protection = true
+
+  template {
+    # Tasks inside one run. This does not stop two runs overlapping (a manual run during the
+    # scheduled one); if they did, both would trim old backups, which at worst fails one run.
+    task_count  = 1
+    parallelism = 1
+
+    template {
+      service_account = google_service_account.db_backup.email
+      timeout         = "3600s"
+      max_retries     = 0
+
+      containers {
+        image   = var.app_image
+        command = ["python"]
+        args    = ["manage.py", "backup_database"]
+
+        resources {
+          limits = {
+            cpu    = "1"
+            memory = "1Gi"
+          }
+        }
+
+        dynamic "env" {
+          for_each = {
+            S3_ENDPOINT_URL       = var.s3_endpoint_url
+            S3_ADDRESSING_STYLE   = "path"
+            DB_BACKUP_BUCKET_NAME = var.db_backup_bucket_name
+            SENTRY_ENVIRONMENT    = "production"
+            # This job serves no requests and stores no documents. These two quieten the
+            # startup warnings (ADR 0035) that would otherwise fire on every run: the bucket
+            # name (no credentials) and HTTPS off, as there is no origin lock to check.
+            S3_BUCKET_NAME = var.s3_bucket_name
+            REQUIRE_HTTPS  = "False"
+          }
+          content {
+            name  = env.key
+            value = env.value
+          }
+        }
+
+        dynamic "env" {
+          for_each = merge(
+            { for k in local.backup_shared_secret_names : k => local.secrets[k] },
+            local.backup_secrets,
+          )
+          content {
+            name = env.key
+            value_source {
+              secret_key_ref {
+                secret  = google_secret_manager_secret.this[env.key].secret_id
+                version = "latest"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      template[0].template[0].containers[0].image,
+      client,
+      client_version,
+    ]
+  }
+
+  depends_on = [google_secret_manager_secret_iam_member.db_backup_reads]
+}
+
+resource "google_cloud_scheduler_job" "db_backup" {
+  count     = var.deploy_cloud_run ? 1 : 0
+  name      = "dice-db-backup-scheduler-trigger"
+  region    = var.region
+  schedule  = var.db_backup_schedule
+  time_zone = var.worker_schedule_time_zone
+
+  http_target {
+    http_method = "POST"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.db_backup[0].name}:run"
+
+    oauth_token {
+      service_account_email = google_service_account.deployer.email
+    }
+  }
+
+  depends_on = [google_project_iam_member.deployer]
+}

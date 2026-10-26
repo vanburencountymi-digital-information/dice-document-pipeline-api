@@ -15,6 +15,7 @@ from pathlib import Path
 
 import environ
 
+from common.db_backup_adapter import BACKUP_STORAGE_ALIAS, DBBACKUP_LOGGER
 from common.error_logging_client import ErrorLoggingClient
 from common.throttle_scopes import ThrottleScope
 
@@ -65,6 +66,9 @@ ErrorLoggingClient().configure(
     dsn=env.str("SENTRY_DSN", default=""),
     environment=env.str("SENTRY_ENVIRONMENT", default="development"),
     release=PIPELINE_VERSION,
+    # `DatabaseBackupService` reports a failed backup with a tag; the package's own log record
+    # of the same failure would be a second, untagged event.
+    ignored_loggers=[DBBACKUP_LOGGER],
 )
 
 
@@ -82,6 +86,7 @@ INSTALLED_APPS = [
     "drf_spectacular_sidecar",
     "knox",
     "django_tasks_db",
+    "dbbackup",
     "accounts",
     "api",
     "common",
@@ -180,23 +185,29 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 S3_BUCKET_NAME = env.str("S3_BUCKET_NAME", default="")
+S3_ENDPOINT_URL = env.str("S3_ENDPOINT_URL", default="https://storage.googleapis.com")
+# Cloudflare R2 has no AWS-style regions but boto3's SigV4 signing still needs some value
+# here — "auto" is R2's own documented answer, and GCS's S3-compatible endpoint accepts it
+# too, so it's a safe default either way.
+S3_REGION_NAME = env.str("S3_REGION_NAME", default="auto")
+S3_SIGNATURE_VERSION = env.str("S3_SIGNATURE_VERSION", default="s3v4")
+S3_ADDRESSING_STYLE = env.str("S3_ADDRESSING_STYLE", default="virtual")
+# How to reach the S3-compatible storage, shared by every bucket below (documents, backups).
+S3_CONNECTION_OPTIONS = {
+    "endpoint_url": S3_ENDPOINT_URL,
+    "region_name": S3_REGION_NAME,
+    "signature_version": S3_SIGNATURE_VERSION,
+    "addressing_style": S3_ADDRESSING_STYLE,
+}
 STORAGES = {
     "default": (
         {
             "BACKEND": "storages.backends.s3.S3Storage",
             "OPTIONS": {
                 "bucket_name": S3_BUCKET_NAME,
-                "endpoint_url": env.str(
-                    "S3_ENDPOINT_URL", default="https://storage.googleapis.com"
-                ),
                 "access_key": env.str("S3_ACCESS_KEY", default=""),
                 "secret_key": env.str("S3_SECRET_KEY", default=""),
-                # Cloudflare R2 has no AWS-style regions but boto3's SigV4 signing still
-                # needs some value here — "auto" is R2's own documented answer, and GCS's
-                # S3-compatible endpoint accepts it too, so it's a safe default either way.
-                "region_name": env.str("S3_REGION_NAME", default="auto"),
-                "signature_version": env.str("S3_SIGNATURE_VERSION", default="s3v4"),
-                "addressing_style": env.str("S3_ADDRESSING_STYLE", default="virtual"),
+                **S3_CONNECTION_OPTIONS,
             },
         }
         if S3_BUCKET_NAME
@@ -207,6 +218,44 @@ STORAGES = {
     # `collectstatic`.
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
+
+# Nightly database backups (`manage.py backup_database`, django-dbbackup, DIC-2540). A separate
+# bucket and token from the documents above, and only the backup job gets them.
+DB_BACKUP_BUCKET_NAME = env.str("DB_BACKUP_BUCKET_NAME", default="")
+DB_BACKUP_ACCESS_KEY = env.str("DB_BACKUP_ACCESS_KEY", default="")
+DB_BACKUP_SECRET_KEY = env.str("DB_BACKUP_SECRET_KEY", default="")
+# Only defined when a bucket is set. django-dbbackup falls back to local disk if there is no
+# storage entry, so `DbBackupAdapter` refuses to run without one.
+if DB_BACKUP_BUCKET_NAME:
+    STORAGES[BACKUP_STORAGE_ALIAS] = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": DB_BACKUP_BUCKET_NAME,
+            "access_key": DB_BACKUP_ACCESS_KEY,
+            "secret_key": DB_BACKUP_SECRET_KEY,
+            **S3_CONNECTION_OPTIONS,
+        },
+    }
+# By count, not age, so a run of failed nights never deletes the last good backups.
+DBBACKUP_CLEANUP_KEEP = 14
+# pg_dump's compressed "custom" format, which `pg_restore` reads; the default is plain SQL.
+DBBACKUP_CONNECTOR_MAPPING = {
+    "django.db.backends.postgresql": "dbbackup.db.postgresql.PgDumpBinaryConnector",
+}
+DBBACKUP_CONNECTORS = {
+    "default": {
+        # Only PATH and the connection details reach pg_dump, so it never sees other secrets
+        # in this process's environment (such as the bucket token).
+        "USE_PARENT_ENV": False,
+        "ENV": {"PATH": env.str("PATH", default="")},
+        # For `dbrestore`: no `--clean`, so a restore into a database that already has tables
+        # fails instead of dropping them. Restore into an empty database.
+        "DROP": False,
+        "IF_EXISTS": False,
+    },
+}
+# Failures go to Sentry through `DatabaseBackupService`, not to Django's (unset) ADMINS email.
+DBBACKUP_SEND_EMAIL = False
 
 # HTTPS and Security
 

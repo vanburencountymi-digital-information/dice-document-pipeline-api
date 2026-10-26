@@ -9,7 +9,7 @@ output "image_repository" {
 
 output "secret_names" {
   description = "Secrets to fill in by hand."
-  value       = values(local.secrets)
+  value       = values(merge(local.secrets, local.backup_secrets))
 }
 
 output "runtime_service_account" {
@@ -18,4 +18,8 @@ output "runtime_service_account" {
 
 output "deployer_service_account" {
   value = google_service_account.deployer.email
+}
+
+output "db_backup_service_account" {
+  value = google_service_account.db_backup.email
 }

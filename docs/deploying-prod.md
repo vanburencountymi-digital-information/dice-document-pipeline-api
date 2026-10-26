@@ -113,11 +113,28 @@ What it does, stopping at the first problem:
 5. Checks it answers at its own address. If this fails, prod is untouched.
 6. Asks `Shift 100% of traffic?` Answer `y` to go live.
 7. Updates the worker.
-8. Prints the command to go back to the previous version. Keep it until you're happy.
+8. Updates the nightly backup job (below).
+9. Prints the command to go back to the previous version. Keep it until you're happy.
 
 If the OCR image changed too, add `--with-ocr TAG` (the short code of the OCR image on staging).
 
 A push-button version of this (a Cloud Build trigger that needs approval, [DIC-2338](https://linear.app/dicelabs/issue/DIC-2338) and [DIC-2339](https://linear.app/dicelabs/issue/DIC-2339)) comes after go-live.
+
+## Part 3: Nightly database backup
+
+Every night at 3am (Detroit) the `dice-db-backup` job copies the whole database into a separate R2 bucket, so a copy exists outside Neon ([ADR 0039](adrs/0039-nightly-database-backup.md)). It keeps the newest 14 and deletes the rest. This counts backups, not days, so extra manual runs push the oldest night out sooner.
+
+**Once, before the first apply:**
+
+1. In Cloudflare, make a second **private** R2 bucket for backups (e.g. `ada-pipeline-prod-db-backups`). Not the documents bucket.
+2. Make a token with **Object Read & Write** for that bucket only. The job needs "write" to delete old backups too.
+3. Put the bucket name in `terraform.tfvars` as `db_backup_bucket_name`, then apply.
+4. Add the token's values, the same way as the other secrets: `dice-db-backup-access-key` and `dice-db-backup-secret-key`. Only the backup job can read these (it has its own account, `dice-prod-db-backup`). Save the token in the shared vault and open a Key Cycling ticket for it, as with the other keys.
+5. Make sure prod's `dice-database-url` is Neon's **direct** address (not the pooled one) and ends in `?sslmode=require`.
+
+**To check it works:** run `dice-db-backup` by hand (**Cloud Run → Jobs → Execute**). Two files appear in the bucket: `default-dice-DATE.psql.bin` (the backup) and a small `.metadata` file next to it. If a run fails, it reports to Sentry (tag `job: database_backup`) and shows as failed in Cloud Run. A job that never starts is not reported.
+
+**To restore:** run `python manage.py dbrestore --noinput --servername dice` with `DATABASE_URL` pointing at an **empty** database and the same `DB_BACKUP_*` settings as the backup job. It takes the newest backup. If the database already has tables, the restore stops with an error and changes nothing. Practise on a test database first.
 
 ## Settings reference
 
@@ -145,6 +162,7 @@ The app **and** the worker need these:
 | `TRUSTED_PROXY_HOPS` | `1` on Cloud Run. Leave unset locally. If it's missing in a deployment, every caller shares one throttle counter ([ADR 0031](adrs/0031-api-throttling.md)). |
 | `ORIGIN_LOCK_SECRET` | Optional. With Cloudflare in front, set a long random string and have Cloudflare send it as an `X-Origin-Secret` header. Requests without it get a 403, so nobody can skip Cloudflare through the raw `run.app` address ([ADR 0036](adrs/0036-origin-lock.md)). |
 | `REQUIRE_HTTPS` | Leave unset (on). Only local development sets it to `False`. |
+| `DB_BACKUP_BUCKET_NAME`, `DB_BACKUP_ACCESS_KEY`, `DB_BACKUP_SECRET_KEY` | Only the nightly backup job needs these: the backup bucket and its own token. Without a bucket the job fails with an error. |
 | `WEBHOOK_ALLOW_PRIVATE_URLS` | Local use only. Lets webhooks go to a receiver on your own machine. Never in staging or prod. |
 
 Leave `DEBUG` alone (off by default) outside local development.

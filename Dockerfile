@@ -97,6 +97,10 @@ WORKDIR /app
 # with "Error loading shared library libstdc++.so.6: No such file or directory".
 RUN apk add --no-cache libstdc++
 
+# `pg_dump` for the nightly database dump (`manage.py backup_database`, DIC-2540). Must be at
+# least as new as the server's Postgres version (docker-compose.yml's `db` image).
+RUN apk add --no-cache postgresql18-client
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 

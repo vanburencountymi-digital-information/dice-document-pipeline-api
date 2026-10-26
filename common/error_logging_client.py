@@ -1,5 +1,8 @@
+from collections.abc import Iterable
+
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.logging import ignore_logger
 
 
 class ErrorLoggingClient:
@@ -8,8 +11,21 @@ class ErrorLoggingClient:
     adding a second one, never touches a calling app.
     """
 
-    def configure(self, *, dsn: str, environment: str, release: str) -> None:
-        """Starts error monitoring. An empty `dsn` (the local/test default) makes it a no-op."""
+    def configure(
+        self,
+        *,
+        dsn: str,
+        environment: str,
+        release: str,
+        ignored_loggers: Iterable[str] = (),
+    ) -> None:
+        """Takes: the Sentry `dsn` (empty, the local/test default, makes this a no-op), the
+        `environment` and `release` names, and optionally `ignored_loggers`: logger names
+        whose error records are not sent as events, for a library whose failures the caller
+        already reports itself (with its own tags). Returns: nothing.
+        """
+        for logger_name in ignored_loggers:
+            ignore_logger(logger_name)
         sentry_sdk.init(
             dsn=dsn,
             integrations=[DjangoIntegration()],
