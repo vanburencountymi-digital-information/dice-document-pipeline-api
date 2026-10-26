@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.8.0 (2026-10-26)
+
+### Features
+
+- Route prod through a Cloudflare Worker (DIC-2344)
+  ([#45](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/45),
+  [`074fa90`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/074fa9001b53d45591e99809d5faf64a6895f18a))
+
+
 ## v5.7.3 (2026-10-26)
 
 ### Bug Fixes
