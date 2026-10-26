@@ -2,6 +2,25 @@
 
 <!-- version list -->
 
+## v5.7.3 (2026-10-26)
+
+### Bug Fixes
+
+- Final terraform cleanup
+  ([#44](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/44),
+  [`5cdd6ab`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/5cdd6ab442a5290afcf95e00bc05c40c2a8655d8))
+
+- Tweak terraform
+  ([#44](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/44),
+  [`5cdd6ab`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/5cdd6ab442a5290afcf95e00bc05c40c2a8655d8))
+
+### Documentation
+
+- Update documents about `dice-app`: `revision`
+  ([#44](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/44),
+  [`5cdd6ab`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/5cdd6ab442a5290afcf95e00bc05c40c2a8655d8))
+
+
 ## v5.7.2 (2026-10-26)
 
 ### Bug Fixes
