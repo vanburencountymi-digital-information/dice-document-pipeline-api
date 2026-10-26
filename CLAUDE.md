@@ -7,6 +7,9 @@
 
 - As a point of terminology, this repo prefers slim models, service classes to interact with models, and slim views. Service classes that interact directly with models are called "-Service", service classes for outside packages are "-Adapter", and service classes for outside APIs are "-Client".
 
+## Migrations
+- Do not handwrite migrations. User will create them with `make migrations` and `make migrate`.
+
 ## Formatting
 - This repo uses ruff + mypy for formatting + linting. Allow the auto-linter to handle line-length.
 
