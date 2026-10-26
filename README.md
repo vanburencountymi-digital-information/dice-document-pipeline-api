@@ -191,6 +191,7 @@ Finished task records pile up in that table over time. Clear out old ones with `
 
 - **Staging** updates itself on every merge to `main`: [docs/deploying-staging.md](docs/deploying-staging.md) ([ADR 0022](docs/adrs/0022-automated-staging-deploys.md)).
 - **Production** is set up once, then you promote a version that is already running on staging: [docs/deploying-prod.md](docs/deploying-prod.md).
+- **The Google Cloud setup** for both is described in OpenTofu files, so change settings there, not in the Console: [`deploy/terraform`](deploy/terraform/) ([ADR 0040](docs/adrs/0040-shared-opentofu-module-for-staging-and-prod.md)).
 - **What each deploy setting means** (`SECRET_KEY`, `ALLOWED_HOSTS`, `S3_*` and so on): [Settings reference](docs/deploying-prod.md#settings-reference).
 
 ## Dependency Upgrades

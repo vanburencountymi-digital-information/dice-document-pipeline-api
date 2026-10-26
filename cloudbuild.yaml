@@ -12,7 +12,7 @@
 #        service).
 #
 # Steps 3-5 use `update`, not `deploy`: they only swap the image, keeping the env vars,
-# secrets, OCR sidecar and schedule set up in the Console.
+# secrets, OCR sidecar and schedule set up in OpenTofu (deploy/terraform/staging).
 
 substitutions:
   _REGION: us-central1
