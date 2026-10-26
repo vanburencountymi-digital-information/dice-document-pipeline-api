@@ -3,6 +3,11 @@ output "app_url" {
   value       = var.deploy_cloud_run ? google_cloud_run_v2_service.app[0].uri : null
 }
 
+output "public_url" {
+  description = "The address the app accepts requests on (its custom domain, or the project-number run.app address)."
+  value       = "https://${local.public_hostname}"
+}
+
 output "image_repository" {
   value = "${var.region}-docker.pkg.dev/${var.project_id}/${local.repo_id}"
 }

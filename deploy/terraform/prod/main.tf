@@ -16,9 +16,13 @@ module "dice" {
   s3_endpoint_url       = var.s3_endpoint_url
   db_backup_bucket_name = var.db_backup_bucket_name
 
+  # App CPU: only while handling requests (cheaper when idle), with extra CPU while a new
+  # container starts. Same as staging.
+  cpu_idle          = true
+  startup_cpu_boost = true
+
   # Same image cleanup as staging: delete images older than 30 days, but always keep the
   # newest 2 of each.
-  startup_cpu_boost             = true
   delete_images_older_than_days = 30
   keep_recent_image_versions    = 2
 

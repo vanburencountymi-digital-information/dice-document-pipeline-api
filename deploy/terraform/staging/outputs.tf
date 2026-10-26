@@ -1,6 +1,6 @@
 output "app_url" {
-  description = "The app's run.app address."
-  value       = module.dice.app_url
+  description = "The address the app accepts requests on. (Cloud Run's own dice-app-HASH-uc.a.run.app address is rejected as a disallowed host.)"
+  value       = module.dice.public_url
 }
 
 output "image_repository" {

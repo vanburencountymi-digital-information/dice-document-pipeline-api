@@ -27,6 +27,9 @@ resource "google_cloud_run_v2_service" "app" {
           cpu    = "1"
           memory = "1Gi"
         }
+        # true: CPU only while handling requests. null leaves Cloud Run's default, which is
+        # CPU allocated all the time (not the same as true).
+        cpu_idle = var.cpu_idle
         # Extra CPU while a new container starts, so the first request after idle is faster.
         # null (not false) when off, so a service made without it shows no change.
         startup_cpu_boost = var.startup_cpu_boost ? true : null
@@ -61,6 +64,10 @@ resource "google_cloud_run_v2_service" "app" {
       template[0].revision,
       client,
       client_version,
+      # The service-level scaling block (manual mode only). Cloud Run reports it back as
+      # zeros even in automatic mode, which showed as a change on every plan. This does not
+      # cover template[0].scaling, where the min and max instances are set.
+      scaling,
     ]
   }
 
