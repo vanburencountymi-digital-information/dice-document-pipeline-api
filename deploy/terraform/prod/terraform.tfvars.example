@@ -16,3 +16,8 @@ db_backup_bucket_name = "REPLACE-with-prod-backup-bucket"
 deploy_cloud_run = false
 # app_image        = "us-central1-docker.pkg.dev/ada-document-pipeline-prod/dice/app:v1.2.3"
 # ocr_image        = "us-central1-docker.pkg.dev/ada-document-pipeline-prod/dice/opendataloader-hybrid:abc1234"
+
+# From the Cloudflare dashboard: the account ID, and the Overview page of the zone that holds
+# public_hostname. The API token goes in the CLOUDFLARE_API_TOKEN environment variable.
+cloudflare_account_id = "REPLACE-with-account-id"
+cloudflare_zone_id    = "REPLACE-with-zone-id"

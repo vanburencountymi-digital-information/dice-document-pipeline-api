@@ -72,6 +72,8 @@ locals {
       CSRF_TRUSTED_ORIGINS = "https://${local.public_hostname}"
       PUBLIC_BASE_URL      = "https://${local.public_hostname}"
     },
+    # Only with the Cloudflare Worker in front, which sends the public hostname this way (ADR 0041).
+    var.use_forwarded_host ? { USE_X_FORWARDED_HOST = "True" } : {},
   )
 }
 

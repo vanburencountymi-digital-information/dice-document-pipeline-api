@@ -16,6 +16,9 @@ module "dice" {
   s3_endpoint_url       = var.s3_endpoint_url
   db_backup_bucket_name = var.db_backup_bucket_name
 
+  # The Cloudflare Worker (worker.tf) sends the public hostname as X-Forwarded-Host (ADR 0041).
+  use_forwarded_host = true
+
   # App CPU: only while handling requests (cheaper when idle), with extra CPU while a new
   # container starts. Same as staging.
   cpu_idle          = true

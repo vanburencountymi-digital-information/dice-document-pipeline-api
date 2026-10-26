@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from django.http import HttpResponse
@@ -85,3 +86,18 @@ class OriginLockMiddlewareTests(SimpleTestCase):
     def test_handles_non_ascii_secrets(self) -> None:
         self.assertEqual(self._call(**{HEADER_META_KEY: "sécret"}).status_code, 200)
         self.assertEqual(self._call(**{HEADER_META_KEY: "secret"}).status_code, 403)
+
+
+class WorkerHeaderNameTests(SimpleTestCase):
+    """The Cloudflare Worker adds the secret header; its name must match `HEADER_META_KEY`."""
+
+    WORKER = Path(__file__).resolve().parents[2] / "deploy/terraform/prod/worker/index.js"
+
+    def test_worker_sets_the_header_the_middleware_reads(self) -> None:
+        if not self.WORKER.exists():
+            self.skipTest("The Worker's source isn't in this checkout (e.g. the app image).")
+        # `HTTP_X_ORIGIN_SECRET` is how Django shows the `X-Origin-Secret` header.
+        header_name = HEADER_META_KEY.removeprefix("HTTP_").replace("_", "-")
+
+        # Header names aren't case-sensitive, so compare in lower case.
+        self.assertIn(f'headers.set("{header_name}"'.lower(), self.WORKER.read_text().lower())
