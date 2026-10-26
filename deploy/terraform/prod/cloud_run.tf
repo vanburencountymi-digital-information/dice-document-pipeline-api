@@ -227,23 +227,28 @@ resource "google_cloud_scheduler_job" "worker" {
 
 # Nightly database backup to the backup bucket (DIC-2540). Uses the app image, which has
 # `pg_dump`; deploy-prod.sh updates its image with the others. The command itself deletes
-# all but the newest 14 backups (DBBACKUP_CLEANUP_KEEP in settings.py).
-resource "google_cloud_run_v2_job" "db_dump" {
+# all but the newest `DBBACKUP_CLEANUP_KEEP` backups (settings.py).
+resource "google_cloud_run_v2_job" "db_backup" {
   count               = var.deploy_cloud_run ? 1 : 0
-  name                = "dice-db-dump"
+  name                = "dice-db-backup"
   location            = var.region
   deletion_protection = true
 
   template {
+    # Tasks inside one run. This does not stop two runs overlapping (a manual run during the
+    # scheduled one); if they did, both would trim old backups, which at worst fails one run.
+    task_count  = 1
+    parallelism = 1
+
     template {
-      service_account = google_service_account.db_dump.email
+      service_account = google_service_account.db_backup.email
       timeout         = "3600s"
       max_retries     = 0
 
       containers {
         image   = var.app_image
         command = ["python"]
-        args    = ["manage.py", "dump_database"]
+        args    = ["manage.py", "backup_database"]
 
         resources {
           limits = {
@@ -254,10 +259,10 @@ resource "google_cloud_run_v2_job" "db_dump" {
 
         dynamic "env" {
           for_each = {
-            S3_ENDPOINT_URL     = var.s3_endpoint_url
-            S3_ADDRESSING_STYLE = "path"
-            DB_DUMP_BUCKET_NAME = var.db_dump_bucket_name
-            SENTRY_ENVIRONMENT  = "production"
+            S3_ENDPOINT_URL       = var.s3_endpoint_url
+            S3_ADDRESSING_STYLE   = "path"
+            DB_BACKUP_BUCKET_NAME = var.db_backup_bucket_name
+            SENTRY_ENVIRONMENT    = "production"
             # This job serves no requests and stores no documents. These two quieten the
             # startup warnings (ADR 0035) that would otherwise fire on every run: the bucket
             # name (no credentials) and HTTPS off, as there is no origin lock to check.
@@ -272,8 +277,8 @@ resource "google_cloud_run_v2_job" "db_dump" {
 
         dynamic "env" {
           for_each = merge(
-            { for k in local.dump_shared_secret_names : k => local.secrets[k] },
-            local.dump_secrets,
+            { for k in local.backup_shared_secret_names : k => local.secrets[k] },
+            local.backup_secrets,
           )
           content {
             name = env.key
@@ -297,19 +302,19 @@ resource "google_cloud_run_v2_job" "db_dump" {
     ]
   }
 
-  depends_on = [google_secret_manager_secret_iam_member.db_dump_reads]
+  depends_on = [google_secret_manager_secret_iam_member.db_backup_reads]
 }
 
-resource "google_cloud_scheduler_job" "db_dump" {
+resource "google_cloud_scheduler_job" "db_backup" {
   count     = var.deploy_cloud_run ? 1 : 0
-  name      = "dice-db-dump-scheduler-trigger"
+  name      = "dice-db-backup-scheduler-trigger"
   region    = var.region
-  schedule  = var.db_dump_schedule
+  schedule  = var.db_backup_schedule
   time_zone = var.worker_schedule_time_zone
 
   http_target {
     http_method = "POST"
-    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.db_dump[0].name}:run"
+    uri         = "https://run.googleapis.com/v2/projects/${var.project_id}/locations/${var.region}/jobs/${google_cloud_run_v2_job.db_backup[0].name}:run"
 
     oauth_token {
       service_account_email = google_service_account.deployer.email

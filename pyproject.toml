@@ -12,10 +12,23 @@ select = [
     "B",   # bugbear
     "SIM", # simplify
     "DJ",  # flake8-django
+    "TID251",  # banned APIs (see [tool.ruff.lint.flake8-tidy-imports.banned-api] below)
 ]
 ignore = [
     "E501", # line length handled by the formatter
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Settings come in through `env` (django-environ) in config/settings.py, one place with
+# types and defaults. The entry points below are the exceptions: they have to set
+# DJANGO_SETTINGS_MODULE before Django (and so `env`) exists.
+"os.environ".msg = "Read settings through `env` in config/settings.py (django-environ)."
+"os.getenv".msg = "Read settings through `env` in config/settings.py (django-environ)."
+
+[tool.ruff.lint.per-file-ignores]
+"manage.py" = ["TID251"]
+"config/asgi.py" = ["TID251"]
+"config/wsgi.py" = ["TID251"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["config"]

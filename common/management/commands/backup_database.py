@@ -8,15 +8,19 @@ from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 
-from common.services import DatabaseDumpError, DatabaseDumpService
+from common.services import DatabaseBackupError, DatabaseBackupService
 
 
 class Command(BaseCommand):
     help = "Backs up the database to the backup bucket (DIC-2540)."
 
     def handle(self, *args: Any, **options: Any) -> None:
+        """Takes: nothing (it accepts and ignores Django's usual command options).
+        Returns: nothing. Raises `CommandError`, so the process exits non-zero, if the backup
+        fails (already reported to monitoring).
+        """
         try:
-            DatabaseDumpService().run()
-        except DatabaseDumpError as exc:
+            DatabaseBackupService().run()
+        except DatabaseBackupError as exc:
             raise CommandError(str(exc)) from exc
         self.stdout.write("Backup uploaded.")

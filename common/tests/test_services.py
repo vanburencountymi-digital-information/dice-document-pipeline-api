@@ -1,28 +1,22 @@
 from unittest.mock import create_autospec
 
-from django.test import SimpleTestCase, override_settings
+from django.core.exceptions import ImproperlyConfigured
+from django.test import SimpleTestCase
 
 from common.db_backup_adapter import DbBackupAdapter
 from common.error_logging_client import ErrorLoggingClient
 from common.services import (
-    BACKUP_STORAGE_ALIAS,
-    JOB_DATABASE_DUMP,
-    DatabaseDumpError,
-    DatabaseDumpService,
+    JOB_DATABASE_BACKUP,
+    DatabaseBackupError,
+    DatabaseBackupService,
 )
 
-WITH_BUCKET = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    BACKUP_STORAGE_ALIAS: {"BACKEND": "storages.backends.s3.S3Storage"},
-}
 
-
-@override_settings(STORAGES=WITH_BUCKET)
-class DatabaseDumpServiceTests(SimpleTestCase):
+class DatabaseBackupServiceTests(SimpleTestCase):
     def setUp(self) -> None:
         self.adapter = create_autospec(DbBackupAdapter, instance=True, spec_set=True)
         self.error_logging = create_autospec(ErrorLoggingClient, instance=True, spec_set=True)
-        self.service = DatabaseDumpService(self.adapter, self.error_logging)
+        self.service = DatabaseBackupService(self.adapter, self.error_logging)
 
     def test_runs_the_backup(self) -> None:
         self.service.run()
@@ -34,17 +28,20 @@ class DatabaseDumpServiceTests(SimpleTestCase):
         error = OSError("network")
         self.adapter.backup.side_effect = error
 
-        with self.assertRaises(DatabaseDumpError):
+        with self.assertRaises(DatabaseBackupError):
             self.service.run()
 
         self.error_logging.report_exception.assert_called_once_with(
-            error, tags={"job": JOB_DATABASE_DUMP}
+            error, tags={"job": JOB_DATABASE_BACKUP}
         )
 
-    @override_settings(STORAGES={"default": WITH_BUCKET["default"]})
-    def test_no_backup_bucket_is_reported_and_raised_without_backing_up(self) -> None:
-        with self.assertRaisesRegex(DatabaseDumpError, "DB_DUMP_BUCKET_NAME"):
+    def test_a_setup_problem_is_reported_and_raised_like_any_failure(self) -> None:
+        error = ImproperlyConfigured("No backup bucket is set up: DB_BACKUP_BUCKET_NAME is empty")
+        self.adapter.backup.side_effect = error
+
+        with self.assertRaisesRegex(DatabaseBackupError, "DB_BACKUP_BUCKET_NAME"):
             self.service.run()
 
-        self.adapter.backup.assert_not_called()
-        self.error_logging.report_exception.assert_called_once()
+        self.error_logging.report_exception.assert_called_once_with(
+            error, tags={"job": JOB_DATABASE_BACKUP}
+        )

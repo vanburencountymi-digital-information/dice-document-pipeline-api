@@ -1,7 +1,7 @@
 locals {
   runtime_sa_id  = "dice-prod-runtime"
   deployer_sa_id = "dice-prod-deployer"
-  dump_sa_id     = "dice-prod-db-dump"
+  backup_sa_id   = "dice-prod-db-backup"
   repo_id        = "dice"
 
   apis = [
@@ -25,16 +25,16 @@ locals {
     ORIGIN_LOCK_SECRET = "dice-origin-lock-secret"
   }
 
-  # Only the nightly dump job gets these (a separate R2 bucket and token, DIC-2540). It runs
+  # Only the nightly backup job gets these (a separate R2 bucket and token, DIC-2540). It runs
   # as its own service account, so the app and worker can't read them even from inside their
   # containers. They are not in `secrets` above, which the app and worker get.
-  dump_secrets = {
-    DB_DUMP_ACCESS_KEY = "dice-db-dump-access-key"
-    DB_DUMP_SECRET_KEY = "dice-db-dump-secret-key"
+  backup_secrets = {
+    DB_BACKUP_ACCESS_KEY = "dice-db-backup-access-key"
+    DB_BACKUP_SECRET_KEY = "dice-db-backup-secret-key"
   }
 
-  # The shared secrets the dump job also needs, by the app's variable name.
-  dump_shared_secret_names = ["SECRET_KEY", "DATABASE_URL", "SENTRY_DSN"]
+  # The shared secrets the backup job also needs, by the app's variable name.
+  backup_shared_secret_names = ["SECRET_KEY", "DATABASE_URL", "SENTRY_DSN"]
 
   allowed_hosts = join(",", concat([var.public_hostname], var.extra_allowed_hosts))
 
@@ -85,11 +85,11 @@ resource "google_service_account" "runtime" {
   depends_on = [google_project_service.apis]
 }
 
-# What the nightly database dump runs as. Kept apart from `runtime` so the backup token is
+# What the nightly database backup runs as. Kept apart from `runtime` so the backup token is
 # out of reach of the app and worker, which handle uploaded files (DIC-2540).
-resource "google_service_account" "db_dump" {
-  account_id   = local.dump_sa_id
-  display_name = "Prod nightly database dump"
+resource "google_service_account" "db_backup" {
+  account_id   = local.backup_sa_id
+  display_name = "Prod nightly database backup"
 
   depends_on = [google_project_service.apis]
 }
@@ -120,8 +120,8 @@ resource "google_service_account_iam_member" "deployer_acts_as_runtime" {
   member             = google_service_account.deployer.member
 }
 
-resource "google_service_account_iam_member" "deployer_acts_as_db_dump" {
-  service_account_id = google_service_account.db_dump.name
+resource "google_service_account_iam_member" "deployer_acts_as_db_backup" {
+  service_account_id = google_service_account.db_backup.name
   role               = "roles/iam.serviceAccountUser"
   member             = google_service_account.deployer.member
 }
@@ -139,7 +139,7 @@ resource "google_artifact_registry_repository" "dice" {
 # --- Secrets --------------------------------------------------------------------------
 
 resource "google_secret_manager_secret" "this" {
-  for_each  = merge(local.secrets, local.dump_secrets)
+  for_each  = merge(local.secrets, local.backup_secrets)
   secret_id = each.value
 
   replication {
@@ -156,13 +156,13 @@ resource "google_secret_manager_secret_iam_member" "runtime_reads" {
   member    = google_service_account.runtime.member
 }
 
-# The dump job reads only the secrets it uses.
-resource "google_secret_manager_secret_iam_member" "db_dump_reads" {
+# The backup job reads only the secrets it uses.
+resource "google_secret_manager_secret_iam_member" "db_backup_reads" {
   for_each = merge(
-    { for name in local.dump_shared_secret_names : name => local.secrets[name] },
-    local.dump_secrets,
+    { for name in local.backup_shared_secret_names : name => local.secrets[name] },
+    local.backup_secrets,
   )
   secret_id = google_secret_manager_secret.this[each.key].secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.db_dump.member
+  member    = google_service_account.db_backup.member
 }

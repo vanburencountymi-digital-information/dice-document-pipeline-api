@@ -67,12 +67,12 @@ variable "s3_endpoint_url" {
   type        = string
 }
 
-variable "db_dump_bucket_name" {
-  description = "The private R2 bucket for nightly database dumps (made by hand; not the documents bucket)."
+variable "db_backup_bucket_name" {
+  description = "The private R2 bucket for nightly database backups (made by hand; not the documents bucket)."
   type        = string
 }
 
-variable "db_dump_schedule" {
+variable "db_backup_schedule" {
   type    = string
   default = "0 3 * * *"
 }

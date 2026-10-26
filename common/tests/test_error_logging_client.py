@@ -38,7 +38,18 @@ class ErrorLoggingClientTests(SimpleTestCase):
 
     @patch("common.error_logging_client.ignore_logger", autospec=True)
     @patch("common.error_logging_client.sentry_sdk.init")
-    def test_configure_ignores_dbbackup_log_records(self, _mock_init, mock_ignore) -> None:
+    def test_configure_ignores_the_given_loggers(self, _mock_init, mock_ignore) -> None:
+        self.client.configure(
+            dsn="", environment="staging", release="1.2.3", ignored_loggers=["lib.a", "lib.b"]
+        )
+
+        self.assertEqual(
+            [call.args for call in mock_ignore.call_args_list], [("lib.a",), ("lib.b",)]
+        )
+
+    @patch("common.error_logging_client.ignore_logger", autospec=True)
+    @patch("common.error_logging_client.sentry_sdk.init")
+    def test_configure_ignores_no_loggers_by_default(self, _mock_init, mock_ignore) -> None:
         self.client.configure(dsn="", environment="staging", release="1.2.3")
 
-        mock_ignore.assert_called_once_with("dbbackup")
+        mock_ignore.assert_not_called()

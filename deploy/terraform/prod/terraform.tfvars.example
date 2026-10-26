@@ -5,8 +5,8 @@ public_hostname = "api.example.org"
 s3_bucket_name  = "REPLACE-with-prod-bucket"
 s3_endpoint_url = "https://ACCOUNT_ID.r2.cloudflarestorage.com"
 
-# A separate private bucket for nightly database dumps, not the documents bucket.
-db_dump_bucket_name = "REPLACE-with-prod-dump-bucket"
+# A separate private bucket for nightly database backups, not the documents bucket.
+db_backup_bucket_name = "REPLACE-with-prod-backup-bucket"
 
 # Only if the project doesn't exist yet:
 # create_project  = true
