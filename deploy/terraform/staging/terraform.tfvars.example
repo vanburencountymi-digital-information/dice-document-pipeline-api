@@ -1,0 +1,14 @@
+# Copy to terraform.tfvars (not committed) and fill in.
+project_id = "ada-document-pipeline-staging"
+
+s3_bucket_name  = "ada-pipeline-staging-bucket"
+s3_endpoint_url = "https://ACCOUNT_ID.r2.cloudflarestorage.com"
+
+# Needed to read the config, but ignored once the app and jobs exist (deploys change images
+# outside OpenTofu). Use what is running now.
+app_image = "us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/app:v5.6.1"
+ocr_image = "us-central1-docker.pkg.dev/ada-document-pipeline-staging/dice/opendataloader-hybrid:28539a6"
+
+# Other hostnames the app must accept. Not needed: the app's only host is its
+# dice-app-PROJECT_NUMBER.us-central1.run.app address, which the module works out itself.
+# extra_allowed_hosts = []

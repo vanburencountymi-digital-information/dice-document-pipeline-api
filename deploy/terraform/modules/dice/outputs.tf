@@ -21,5 +21,5 @@ output "deployer_service_account" {
 }
 
 output "db_backup_service_account" {
-  value = google_service_account.db_backup.email
+  value = one(google_service_account.db_backup[*].email)
 }

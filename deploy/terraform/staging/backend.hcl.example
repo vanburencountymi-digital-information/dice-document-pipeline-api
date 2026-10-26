@@ -1,0 +1,19 @@
+# Copy to backend.hcl (not committed) and fill in.
+# Credentials: set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY to an R2 API token that can
+# read and write this bucket only (staging's own state bucket, not prod's).
+bucket = "REPLACE-with-staging-state-bucket"
+key    = "staging/terraform.tfstate"
+region = "auto"
+
+endpoints = {
+  s3 = "https://ACCOUNT_ID.r2.cloudflarestorage.com"
+}
+
+# R2 is not AWS, so skip the AWS-only checks.
+skip_credentials_validation = true
+skip_region_validation      = true
+skip_requesting_account_id  = true
+skip_metadata_api_check     = true
+skip_s3_checksum            = true
+use_path_style              = true
+use_lockfile                = true
