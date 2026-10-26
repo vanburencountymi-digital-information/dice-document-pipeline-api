@@ -87,6 +87,8 @@ Last: **Execute** `dice-migrate`, then create the admin login and accounts.
 
 OpenTofu ignores image changes on purpose, so it won't undo a promotion. Use OpenTofu for everything else (settings, sizes, schedule).
 
+After a promotion, `tofu plan` shows one harmless line on `dice-app`: `revision = "dice-app-0000N-xxx" -> null`. Each deploy gives the new revision a generated name, and OpenTofu would clear it. Nothing is actually different, so there is nothing to fix.
+
 **Once, before the first run:** add the tagged address to `terraform.tfvars` and apply. The script checks the new version at this address before any users see it, and the app refuses addresses it doesn't know.
 
 ```hcl

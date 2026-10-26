@@ -170,7 +170,7 @@ Nothing goes down and there's nothing to restart. The app stays up, uploads are 
 
 The files are in [`deploy/terraform/staging`](../deploy/terraform/staging/README.md), with their own state, and use the same shared code as prod. Run `tofu plan` and read it before every `tofu apply`.
 
-- **Images:** Cloud Build changes the image on `dice-app` and on the worker job's `worker` container (and `ocr` when rebuilt) on every deploy. OpenTofu ignores images, so it won't undo a deploy. The container names `worker` and `ocr` matter: the pipeline updates them by name.
+- **Images:** Cloud Build changes the image on `dice-app` and on the worker job's `worker` container (and `ocr` when rebuilt) on every deploy. OpenTofu ignores images, so it won't undo a deploy. The container names `worker` and `ocr` matter: the pipeline updates them by name. After a deploy, `tofu plan` shows one harmless line on `dice-app`: `revision = "dice-app-0000N-xxx" -> null`. Each deploy gives the new revision a generated name, and OpenTofu would clear it. Nothing is actually different, so there is nothing to fix.
 - **Secrets:** their values stay out of OpenTofu and its state. It makes the empty secrets only.
 - **Worker schedule:** kept paused. OpenTofu keeps it that way, so it won't resume it.
 - **Public access:** staging is made public with Cloud Run's "invoker" setting, because our organization policy blocks the `allUsers` grant that prod uses.
