@@ -85,7 +85,7 @@ data "google_project" "this" {
   depends_on = [google_project.prod]
 }
 
-# Named `prod` because prod's state already knows it by that name (see ../../prod/main.tf).
+# Named `prod` because prod's state knows it by that name. Renaming it needs a `moved` block.
 resource "google_project" "prod" {
   count           = var.create_project ? 1 : 0
   project_id      = var.project_id

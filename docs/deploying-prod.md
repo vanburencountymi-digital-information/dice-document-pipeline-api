@@ -1,6 +1,6 @@
 # Deploying to prod
 
-Setting up prod on Google Cloud, and putting new versions live on it. Staging works differently; see [deploying-staging.md](deploying-staging.md). The OpenTofu files are in [`deploy/terraform/prod/`](../deploy/terraform/prod/README.md). Run `tofu` commands from that folder. Settings that apply to any deployment are explained in the [Settings reference](#settings-reference) at the end.
+Setting up prod on Google Cloud, and putting new versions live on it. Staging is set up the same way, from [`deploy/terraform/staging/`](../deploy/terraform/staging/README.md); see [deploying-staging.md](deploying-staging.md). The OpenTofu files are in [`deploy/terraform/prod/`](../deploy/terraform/prod/README.md). Run `tofu` commands from that folder. Settings that apply to any deployment are explained in the [Settings reference](#settings-reference) at the end.
 
 Prod does not update on its own: you promote a version that is already running on staging.
 
@@ -87,6 +87,8 @@ Last: **Execute** `dice-migrate`, then create the admin login and accounts.
 
 OpenTofu ignores image changes on purpose, so it won't undo a promotion. Use OpenTofu for everything else (settings, sizes, schedule).
 
+After a promotion, `tofu plan` shows one harmless line on `dice-app`: `revision = "dice-app-0000N-xxx" -> null`. Each deploy gives the new revision a generated name, and OpenTofu would clear it. Nothing is actually different, so there is nothing to fix.
+
 **Once, before the first run:** add the tagged address to `terraform.tfvars` and apply. The script checks the new version at this address before any users see it, and the app refuses addresses it doesn't know.
 
 ```hcl
@@ -135,6 +137,12 @@ Every night at 3am (Detroit) the `dice-db-backup` job copies the whole database 
 **To check it works:** run `dice-db-backup` by hand (**Cloud Run → Jobs → Execute**). Two files appear in the bucket: `default-dice-DATE.psql.bin` (the backup) and a small `.metadata` file next to it. If a run fails, it reports to Sentry (tag `job: database_backup`) and shows as failed in Cloud Run. A job that never starts is not reported.
 
 **To restore:** run `python manage.py dbrestore --noinput --servername dice` with `DATABASE_URL` pointing at an **empty** database and the same `DB_BACKUP_*` settings as the backup job. It takes the newest backup. If the database already has tables, the restore stops with an error and changes nothing. Practise on a test database first.
+
+## Part 4: Old images and app CPU
+
+OpenTofu deletes images from the registry that are older than 30 days, but always keeps the newest 2 of each. That leaves one version to roll back to. Anything older has to be copied back from staging, which cleans up the same way, so very old releases can't be recovered.
+
+The app's CPU is allocated only while it handles requests (cheaper when idle), with extra CPU while a new container starts. Both are set in `deploy/terraform/prod/main.tf`.
 
 ## Settings reference
 
