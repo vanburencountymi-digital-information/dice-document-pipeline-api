@@ -2,16 +2,14 @@
 # images and secret values. After the first apply, Cloud Build changes the images on every
 # release, so OpenTofu ignores them (otherwise it would roll back each deploy).
 
-locals {
-  secret_env = local.secrets
-}
-
 resource "google_cloud_run_v2_service" "app" {
-  count               = var.deploy_cloud_run ? 1 : 0
-  name                = "dice-app"
-  location            = var.region
-  ingress             = "INGRESS_TRAFFIC_ALL"
-  deletion_protection = true
+  count    = var.deploy_cloud_run ? 1 : 0
+  name     = "dice-app"
+  location = var.region
+  ingress  = "INGRESS_TRAFFIC_ALL"
+  # null (not false) when off, so a service made without this setting shows no change.
+  invoker_iam_disabled = var.invoker_iam_disabled ? true : null
+  deletion_protection  = true
 
   template {
     service_account = google_service_account.runtime.email
@@ -29,6 +27,9 @@ resource "google_cloud_run_v2_service" "app" {
           cpu    = "1"
           memory = "1Gi"
         }
+        # Extra CPU while a new container starts, so the first request after idle is faster.
+        # null (not false) when off, so a service made without it shows no change.
+        startup_cpu_boost = var.startup_cpu_boost ? true : null
       }
 
       dynamic "env" {
@@ -40,7 +41,7 @@ resource "google_cloud_run_v2_service" "app" {
       }
 
       dynamic "env" {
-        for_each = local.secret_env
+        for_each = local.secrets
         content {
           name = env.key
           value_source {
@@ -70,8 +71,9 @@ resource "google_cloud_run_v2_service" "app" {
 }
 
 # "Public" only lets requests reach the app. The API still needs its own tokens.
+# Not made when invoker_iam_disabled is on: that setting already lets requests through.
 resource "google_cloud_run_v2_service_iam_member" "public" {
-  count    = var.deploy_cloud_run ? 1 : 0
+  count    = var.deploy_cloud_run && !var.invoker_iam_disabled ? 1 : 0
   name     = google_cloud_run_v2_service.app[0].name
   location = var.region
   role     = "roles/run.invoker"
@@ -103,7 +105,7 @@ resource "google_cloud_run_v2_job" "migrate" {
         }
 
         dynamic "env" {
-          for_each = local.secret_env
+          for_each = local.secrets
           content {
             name = env.key
             value_source {
@@ -166,7 +168,7 @@ resource "google_cloud_run_v2_job" "worker" {
         }
 
         dynamic "env" {
-          for_each = local.secret_env
+          for_each = local.secrets
           content {
             name = env.key
             value_source {
@@ -226,10 +228,10 @@ resource "google_cloud_scheduler_job" "worker" {
 }
 
 # Nightly database backup to the backup bucket (DIC-2540). Uses the app image, which has
-# `pg_dump`; deploy-prod.sh updates its image with the others. The command itself deletes
+# `pg_dump`; the deploy script updates its image with the others. The command itself deletes
 # all but the newest `DBBACKUP_CLEANUP_KEEP` backups (settings.py).
 resource "google_cloud_run_v2_job" "db_backup" {
-  count               = var.deploy_cloud_run ? 1 : 0
+  count               = local.db_backup_job_count
   name                = "dice-db-backup"
   location            = var.region
   deletion_protection = true
@@ -241,7 +243,7 @@ resource "google_cloud_run_v2_job" "db_backup" {
     parallelism = 1
 
     template {
-      service_account = google_service_account.db_backup.email
+      service_account = google_service_account.db_backup[0].email
       timeout         = "3600s"
       max_retries     = 0
 
@@ -262,7 +264,7 @@ resource "google_cloud_run_v2_job" "db_backup" {
             S3_ENDPOINT_URL       = var.s3_endpoint_url
             S3_ADDRESSING_STYLE   = "path"
             DB_BACKUP_BUCKET_NAME = var.db_backup_bucket_name
-            SENTRY_ENVIRONMENT    = "production"
+            SENTRY_ENVIRONMENT    = var.sentry_environment
             # This job serves no requests and stores no documents. These two quieten the
             # startup warnings (ADR 0035) that would otherwise fire on every run: the bucket
             # name (no credentials) and HTTPS off, as there is no origin lock to check.
@@ -306,7 +308,7 @@ resource "google_cloud_run_v2_job" "db_backup" {
 }
 
 resource "google_cloud_scheduler_job" "db_backup" {
-  count     = var.deploy_cloud_run ? 1 : 0
+  count     = local.db_backup_job_count
   name      = "dice-db-backup-scheduler-trigger"
   region    = var.region
   schedule  = var.db_backup_schedule

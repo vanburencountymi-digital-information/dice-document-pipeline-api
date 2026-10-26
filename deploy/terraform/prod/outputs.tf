@@ -1,25 +1,25 @@
 output "app_url" {
   description = "The app's run.app address (add its hostname to extra_allowed_hosts if it is used directly)."
-  value       = var.deploy_cloud_run ? google_cloud_run_v2_service.app[0].uri : null
+  value       = module.dice.app_url
 }
 
 output "image_repository" {
-  value = "${var.region}-docker.pkg.dev/${var.project_id}/${local.repo_id}"
+  value = module.dice.image_repository
 }
 
 output "secret_names" {
   description = "Secrets to fill in by hand."
-  value       = values(merge(local.secrets, local.backup_secrets))
+  value       = module.dice.secret_names
 }
 
 output "runtime_service_account" {
-  value = google_service_account.runtime.email
+  value = module.dice.runtime_service_account
 }
 
 output "deployer_service_account" {
-  value = google_service_account.deployer.email
+  value = module.dice.deployer_service_account
 }
 
 output "db_backup_service_account" {
-  value = google_service_account.db_backup.email
+  value = module.dice.db_backup_service_account
 }
