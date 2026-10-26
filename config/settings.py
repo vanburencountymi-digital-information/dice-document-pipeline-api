@@ -270,9 +270,13 @@ DBBACKUP_SEND_EMAIL = False
 # Cloud Run forwards plain HTTP and says in this header if it was HTTPS (ADR 0021).
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # When Cloudflare sits in front, it adds a secret `X-Origin-Secret` header (a Cloudflare
-# Transform Rule) and requests without it are refused, so the raw `run.app` address can't be
+# Worker, ADR 0041) and requests without it are refused, so the raw `run.app` address can't be
 # used to get around Cloudflare. Empty (the default) turns the check off (ADR 0036).
 ORIGIN_LOCK_SECRET = env.str("ORIGIN_LOCK_SECRET", default="")
+# On when the Cloudflare Worker is in front: it must send Cloud Run's own `Host` to be routed, so
+# it passes the public hostname in `X-Forwarded-Host` instead (ADR 0041). Only safe with the
+# origin lock on, since otherwise a caller could send that header themselves.
+USE_X_FORWARDED_HOST = env.bool("USE_X_FORWARDED_HOST", default=False)
 # Only for a custom domain in front of the app, e.g. https://pipeline.example.org
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 SECURE_CONTENT_TYPE_NOSNIFF = True

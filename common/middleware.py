@@ -8,8 +8,8 @@ from django.urls import reverse
 
 LOGGER = logging.getLogger(__name__)
 
-# Django's name for the `X-Origin-Secret` header. The Cloudflare rule that adds the header
-# lives outside this repo and must use that same name (ADR 0036).
+# Django's name for the `X-Origin-Secret` header. The Cloudflare Worker that adds the header
+# (`deploy/terraform/prod/worker/index.js`) must use that same name (ADR 0041).
 HEADER_META_KEY = "HTTP_X_ORIGIN_SECRET"
 
 

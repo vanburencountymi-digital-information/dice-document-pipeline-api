@@ -128,6 +128,12 @@ variable "enable_origin_lock" {
   default     = true
 }
 
+variable "use_forwarded_host" {
+  description = "Read the public hostname from X-Forwarded-Host (ADR 0041). Only for the Cloudflare Worker, and only safe once the origin lock is on."
+  type        = bool
+  default     = false
+}
+
 variable "db_backup_bucket_name" {
   description = "The private R2 bucket for nightly database backups (made by hand; not the documents bucket). Needed when enable_db_backup is true."
   type        = string

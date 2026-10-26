@@ -136,6 +136,26 @@ Every night at 3am (Detroit) the `dice-db-backup` job copies the whole database 
 
 **To restore:** run `python manage.py dbrestore --noinput --servername dice` with `DATABASE_URL` pointing at an **empty** database and the same `DB_BACKUP_*` settings as the backup job. It takes the newest backup. If the database already has tables, the restore stops with an error and changes nothing. Practise on a test database first.
 
+## Part 4: Cloudflare Worker
+
+Cloud Run needs its own address in each request, so the public hostname goes through a small Cloudflare Worker, made by OpenTofu ([ADR 0041](adrs/0041-cloudflare-worker-reaches-cloud-run.md)). Staging has none.
+
+Before the apply:
+1. Put `cloudflare_account_id` and `cloudflare_zone_id` in `terraform.tfvars`.
+2. Make a Cloudflare API token with **Workers Scripts: Edit** (account) and **DNS: Edit** (the zone). `export CLOUDFLARE_API_TOKEN=...`
+3. Delete any existing DNS record for the public hostname. The Worker makes its own.
+4. `tofu init -backend-config=backend.hcl` again, since there is a new provider.
+
+Order matters. Keep the lock off until the Worker works:
+1. Make the secret: `openssl rand -hex 32`.
+2. Apply. Then give the Worker the secret: `npx wrangler secret put ORIGIN_LOCK_SECRET --name ada-api-proxy`. Run `tofu plan` once more and check it doesn't remove it.
+3. Add the same value to `dice-origin-lock-secret` in Secret Manager (`gcloud secrets versions add`) but **don't start a new revision yet**.
+4. Through the public hostname, check the API, an upload, a JSON POST, the download links and the admin login.
+5. Check throttling and logs show the caller's real IP, not a Cloudflare one.
+6. Start a new Cloud Run revision so it picks up the secret. Then `curl -i https://<service>.run.app/<api path>` should give 403, and `/ping/` should still say `pong!`.
+
+To go back: add an empty value to `dice-origin-lock-secret` and start a new revision (the lock turns off), or `npx wrangler rollback --name ada-api-proxy` for a bad Worker. To change the secret, change both copies together; requests fail in between.
+
 ## Settings reference
 
 Every deployment (staging, prod, anywhere else) runs the same image two ways:
@@ -160,7 +180,8 @@ The app **and** the worker need these:
 | `OPENDATALOADER_HYBRID_URL` | Address of the OCR service. Keep it private: the worker reaches it, the internet doesn't. |
 | `ANTHROPIC_API_KEY` | Only if `RUN_ALT_TEXT=True`. |
 | `TRUSTED_PROXY_HOPS` | `1` on Cloud Run. Leave unset locally. If it's missing in a deployment, every caller shares one throttle counter ([ADR 0031](adrs/0031-api-throttling.md)). |
-| `ORIGIN_LOCK_SECRET` | Optional. With Cloudflare in front, set a long random string and have Cloudflare send it as an `X-Origin-Secret` header. Requests without it get a 403, so nobody can skip Cloudflare through the raw `run.app` address ([ADR 0036](adrs/0036-origin-lock.md)). |
+| `ORIGIN_LOCK_SECRET` | Optional. With Cloudflare in front, set a long random string and have the Cloudflare Worker send it as an `X-Origin-Secret` header (Part 4). Requests without it get a 403, so nobody can skip Cloudflare through the raw `run.app` address ([ADR 0036](adrs/0036-origin-lock.md)). |
+| `USE_X_FORWARDED_HOST` | `True` in prod only, where the Cloudflare Worker sends the public hostname in `X-Forwarded-Host`. Leave off elsewhere, and only turn on with `ORIGIN_LOCK_SECRET` set ([ADR 0041](adrs/0041-cloudflare-worker-reaches-cloud-run.md)). |
 | `REQUIRE_HTTPS` | Leave unset (on). Only local development sets it to `False`. |
 | `DB_BACKUP_BUCKET_NAME`, `DB_BACKUP_ACCESS_KEY`, `DB_BACKUP_SECRET_KEY` | Only the nightly backup job needs these: the backup bucket and its own token. Without a bucket the job fails with an error. |
 | `WEBHOOK_ALLOW_PRIVATE_URLS` | Local use only. Lets webhooks go to a receiver on your own machine. Never in staging or prod. |
