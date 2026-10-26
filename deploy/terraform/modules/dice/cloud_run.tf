@@ -59,9 +59,10 @@ resource "google_cloud_run_v2_service" "app" {
   }
 
   lifecycle {
+    # template[0].revision is not ignored: when the service is updated, OpenTofu would send
+    # the old revision's name with the new settings, and Cloud Run refuses that (409).
     ignore_changes = [
       template[0].containers[0].image,
-      template[0].revision,
       client,
       client_version,
       # The service-level scaling block (manual mode only). Cloud Run reports it back as
