@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.7.2 (2026-10-26)
+
+### Bug Fixes
+
+- Template[0] revision not ignored
+  ([#43](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/43),
+  [`8254fa4`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/8254fa41e0125b2a43d1091afd593d3e7923860e))
+
+
 ## v5.7.1 (2026-10-26)
 
 ### Bug Fixes
