@@ -59,6 +59,8 @@ ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 # "0.0.0" only shows up before this repo's very first tagged release ever ships.
 PIPELINE_VERSION = env.str("PIPELINE_VERSION", default="0.0.0")
 
+DISALLOWED_HOST_LOGGER = "django.security.DisallowedHost"
+
 # ADR 0017 — error monitoring. An empty SENTRY_DSN (the local/test default) makes the SDK
 # a no-op, so this is safe to leave wired up unconditionally rather than gating it behind
 # an extra "is monitoring enabled" flag.
@@ -66,9 +68,15 @@ ErrorLoggingClient().configure(
     dsn=env.str("SENTRY_DSN", default=""),
     environment=env.str("SENTRY_ENVIRONMENT", default="development"),
     release=PIPELINE_VERSION,
-    # `DatabaseBackupService` reports a failed backup with a tag; the package's own log record
-    # of the same failure would be a second, untagged event.
-    ignored_loggers=[DBBACKUP_LOGGER],
+    ignored_loggers=[
+        # `DatabaseBackupService` reports a failed backup with a tag; the package's own log
+        # record of the same failure would be a second, untagged event.
+        DBBACKUP_LOGGER,
+        # Logged whenever a request names a host that isn't in `ALLOWED_HOSTS`, such as someone
+        # opening the raw `run.app` address or a bot probing. Django still answers 400; it just
+        # isn't worth an alert.
+        DISALLOWED_HOST_LOGGER,
+    ],
 )
 
 
