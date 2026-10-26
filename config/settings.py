@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from datetime import timedelta
 from pathlib import Path
 
@@ -82,6 +83,7 @@ INSTALLED_APPS = [
     "drf_spectacular_sidecar",
     "knox",
     "django_tasks_db",
+    "dbbackup",
     "accounts",
     "api",
     "common",
@@ -180,23 +182,25 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 S3_BUCKET_NAME = env.str("S3_BUCKET_NAME", default="")
+S3_ENDPOINT_URL = env.str("S3_ENDPOINT_URL", default="https://storage.googleapis.com")
+# Cloudflare R2 has no AWS-style regions but boto3's SigV4 signing still needs some value
+# here — "auto" is R2's own documented answer, and GCS's S3-compatible endpoint accepts it
+# too, so it's a safe default either way.
+S3_REGION_NAME = env.str("S3_REGION_NAME", default="auto")
+S3_SIGNATURE_VERSION = env.str("S3_SIGNATURE_VERSION", default="s3v4")
+S3_ADDRESSING_STYLE = env.str("S3_ADDRESSING_STYLE", default="virtual")
 STORAGES = {
     "default": (
         {
             "BACKEND": "storages.backends.s3.S3Storage",
             "OPTIONS": {
                 "bucket_name": S3_BUCKET_NAME,
-                "endpoint_url": env.str(
-                    "S3_ENDPOINT_URL", default="https://storage.googleapis.com"
-                ),
+                "endpoint_url": S3_ENDPOINT_URL,
                 "access_key": env.str("S3_ACCESS_KEY", default=""),
                 "secret_key": env.str("S3_SECRET_KEY", default=""),
-                # Cloudflare R2 has no AWS-style regions but boto3's SigV4 signing still
-                # needs some value here — "auto" is R2's own documented answer, and GCS's
-                # S3-compatible endpoint accepts it too, so it's a safe default either way.
-                "region_name": env.str("S3_REGION_NAME", default="auto"),
-                "signature_version": env.str("S3_SIGNATURE_VERSION", default="s3v4"),
-                "addressing_style": env.str("S3_ADDRESSING_STYLE", default="virtual"),
+                "region_name": S3_REGION_NAME,
+                "signature_version": S3_SIGNATURE_VERSION,
+                "addressing_style": S3_ADDRESSING_STYLE,
             },
         }
         if S3_BUCKET_NAME
@@ -207,6 +211,47 @@ STORAGES = {
     # `collectstatic`.
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
+
+# Nightly database backups (`manage.py dump_database`, django-dbbackup, DIC-2540). A separate
+# bucket and token from the documents above, and only the backup job gets them.
+DB_DUMP_BUCKET_NAME = env.str("DB_DUMP_BUCKET_NAME", default="")
+DB_DUMP_ACCESS_KEY = env.str("DB_DUMP_ACCESS_KEY", default="")
+DB_DUMP_SECRET_KEY = env.str("DB_DUMP_SECRET_KEY", default="")
+# Only defined when a bucket is set. django-dbbackup falls back to local disk if there is no
+# "dbbackup" entry, so `DatabaseDumpService` refuses to run without one.
+if DB_DUMP_BUCKET_NAME:
+    STORAGES["dbbackup"] = {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "bucket_name": DB_DUMP_BUCKET_NAME,
+            "endpoint_url": S3_ENDPOINT_URL,
+            "access_key": DB_DUMP_ACCESS_KEY,
+            "secret_key": DB_DUMP_SECRET_KEY,
+            "region_name": S3_REGION_NAME,
+            "signature_version": S3_SIGNATURE_VERSION,
+            "addressing_style": S3_ADDRESSING_STYLE,
+        },
+    }
+# Keep the 14 newest backups (about two weeks of nightly runs) and delete older ones.
+DBBACKUP_CLEANUP_KEEP = 14
+# pg_dump's compressed "custom" format, which `pg_restore` reads; the default is plain SQL.
+DBBACKUP_CONNECTOR_MAPPING = {
+    "django.db.backends.postgresql": "dbbackup.db.postgresql.PgDumpBinaryConnector",
+}
+DBBACKUP_CONNECTORS = {
+    "default": {
+        # Only PATH and the connection details reach pg_dump, so it never sees other secrets
+        # in this process's environment (such as the bucket token).
+        "USE_PARENT_ENV": False,
+        "ENV": {"PATH": os.environ.get("PATH", "")},
+        # For `dbrestore`: no `--clean`, so a restore into a database that already has tables
+        # fails instead of dropping them. Restore into an empty database.
+        "DROP": False,
+        "IF_EXISTS": False,
+    },
+}
+# Failures go to Sentry through `DatabaseDumpService`, not to Django's (unset) ADMINS email.
+DBBACKUP_SEND_EMAIL = False
 
 # HTTPS and Security
 

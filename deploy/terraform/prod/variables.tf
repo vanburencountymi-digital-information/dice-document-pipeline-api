@@ -67,6 +67,16 @@ variable "s3_endpoint_url" {
   type        = string
 }
 
+variable "db_dump_bucket_name" {
+  description = "The private R2 bucket for nightly database dumps (made by hand; not the documents bucket)."
+  type        = string
+}
+
+variable "db_dump_schedule" {
+  type    = string
+  default = "0 3 * * *"
+}
+
 variable "run_steps" {
   description = "Which pipeline steps are on."
   type        = map(bool)

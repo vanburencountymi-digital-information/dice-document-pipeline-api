@@ -35,3 +35,10 @@ class ErrorLoggingClientTests(SimpleTestCase):
         self.assertEqual(kwargs["environment"], "staging")
         self.assertEqual(kwargs["release"], "1.2.3")
         self.assertFalse(kwargs["send_default_pii"])
+
+    @patch("common.error_logging_client.ignore_logger", autospec=True)
+    @patch("common.error_logging_client.sentry_sdk.init")
+    def test_configure_ignores_dbbackup_log_records(self, _mock_init, mock_ignore) -> None:
+        self.client.configure(dsn="", environment="staging", release="1.2.3")
+
+        mock_ignore.assert_called_once_with("dbbackup")

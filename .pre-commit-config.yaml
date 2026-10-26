@@ -42,9 +42,19 @@ repos:
           - packaging==26.3
           - sentry-sdk[django]==2.69.2
           - django-storages[s3]==1.14.6
+          - django-dbbackup==5.4.0
           - django-tasks-db==0.13.0
           - psycopg[binary]==3.3.4
           - moto==5.2.3
         args: [--config-file=pyproject.toml, .]
         pass_filenames: false
         always_run: true
+
+  - repo: local
+    hooks:
+      - id: postgres-client-version
+        name: Dockerfile pg client matches the compose database
+        entry: deploy/scripts/check-postgres-version.sh
+        language: script
+        files: ^(Dockerfile|docker-compose\.yml)$
+        pass_filenames: false

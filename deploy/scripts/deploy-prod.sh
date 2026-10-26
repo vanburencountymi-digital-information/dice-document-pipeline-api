@@ -14,6 +14,7 @@ REPO=dice
 APP_SERVICE=dice-app
 MIGRATE_JOB=dice-migrate
 WORKER_JOB=dice-worker
+DUMP_JOB=dice-db-dump
 TAG=candidate
 
 STAGING_REGISTRY=$REGION-docker.pkg.dev/$STAGING_PROJECT/$REPO
@@ -142,5 +143,8 @@ if [[ -n "$OCR_TAG" ]]; then
     --container ocr --image "$OCR_IMAGE"
 fi
 
-echo "== 8. To roll back, run:"
+echo "== 8. Update the nightly database dump"
+run gcloud run jobs update "$DUMP_JOB" --image "$APP_IMAGE" --region "$REGION" --project "$PROD_PROJECT"
+
+echo "== 9. To roll back, run:"
 echo "gcloud run services update-traffic $APP_SERVICE --region $REGION --project $PROD_PROJECT --to-revisions $PREVIOUS_REVISION=100"
