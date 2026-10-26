@@ -2,6 +2,21 @@
 
 <!-- version list -->
 
+## v5.9.0 (2026-10-26)
+
+### Bug Fixes
+
+- Add rate limits characteristics
+  ([#46](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/46),
+  [`f8becd6`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/f8becd6bd77bf298380ed8ff34ad1e8d01b8dde3))
+
+### Features
+
+- Add Cloudflare WAF and /api/ rate limit (DIC-2346)
+  ([#46](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/46),
+  [`f8becd6`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/f8becd6bd77bf298380ed8ff34ad1e8d01b8dde3))
+
+
 ## v5.8.0 (2026-10-26)
 
 ### Features
