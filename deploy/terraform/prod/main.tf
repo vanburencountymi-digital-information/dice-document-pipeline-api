@@ -1,168 +1,98 @@
-locals {
-  runtime_sa_id  = "dice-prod-runtime"
-  deployer_sa_id = "dice-prod-deployer"
-  backup_sa_id   = "dice-prod-db-backup"
-  repo_id        = "dice"
+# Prod is one use of the shared setup in ../modules/dice. Staging is another.
+module "dice" {
+  source = "../modules/dice"
 
-  apis = [
-    "run.googleapis.com",
-    "artifactregistry.googleapis.com",
-    "secretmanager.googleapis.com",
-    "cloudbuild.googleapis.com",
-    "cloudscheduler.googleapis.com",
-    "iam.googleapis.com",
-  ]
-
-  # Empty secrets are made here. Their values are added by hand (README.md) so they never
-  # enter OpenTofu or its state. Maps the app's variable name to the secret's name.
-  secrets = {
-    SECRET_KEY         = "dice-secret-key"
-    DATABASE_URL       = "dice-database-url"
-    S3_ACCESS_KEY      = "dice-s3-access-key"
-    S3_SECRET_KEY      = "dice-s3-secret-key"
-    SENTRY_DSN         = "dice-sentry-dsn"
-    ANTHROPIC_API_KEY  = "dice-anthropic-api-key"
-    ORIGIN_LOCK_SECRET = "dice-origin-lock-secret"
-  }
-
-  # Only the nightly backup job gets these (a separate R2 bucket and token, DIC-2540). It runs
-  # as its own service account, so the app and worker can't read them even from inside their
-  # containers. They are not in `secrets` above, which the app and worker get.
-  backup_secrets = {
-    DB_BACKUP_ACCESS_KEY = "dice-db-backup-access-key"
-    DB_BACKUP_SECRET_KEY = "dice-db-backup-secret-key"
-  }
-
-  # The shared secrets the backup job also needs, by the app's variable name.
-  backup_shared_secret_names = ["SECRET_KEY", "DATABASE_URL", "SENTRY_DSN"]
-
-  allowed_hosts = join(",", concat([var.public_hostname], var.extra_allowed_hosts))
-
-  plain_env = merge(
-    { for name, on in var.run_steps : name => title(tostring(on)) },
-    {
-      S3_BUCKET_NAME       = var.s3_bucket_name
-      S3_ENDPOINT_URL      = var.s3_endpoint_url
-      S3_ADDRESSING_STYLE  = "path"
-      SENTRY_ENVIRONMENT   = "production"
-      TRUSTED_PROXY_HOPS   = "1" # Cloud Run adds one X-Forwarded-For entry (ADR 0031)
-      ALLOWED_HOSTS        = local.allowed_hosts
-      CSRF_TRUSTED_ORIGINS = "https://${var.public_hostname}"
-      PUBLIC_BASE_URL      = "https://${var.public_hostname}"
-    },
-  )
+  project_id            = var.project_id
+  create_project        = var.create_project
+  billing_account       = var.billing_account
+  org_id                = var.org_id
+  region                = var.region
+  public_hostname       = var.public_hostname
+  extra_allowed_hosts   = var.extra_allowed_hosts
+  deploy_cloud_run      = var.deploy_cloud_run
+  app_image             = var.app_image
+  ocr_image             = var.ocr_image
+  s3_bucket_name        = var.s3_bucket_name
+  s3_endpoint_url       = var.s3_endpoint_url
+  db_backup_bucket_name = var.db_backup_bucket_name
 }
 
-# --- Project and services -------------------------------------------------------------
-
-resource "google_project" "prod" {
-  count           = var.create_project ? 1 : 0
-  project_id      = var.project_id
-  name            = var.project_id
-  billing_account = var.billing_account
-  org_id          = var.org_id
-
-  lifecycle {
-    prevent_destroy = true
-  }
+# Prod was applied before the module existed. These tell OpenTofu the resources only moved
+# in the code, so it doesn't delete and re-create them. Safe to delete once every
+# environment's state has been applied with them.
+moved {
+  from = google_project.prod
+  to   = module.dice.google_project.prod
 }
-
-resource "google_project_service" "apis" {
-  for_each           = toset(local.apis)
-  service            = each.value
-  disable_on_destroy = false
-
-  depends_on = [google_project.prod]
+moved {
+  from = google_project_service.apis
+  to   = module.dice.google_project_service.apis
 }
-
-# --- Service accounts -----------------------------------------------------------------
-
-# What the app and worker run as.
-resource "google_service_account" "runtime" {
-  account_id   = local.runtime_sa_id
-  display_name = "Prod app and worker"
-
-  depends_on = [google_project_service.apis]
+moved {
+  from = google_service_account.runtime
+  to   = module.dice.google_service_account.runtime
 }
-
-# What the nightly database backup runs as. Kept apart from `runtime` so the backup token is
-# out of reach of the app and worker, which handle uploaded files (DIC-2540).
-resource "google_service_account" "db_backup" {
-  account_id   = local.backup_sa_id
-  display_name = "Prod nightly database backup"
-
-  depends_on = [google_project_service.apis]
+moved {
+  from = google_service_account.db_backup
+  to   = module.dice.google_service_account.db_backup
 }
-
-# What builds run as, and what starts the worker on its schedule.
-resource "google_service_account" "deployer" {
-  account_id   = local.deployer_sa_id
-  display_name = "Prod deploys and worker schedule"
-
-  depends_on = [google_project_service.apis]
+moved {
+  from = google_service_account.deployer
+  to   = module.dice.google_service_account.deployer
 }
-
-resource "google_project_iam_member" "deployer" {
-  for_each = toset([
-    "roles/artifactregistry.writer",
-    "roles/run.developer",
-    "roles/logging.logWriter",
-  ])
-  project = var.project_id
-  role    = each.value
-  member  = google_service_account.deployer.member
+moved {
+  from = google_project_iam_member.deployer
+  to   = module.dice.google_project_iam_member.deployer
 }
-
-# Lets the deployer deploy things that run as the runtime account, and nothing else.
-resource "google_service_account_iam_member" "deployer_acts_as_runtime" {
-  service_account_id = google_service_account.runtime.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = google_service_account.deployer.member
+moved {
+  from = google_service_account_iam_member.deployer_acts_as_runtime
+  to   = module.dice.google_service_account_iam_member.deployer_acts_as_runtime
 }
-
-resource "google_service_account_iam_member" "deployer_acts_as_db_backup" {
-  service_account_id = google_service_account.db_backup.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = google_service_account.deployer.member
+moved {
+  from = google_service_account_iam_member.deployer_acts_as_db_backup
+  to   = module.dice.google_service_account_iam_member.deployer_acts_as_db_backup
 }
-
-# --- Images ---------------------------------------------------------------------------
-
-resource "google_artifact_registry_repository" "dice" {
-  repository_id = local.repo_id
-  location      = var.region
-  format        = "DOCKER"
-
-  depends_on = [google_project_service.apis]
+moved {
+  from = google_artifact_registry_repository.dice
+  to   = module.dice.google_artifact_registry_repository.dice
 }
-
-# --- Secrets --------------------------------------------------------------------------
-
-resource "google_secret_manager_secret" "this" {
-  for_each  = merge(local.secrets, local.backup_secrets)
-  secret_id = each.value
-
-  replication {
-    auto {}
-  }
-
-  depends_on = [google_project_service.apis]
+moved {
+  from = google_secret_manager_secret.this
+  to   = module.dice.google_secret_manager_secret.this
 }
-
-resource "google_secret_manager_secret_iam_member" "runtime_reads" {
-  for_each  = local.secrets
-  secret_id = google_secret_manager_secret.this[each.key].secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.runtime.member
+moved {
+  from = google_secret_manager_secret_iam_member.runtime_reads
+  to   = module.dice.google_secret_manager_secret_iam_member.runtime_reads
 }
-
-# The backup job reads only the secrets it uses.
-resource "google_secret_manager_secret_iam_member" "db_backup_reads" {
-  for_each = merge(
-    { for name in local.backup_shared_secret_names : name => local.secrets[name] },
-    local.backup_secrets,
-  )
-  secret_id = google_secret_manager_secret.this[each.key].secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = google_service_account.db_backup.member
+moved {
+  from = google_secret_manager_secret_iam_member.db_backup_reads
+  to   = module.dice.google_secret_manager_secret_iam_member.db_backup_reads
+}
+moved {
+  from = google_cloud_run_v2_service.app
+  to   = module.dice.google_cloud_run_v2_service.app
+}
+moved {
+  from = google_cloud_run_v2_service_iam_member.public
+  to   = module.dice.google_cloud_run_v2_service_iam_member.public
+}
+moved {
+  from = google_cloud_run_v2_job.migrate
+  to   = module.dice.google_cloud_run_v2_job.migrate
+}
+moved {
+  from = google_cloud_run_v2_job.worker
+  to   = module.dice.google_cloud_run_v2_job.worker
+}
+moved {
+  from = google_cloud_run_v2_job.db_backup
+  to   = module.dice.google_cloud_run_v2_job.db_backup
+}
+moved {
+  from = google_cloud_scheduler_job.worker
+  to   = module.dice.google_cloud_scheduler_job.worker
+}
+moved {
+  from = google_cloud_scheduler_job.db_backup
+  to   = module.dice.google_cloud_scheduler_job.db_backup
 }
