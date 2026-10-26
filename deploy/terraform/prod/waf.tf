@@ -30,7 +30,7 @@ locals {
 }
 
 # The second layer behind the app's own limits (ADR 0031: 120 requests a minute per IP). The Free
-# plan allows one rule, counting per IP in a 10-second window, with a 10-second block. 40 requests
+# plan allows one rule, counting per IP and Cloudflare data centre in a 10-second window, with a 10-second block. 40 requests
 # in 10 seconds is more than a person or a normal upload client sends, and looser than the app's own
 # limit, so the app still answers first for ordinary callers.
 resource "cloudflare_ruleset" "rate_limit" {
@@ -45,7 +45,7 @@ resource "cloudflare_ruleset" "rate_limit" {
     expression  = "starts_with(http.request.uri.path, \"/api/\")${local.rate_limit_skip}"
     enabled     = true
     ratelimit = {
-      characteristics     = ["ip.src"]
+      characteristics     = ["cf.colo.id", "ip.src"]
       period              = 10
       requests_per_period = var.api_rate_limit_per_10s
       mitigation_timeout  = 10
