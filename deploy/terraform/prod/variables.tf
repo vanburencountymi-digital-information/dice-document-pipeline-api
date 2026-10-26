@@ -39,3 +39,12 @@ variable "s3_endpoint_url" { type = string }
 variable "db_backup_bucket_name" { type = string }
 variable "cloudflare_account_id" { type = string }
 variable "cloudflare_zone_id" { type = string }
+variable "backfill_ips" {
+  type        = list(string)
+  default     = []
+  description = "IPs that skip the Cloudflare /api/ rate limit (the WordPress host, for the backfill)."
+}
+variable "api_rate_limit_per_10s" {
+  type    = number
+  default = 40
+}

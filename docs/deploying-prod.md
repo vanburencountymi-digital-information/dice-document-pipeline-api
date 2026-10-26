@@ -150,7 +150,7 @@ Cloud Run needs its own address in each request, so the public hostname goes thr
 
 Before the apply:
 1. Put `cloudflare_account_id` and `cloudflare_zone_id` in `terraform.tfvars`.
-2. Make a Cloudflare API token with **Workers Scripts: Edit** (account) and **DNS: Edit** (the zone). `export CLOUDFLARE_API_TOKEN=...`
+2. Make a Cloudflare API token with **Workers Scripts: Edit** (account), **DNS: Edit** and **Zone WAF: Edit** (the zone). `export CLOUDFLARE_API_TOKEN=...`
 3. Delete any existing DNS record for the public hostname. The Worker makes its own.
 4. `tofu init -backend-config=backend.hcl` again, since there is a new provider.
 
@@ -161,6 +161,8 @@ Order matters. Keep the lock off until the Worker works:
 4. Through the public hostname, check the API, an upload, a JSON POST, the download links and the admin login.
 5. Check throttling and logs show the caller's real IP, not a Cloudflare one.
 6. Start a new Cloud Run revision so it picks up the secret. Then `curl -i https://<service>.run.app/<api path>` should give 403, and `/ping/` should still say `pong!`.
+
+Cloudflare's firewall rules (managed WAF and a rate limit on `/api/`) are made by the same apply, from `waf.tf` ([ADR 0042](adrs/0042-cloudflare-waf-and-rate-limit.md)). A zone allows one ruleset of each kind, so if the zone already has one, import it first or the apply fails. Before the backfill, put the WordPress host's IP in `backfill_ips` in `terraform.tfvars` and apply, or its bursts get blocked.
 
 To go back: add an empty value to `dice-origin-lock-secret` and start a new revision (the lock turns off), or `npx wrangler rollback --name ada-api-proxy` for a bad Worker. To change the secret, change both copies together; requests fail in between.
 

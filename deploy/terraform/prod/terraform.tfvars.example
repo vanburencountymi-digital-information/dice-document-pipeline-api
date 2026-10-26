@@ -21,3 +21,7 @@ deploy_cloud_run = false
 # public_hostname. The API token goes in the CLOUDFLARE_API_TOKEN environment variable.
 cloudflare_account_id = "REPLACE-with-account-id"
 cloudflare_zone_id    = "REPLACE-with-zone-id"
+
+# The WordPress host's IP, so the backfill's bursts skip the Cloudflare rate limit. Leave empty
+# until the backfill; the app's own limits still apply.
+# backfill_ips = ["203.0.113.10"]
