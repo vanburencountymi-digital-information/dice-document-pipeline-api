@@ -18,10 +18,31 @@ Prod does not update on its own: you promote a version that is already running o
 
    On a Mac: `brew install opentofu`. `tofu version` must show 1.10 or higher.
 2. In Cloudflare, make a private R2 bucket for OpenTofu's own notes (e.g. `dice-terraform-state`) and an API token for just that bucket.
-3. In `deploy/terraform/prod/`: copy `backend.hcl.example` to `backend.hcl` and `terraform.tfvars.example` to `terraform.tfvars`, and fill them in. Neither is committed.
-4. Log in to Google: `gcloud auth application-default login`.
-5. Set the R2 token: `export AWS_ACCESS_KEY_ID=...` and `export AWS_SECRET_ACCESS_KEY=...`.
-6. `tofu init -backend-config=backend.hcl`
+3. In the Cloudflare dashboard, open **Zero Trust** and pick the Free plan (up to 50 users, no charge, though it may ask for payment details). It asks for a team name once. This is what protects the admin ([ADR 0043](adrs/0043-cloudflare-access-for-admin.md)).
+4. Make a second Cloudflare API token, for OpenTofu to manage Cloudflare itself (the Worker, firewall rules and admin login). **My Profile → API Tokens → Create Token → Create Custom Token**, with these settings:
+
+   Permissions:
+
+   | Permission type | Permission name | Permission |
+   | --- | --- | --- |
+   | Account | Workers Scripts | Edit |
+   | Account | Access: Apps and Policies | Edit |
+   | Account | Access: Organizations, Identity Providers, and Groups | Edit |
+   | Zone | DNS | Edit |
+   | Zone | Zone WAF | Edit |
+
+   Resources:
+
+   | Resource type | Setting |
+   | --- | --- |
+   | Account Resources | Include → your Cloudflare account |
+   | Zone Resources | Include → Specific zone → the zone that holds `public_hostname` |
+5. In `deploy/terraform/prod/`: copy `backend.hcl.example` to `backend.hcl` and `terraform.tfvars.example` to `terraform.tfvars`, and fill them in. Neither is committed. This includes `cloudflare_account_id`, `cloudflare_zone_id` and `admin_emails` (the addresses allowed into `/admin/`).
+6. Log in to Google: `gcloud auth application-default login`.
+7. Set the R2 token: `export AWS_ACCESS_KEY_ID=...` and `export AWS_SECRET_ACCESS_KEY=...`. Then the Cloudflare token from step 4: `export CLOUDFLARE_API_TOKEN=...`
+8. `tofu init -backend-config=backend.hcl`
+
+If the zone already has firewall rules, or Cloudflare already has a "One-time PIN" login method, import them before the first apply or it fails (see Part 5).
 
 R2 keeps no old versions of the state file. Copy `terraform.tfstate` somewhere safe after big changes.
 
@@ -148,11 +169,7 @@ The app's CPU is allocated only while it handles requests (cheaper when idle), w
 
 Cloud Run needs its own address in each request, so the public hostname goes through a small Cloudflare Worker, made by OpenTofu ([ADR 0041](adrs/0041-cloudflare-worker-reaches-cloud-run.md)). Staging has none.
 
-Before the apply:
-1. Put `cloudflare_account_id` and `cloudflare_zone_id` in `terraform.tfvars`.
-2. Make a Cloudflare API token with **Workers Scripts: Edit** (account), **DNS: Edit** and **Zone WAF: Edit** (the zone). `export CLOUDFLARE_API_TOKEN=...`
-3. Delete any existing DNS record for the public hostname. The Worker makes its own.
-4. `tofu init -backend-config=backend.hcl` again, since there is a new provider.
+Before the apply: delete any existing DNS record for the public hostname. The Worker makes its own.
 
 Order matters. Keep the lock off until the Worker works:
 1. Make the secret: `openssl rand -hex 32`.
@@ -162,9 +179,19 @@ Order matters. Keep the lock off until the Worker works:
 5. Check throttling and logs show the caller's real IP, not a Cloudflare one.
 6. Start a new Cloud Run revision so it picks up the secret. Then `curl -i https://<service>.run.app/<api path>` should give 403, and `/ping/` should still say `pong!`.
 
-Cloudflare's firewall rules (managed WAF and a rate limit on `/api/`) are made by the same apply, from `waf.tf` ([ADR 0042](adrs/0042-cloudflare-waf-and-rate-limit.md)). A zone allows one ruleset of each kind, so if the zone already has one, import it first or the apply fails. Before the backfill, put the WordPress host's IP in `backfill_ips` in `terraform.tfvars` and apply, or its bursts get blocked.
+Cloudflare's firewall rules (managed WAF and a rate limit on `/api/`) are made by the first apply (Part 1), from `waf.tf` ([ADR 0042](adrs/0042-cloudflare-waf-and-rate-limit.md)). A zone allows one ruleset of each kind, so if the zone already has one, import it first or the apply fails. Before the backfill, put the WordPress host's IP in `backfill_ips` in `terraform.tfvars` and apply, or its bursts get blocked.
 
 To go back: add an empty value to `dice-origin-lock-secret` and start a new revision (the lock turns off), or `npx wrangler rollback --name ada-api-proxy` for a bad Worker. To change the secret, change both copies together; requests fail in between.
+
+### Locking the admin
+
+`/admin/` sits behind Cloudflare Access ([ADR 0043](adrs/0043-cloudflare-access-for-admin.md)). Anyone opening it is asked for their email, and only the addresses in `admin_emails` are sent a one-time code. Django's own login comes after.
+
+Zero Trust and `admin_emails` are set up in Part 1. If **Settings → Authentication** in Zero Trust already shows a "One-time PIN" login method, import it before the first apply or it fails (`tofu import cloudflare_zero_trust_access_identity_provider.one_time_pin <account id>/<login method id>`; check the provider's import docs for the exact format).
+
+After pass 2, open `/admin/` in a private window. You should get the Cloudflare sign-in, not Django's login. Try an address that isn't listed: no code should arrive. The `run.app` address is already refused by the origin lock above.
+
+To change who has access, edit `admin_emails` and apply.
 
 ## Settings reference
 

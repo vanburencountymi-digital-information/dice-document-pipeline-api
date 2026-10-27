@@ -48,3 +48,11 @@ variable "api_rate_limit_per_10s" {
   type    = number
   default = 40
 }
+variable "admin_emails" {
+  type        = list(string)
+  description = "Email addresses allowed through Cloudflare Access to /admin/ (they get a one-time PIN)."
+  validation {
+    condition     = length(var.admin_emails) > 0
+    error_message = "admin_emails must list at least one address, or nobody can reach /admin/."
+  }
+}
