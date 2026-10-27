@@ -25,3 +25,6 @@ cloudflare_zone_id    = "REPLACE-with-zone-id"
 # The WordPress host's IP, so the backfill's bursts skip the Cloudflare rate limit. Leave empty
 # until the backfill; the app's own limits still apply.
 # backfill_ips = ["203.0.113.10"]
+
+# Who may open /admin/. Each address is sent a one-time PIN by Cloudflare Access (ADR 0043).
+admin_emails = ["REPLACE@example.org"]
