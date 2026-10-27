@@ -2,6 +2,15 @@
 
 <!-- version list -->
 
+## v5.10.0 (2026-10-27)
+
+### Features
+
+- Protect /admin/ with Cloudflare Access (DIC-2347)
+  ([#47](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/47),
+  [`4db4bc2`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/4db4bc21f3499eef7008e11c055d9c70e328a3b5))
+
+
 ## v5.9.0 (2026-10-26)
 
 ### Bug Fixes
