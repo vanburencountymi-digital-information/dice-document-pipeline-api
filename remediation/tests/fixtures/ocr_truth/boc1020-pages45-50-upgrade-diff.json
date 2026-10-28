@@ -1,0 +1,6 @@
+{
+  "provenance": "Numeric table, read row by row. Packet page 46. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Not yet checked by a person. Signatures and handwriting are left out. Every column total was checked to equal the sum of its rows. Checked against the original's text layer: the same 142 words and the same numbers, but the text layer lists the cells in a different order from reading row by row. So score this page on numbers and words, not on order or error rate.",
+  "pages": {
+    "2": "22\nSuicides by Mechanism, Barry County\n2016 2018 2019 2020 2021 2022 2023 2024 2025\nFirearm 7 7 4 4 9 5 3 5 7\nHanging 1 1 3 2 1 3 1 2 4\nCarbon Monoxide 0 0 0 1 0 2 1 0 0\nDrug Intoxication 1 0 0 0 0 0 0 1 0\nMotor Vehicle 0 0 0 0 0 0 0 0 1\nSharp Force Trauma 0 0 0 0 0 1 0 0 0\nAsphyxia/Suffocation 0 0 0 0 0 0 0 0 0\nOther 0 1 0 0 0 0 0 0 0\nTotal 9 9 7 7 10 11 5 8 12\nHomicides by Mechanism, Barry County\n2025\nFirearm 0\nBlunt Force Trauma 0\nSharp Force Trauma 0\nMotor Vehicle 0\nAsphyxia/Suffocation 1\nOther 0\nTotal 1\nOFFICE OF THE MEDICAL EXAMINER | 2025"
+  }
+}
