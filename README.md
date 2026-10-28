@@ -220,6 +220,19 @@ If a dependency bump causes a real, deliberately-verified output change (e.g. an
 make check-ocr-regression ARGS=--record
 ```
 
+**Checking headings, lists, tables, alt text and text quality.** `check-ocr-regression` only compares text and tag counts. To see what a version change does to the things a screen reader user relies on, run the quality report on the same PDFs with the old and the new version, then compare:
+
+```bash
+# 1. With the current setup running: write one report per PDF (runs the real pipeline, no alt text)
+make pdf-quality-report ARGS="--run-pipeline --output-dir /tmp/reports/old remediation/tests/fixtures/edge-cases/boc1020-*.pdf"
+# 2. Switch to the new version, then do the same into another folder
+make pdf-quality-report ARGS="--run-pipeline --output-dir /tmp/reports/new remediation/tests/fixtures/edge-cases/boc1020-*.pdf"
+# 3. See what got worse, what got better, and which pages changed
+make pdf-quality-compare ARGS="/tmp/reports/old /tmp/reports/new"
+```
+
+The report counts headings, list items, tables (and whether they have header cells), figures (and placeholder alt text like "image 6"), blank pages, repeated or lost text compared with the original, and veraPDF failures after each step. To also score the text against a transcription of the page (made by reading the page image), add `--truth-dir remediation/tests/fixtures/ocr_truth` to the report step. It adds word and number errors, and reading order, for the pages that have a transcription. Add `--fail-on-regression` to the compare step to make it exit with an error if anything got worse. Reports from the current production setup are saved in `remediation/tests/fixtures/quality_baseline/`, so you can compare a new version against them without re-running the old one.
+
 ### VeraPDF
 
 This repo currently validates against PDF/UA-1, not the newer PDF/UA-2, because PDF/UA-2 targets PDF 2.0's structure model and none of the available tooling (OpenDataLoader, pikepdf) produces PDF 2.0 output yet.

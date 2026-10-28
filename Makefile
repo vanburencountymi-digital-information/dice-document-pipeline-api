@@ -1,4 +1,4 @@
-.PHONY: build up down recreate migrate migrations shell pyshell test check-ocr-regression verapdf-version init garage
+.PHONY: build up down recreate migrate migrations shell pyshell test check-ocr-regression pdf-quality-report pdf-quality-compare check-pdf-quality verapdf-version init garage
 
 build:
 	# Docker auto-creates a missing bind-mount source as root, which then blocks
@@ -57,6 +57,20 @@ test:
 # committed baseline instead of comparing against it.
 check-ocr-regression:
 	docker compose run --rm app python manage.py check_ocr_regression $(ARGS)
+
+# Like check-ocr-regression, by hand around a dependency bump. Report: ARGS="--run-pipeline
+# --output-dir /tmp/reports/new path/to/original.pdf". Compare: ARGS="/tmp/reports/old /tmp/reports/new".
+pdf-quality-report:
+	docker compose run --rm app python manage.py pdf_quality_report $(ARGS)
+
+pdf-quality-compare:
+	docker compose run --rm app python manage.py pdf_quality_compare $(ARGS)
+
+# The whole battery in one go: runs the real pipeline on the committed slices, scores the
+# text against the page readings, and compares with the recorded baselines. Fails if
+# anything got worse. Needs the opendataloader-hybrid container; not part of `make test`.
+check-pdf-quality:
+	docker compose run --rm app sh -c 'python manage.py pdf_quality_report remediation/tests/fixtures/edge-cases/boc1020-*.pdf --run-pipeline --truth-dir remediation/tests/fixtures/ocr_truth --output-dir /tmp/quality && python manage.py pdf_quality_compare remediation/tests/fixtures/quality_baseline /tmp/quality --fail-on-regression'
 
 verapdf-version:
 	docker compose run --rm app verapdf --version
