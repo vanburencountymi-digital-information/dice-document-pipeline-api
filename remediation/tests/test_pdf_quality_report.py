@@ -64,6 +64,25 @@ class PdfQualityReportTests(SimpleTestCase):
         self.assertEqual(result["totals"]["words_missing_from_source"], 0)
         self.assertEqual(result["totals"]["words_added_to_source"], 1)
 
+    def test_scores_against_a_transcription_when_one_has_the_same_name(self) -> None:
+        truth_dir = self.dir / "truth"
+        truth_dir.mkdir()
+        (truth_dir / "doc.json").write_text(
+            json.dumps({"provenance": "test", "pages": {"1": "the board approved the budget"}})
+        )
+
+        result = self.run_report(self.pdf, "--no-verapdf", "--truth-dir", str(truth_dir))
+
+        self.assertEqual(result["ocr_truth"]["pages"]["1"]["words_missing"], 0)
+        self.assertEqual(result["ocr_truth"]["provenance"], "test")
+
+    def test_has_no_ocr_truth_when_no_transcription_has_that_name(self) -> None:
+        (self.dir / "truth").mkdir()
+
+        result = self.run_report(self.pdf, "--no-verapdf", "--truth-dir", str(self.dir / "truth"))
+
+        self.assertIsNone(result["ocr_truth"])
+
     def test_raises_when_the_original_is_missing_from_the_source_dir(self) -> None:
         (self.dir / "empty").mkdir()
         with self.assertRaisesMessage(CommandError, "No original named doc.pdf"):
@@ -87,6 +106,21 @@ class PdfQualityReportTests(SimpleTestCase):
         self.assertEqual(result["stages"], stages)
         self.assertEqual(result["verapdf"], {"7.1/3": 4})
         self.assertEqual(result["totals"]["headings"], 1)
+
+    @patch(f"{COMMAND}._run_stages", autospec=True)
+    def test_run_pipeline_lists_the_steps_that_failed(self, run_stages: MagicMock) -> None:
+        final = make_tagged_pdf(self.dir / "final.pdf", PAGES)
+        stages = {"ocr": {"error": "server down"}, "font_repair": {"seconds": 0.1}}
+        run_stages.return_value = (final, stages, None)
+
+        self.assertEqual(self.run_report(self.pdf, "--run-pipeline")["failed_steps"], ["ocr"])
+
+    @patch(f"{COMMAND}._run_stages", autospec=True)
+    def test_run_pipeline_lists_no_failed_steps_when_all_ran(self, run_stages: MagicMock) -> None:
+        final = make_tagged_pdf(self.dir / "final.pdf", PAGES)
+        run_stages.return_value = (final, {"ocr": {"seconds": 1.0}}, None)
+
+        self.assertEqual(self.run_report(self.pdf, "--run-pipeline")["failed_steps"], [])
 
     @patch(f"{COMMAND}._run_stages", autospec=True)
     def test_run_pipeline_raises_when_every_step_failed(self, run_stages: MagicMock) -> None:

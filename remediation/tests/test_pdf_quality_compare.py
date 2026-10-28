@@ -76,3 +76,16 @@ class PdfQualityCompareTests(SimpleTestCase):
     def test_raises_for_a_path_that_does_not_exist(self) -> None:
         with self.assertRaisesMessage(CommandError, "Not a file or folder"):
             self.run_compare(self.dir / "missing", self.dir / "missing")
+
+    def test_a_report_with_a_failed_step_is_not_comparable_and_fails_the_check(self) -> None:
+        failed = report(headings=0)
+        failed["failed_steps"] = ["ocr"]
+        base = self.write("a", "doc.json", report())
+        cand = self.write("b", "doc.json", failed)
+
+        output = self.run_compare(base, cand)
+        self.assertIn("NOT COMPARABLE", output)
+        self.assertIn("candidate: pipeline step failed: ocr", output)
+        self.assertNotIn("headings", output)
+        with self.assertRaisesMessage(CommandError, "Regressions in: report"):
+            self.run_compare(base, cand, "--fail-on-regression")

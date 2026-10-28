@@ -24,6 +24,8 @@ from typing import Any
 import pikepdf
 import pymupdf as fitz
 
+from remediation.ocr_truth import compare_scores, score_pdf
+
 HEADING_TAGS = {"/H", "/H1", "/H2", "/H3", "/H4", "/H5", "/H6"}
 # Alt text such as "image 6" or "Figure 2" says nothing to a screen reader user.
 PLACEHOLDER_ALT = re.compile(r"^(image|figure|picture|img)?\s*\d*$", re.IGNORECASE)
@@ -182,9 +184,12 @@ def _document_properties(pdf: pikepdf.Pdf) -> dict[str, Any]:
     }
 
 
-def analyze_pdf(pdf_path: Path, *, source_path: Path | None = None) -> dict[str, Any]:
+def analyze_pdf(
+    pdf_path: Path, *, source_path: Path | None = None, truth_path: Path | None = None
+) -> dict[str, Any]:
     """Builds the report for `pdf_path`. Pass the original as `source_path` to also
-    measure repeated and lost text (the two files must have the same pages).
+    measure repeated and lost text (the two files must have the same pages), and a
+    transcription as `truth_path` to score the text against it (see `ocr_truth`).
     """
     with pikepdf.open(pdf_path) as pdf, fitz.open(pdf_path) as doc:
         structure, heading_order = _structure_by_page(pdf)
@@ -252,6 +257,7 @@ def analyze_pdf(pdf_path: Path, *, source_path: Path | None = None) -> dict[str,
         "pages": pages,
         "verapdf": None,
         "stages": None,
+        "ocr_truth": score_pdf(pdf_path, truth_path) if truth_path else None,
     }
 
 
@@ -259,6 +265,9 @@ def analyze_pdf(pdf_path: Path, *, source_path: Path | None = None) -> dict[str,
 class Comparison:
     """`baseline` is the current stack, `candidate` the one being tested."""
 
+    # Set when a pipeline step failed on either side: the numbers then describe a PDF that
+    # never went through that step, so nothing else is compared.
+    invalid: list[str] = field(default_factory=list)
     rows: list[tuple[str, Any, Any]] = field(default_factory=list)
     regressions: list[str] = field(default_factory=list)
     improvements: list[str] = field(default_factory=list)
@@ -283,6 +292,11 @@ def _page_changes(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
 
 def compare_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> Comparison:
     result = Comparison()
+    for side, side_report in (("baseline", baseline), ("candidate", candidate)):
+        if failed := side_report.get("failed_steps"):
+            result.invalid.append(f"{side}: pipeline step failed: {', '.join(failed)}")
+    if result.invalid:
+        return result
 
     for key in (*WORSE_IF_HIGHER, *WORSE_IF_LOWER, *NEUTRAL):
         if key not in baseline["totals"] or key not in candidate["totals"]:
@@ -311,6 +325,11 @@ def compare_reports(baseline: dict[str, Any], candidate: dict[str, Any]) -> Comp
                 result.regressions.append(f"veraPDF {rule}: {before} -> {after}")
             elif after < before:
                 result.improvements.append(f"veraPDF {rule}: {before} -> {after}")
+
+    if baseline.get("ocr_truth") and candidate.get("ocr_truth"):
+        worse, better = compare_scores(baseline["ocr_truth"], candidate["ocr_truth"])
+        result.regressions.extend(worse)
+        result.improvements.extend(better)
 
     for key, before in baseline["document"].items():
         after = candidate["document"].get(key)

@@ -76,6 +76,13 @@ def _run_stages(
     return current, stages, final_verapdf
 
 
+def _truth_for(pdf: Path, truth_dir: Path | None) -> Path | None:
+    if truth_dir is None:
+        return None
+    path = truth_dir / f"{pdf.stem}.json"
+    return path if path.is_file() else None
+
+
 class Command(BaseCommand):
     help = "Writes a JSON quality report per PDF (headings, lists, tables, figures, text, veraPDF)."
 
@@ -95,6 +102,12 @@ class Command(BaseCommand):
             help="Without --run-pipeline: folder of the originals, matched by file name, to "
             "measure lost and repeated text against.",
         )
+        parser.add_argument(
+            "--truth-dir",
+            type=Path,
+            help="Folder of transcriptions (<name>.json) to score the text against, for the "
+            "PDFs that have one. See remediation/ocr_truth.py.",
+        )
         parser.add_argument("--no-verapdf", action="store_true", help="Skip veraPDF.")
         parser.add_argument(
             "--keep-stages",
@@ -111,18 +124,24 @@ class Command(BaseCommand):
             if not pdf.is_file():
                 raise CommandError(f"Not a file: {pdf}")
             self.stdout.write(f"{pdf.name} ...")
+            truth = _truth_for(pdf, options["truth_dir"])
             if options["run_pipeline"]:
                 report = self._report_from_pipeline(
-                    pdf, output_dir, use_verapdf, options["keep_stages"]
+                    pdf, output_dir, use_verapdf, options["keep_stages"], truth
                 )
             else:
-                report = self._report_from_output(pdf, options["source_dir"], use_verapdf)
+                report = self._report_from_output(pdf, options["source_dir"], use_verapdf, truth)
             target = output_dir / f"{pdf.stem}.json"
             target.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
             self.stdout.write(self.style.SUCCESS(f"  wrote {target}"))
 
     def _report_from_pipeline(
-        self, pdf: Path, output_dir: Path, use_verapdf: bool, keep_stages: bool
+        self,
+        pdf: Path,
+        output_dir: Path,
+        use_verapdf: bool,
+        keep_stages: bool,
+        truth: Path | None,
     ) -> dict[str, Any]:
         with TemporaryDirectory() as temp:
             work_dir = output_dir / f"{pdf.stem}-stages" if keep_stages else Path(temp)
@@ -130,19 +149,21 @@ class Command(BaseCommand):
             final, stages, final_verapdf = _run_stages(pdf, work_dir, use_verapdf=use_verapdf)
             if final == pdf:
                 raise CommandError(f"Every pipeline step failed for {pdf.name}: {stages}")
-            report = analyze_pdf(final, source_path=pdf)
+            report = analyze_pdf(final, source_path=pdf, truth_path=truth)
         report["file"] = pdf.name
         report["stages"] = stages
+        # A failed step is skipped, so the numbers describe a PDF that missed that step.
+        report["failed_steps"] = [name for name, stage in stages.items() if "error" in stage]
         report["verapdf"] = final_verapdf
         return report
 
     def _report_from_output(
-        self, pdf: Path, source_dir: Path | None, use_verapdf: bool
+        self, pdf: Path, source_dir: Path | None, use_verapdf: bool, truth: Path | None
     ) -> dict[str, Any]:
         source = source_dir / pdf.name if source_dir else None
         if source is not None and not source.is_file():
             raise CommandError(f"No original named {pdf.name} in {source_dir}")
-        report = analyze_pdf(pdf, source_path=source)
+        report = analyze_pdf(pdf, source_path=source, truth_path=truth)
         if use_verapdf:
             report["verapdf"] = _failed_checks(VeraPDFAdapter(), pdf)
         return report

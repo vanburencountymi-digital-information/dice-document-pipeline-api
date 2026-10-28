@@ -55,6 +55,11 @@ class Command(BaseCommand):
         for name in names:
             comparison = compare_reports(baseline[name], candidate[name])
             self.stdout.write(f"\n=== {name} ===")
+            if comparison.invalid:
+                self.stdout.write(self.style.ERROR("NOT COMPARABLE:"))
+                self.stdout.write("\n".join(f"  {line}" for line in comparison.invalid))
+                regressed.append(name)
+                continue
             for label, before, after in comparison.rows:
                 marker = "" if before == after else "  <- changed"
                 self.stdout.write(f"  {label:34}{before!s:>8}{after!s:>8}{marker}")

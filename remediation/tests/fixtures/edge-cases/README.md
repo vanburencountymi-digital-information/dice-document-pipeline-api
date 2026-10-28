@@ -40,7 +40,7 @@ Candidates: not yet run on both stacks, so we don't know they differ.
 |---|---|
 | `boc1020-pages251-253-forms.pdf` | Fillable form fields (the packet's only forms block); Form-children rule 7.18.4 |
 | `boc1020-pages180-182-broken-text.pdf` | Type 3 fonts, garbled text, 12 images with fragmented text |
-| `boc1020-pages110-112-scanned.pdf` | Three scanned pages with no text layer |
+| `boc1020-pages110-111-scanned.pdf` | Two scanned pages with no text layer |
 | `boc1020-pages245-247-scanned-dividers.pdf` | Scanned divider pages alternating with a text page |
 | `boc1020-pages119-121-tables-no-tounicode.pdf` | Dense millage tables, fonts without a text mapping (ToUnicode) |
 | `boc1020-pages86-88-stat-tables.pdf` | Number-heavy statistics tables; chunk 1 showed repeated table rows |

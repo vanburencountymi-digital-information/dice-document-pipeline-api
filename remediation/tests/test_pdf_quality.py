@@ -199,3 +199,37 @@ class CompareReportsTests(SimpleTestCase):
         candidate["document"]["language"] = ""
         comparison = compare_reports(report(), candidate)
         self.assertEqual(comparison.regressions, ["document language: 'en-us' -> ''"])
+
+    def test_a_failed_pipeline_step_on_either_side_makes_the_comparison_invalid(self) -> None:
+        failed = report(headings=0)
+        failed["failed_steps"] = ["ocr"]
+
+        before = compare_reports(report(), failed)
+        after = compare_reports(failed, report())
+
+        self.assertEqual(before.invalid, ["candidate: pipeline step failed: ocr"])
+        self.assertEqual(after.invalid, ["baseline: pipeline step failed: ocr"])
+        # Nothing else is compared, so a dead server cannot look like a regression.
+        self.assertEqual((before.rows, before.regressions), ([], []))
+
+    def test_ocr_truth_scores_are_compared_when_both_reports_have_them(self) -> None:
+        def with_truth(order: float) -> dict[str, Any]:
+            result = report()
+            page_score = {
+                "word_error_rate": 0.0,
+                "char_error_rate": 0.0,
+                "words_missing": 0,
+                "words_extra": 0,
+                "numbers_missing": 0,
+                "numbers_extra": 0,
+                "reading_order": order,
+            }
+            result["ocr_truth"] = {"pages": {"1": page_score}}
+            return result
+
+        comparison = compare_reports(with_truth(1.0), with_truth(0.5))
+
+        self.assertEqual(comparison.regressions, ["OCR page 1 reading order: 1.0 -> 0.5"])
+
+    def test_reports_without_ocr_truth_compare_as_before(self) -> None:
+        self.assertEqual(compare_reports(report(), report()).regressions, [])
