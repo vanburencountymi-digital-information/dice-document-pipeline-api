@@ -8,7 +8,26 @@
     "outline_entries": 0,
     "title": "boc1020-pages2-4-upgrade-diff"
   },
+  "failed_steps": [],
   "file": "boc1020-pages2-4-upgrade-diff.pdf",
+  "ocr_truth": {
+    "pages": {
+      "3": {
+        "char_error_rate": 0.0,
+        "example_extra": [],
+        "example_missing": [],
+        "numbers_extra": 0,
+        "numbers_missing": 0,
+        "output_words": 294,
+        "reading_order": 1.0,
+        "truth_words": 294,
+        "word_error_rate": 0.0,
+        "words_extra": 0,
+        "words_missing": 0
+      }
+    },
+    "provenance": "Reading order: title block, the three label/value rows, then the numbered list. Packet page 4. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Not yet checked by a person. Signatures and handwriting are left out. Checked against the original's text layer: all 294 words match, same order (0 errors)."
+  },
   "page_count": 3,
   "pages": {
     "1": {
@@ -70,19 +89,19 @@
       }
     },
     "link_tag": {
-      "seconds": 0.1,
-      "verapdf": {
-        "7.21.4.1/1": 2
-      }
-    },
-    "metadata": {
       "seconds": 0.0,
       "verapdf": {
         "7.21.4.1/1": 2
       }
     },
+    "metadata": {
+      "seconds": 0.2,
+      "verapdf": {
+        "7.21.4.1/1": 2
+      }
+    },
     "ocr": {
-      "seconds": 91.3,
+      "seconds": 110.4,
       "verapdf": {
         "6.2/1": 1,
         "7.1/10": 1,

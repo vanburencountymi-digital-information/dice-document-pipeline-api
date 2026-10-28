@@ -1,0 +1,153 @@
+{
+  "document": {
+    "all_pages_tab_by_structure": true,
+    "display_doc_title": true,
+    "language": "en-us",
+    "link_annotations": 0,
+    "marked": true,
+    "outline_entries": 0,
+    "title": "boc1020-pages110-111-scanned"
+  },
+  "failed_steps": [],
+  "file": "boc1020-pages110-111-scanned.pdf",
+  "ocr_truth": {
+    "pages": {
+      "1": {
+        "char_error_rate": 0.4306,
+        "example_extra": [
+          "649",
+          "Aging;",
+          "County:",
+          "Sept.1;",
+          "b",
+          "fair;",
+          "have",
+          "index;",
+          "indexing;",
+          "re"
+        ],
+        "example_missing": [
+          "\"I'm",
+          "&",
+          "/",
+          "1;",
+          "2",
+          "2025",
+          "2025,",
+          "3",
+          "64%",
+          "ANNUAL"
+        ],
+        "numbers_extra": 2,
+        "numbers_missing": 6,
+        "output_words": 222,
+        "reading_order": 0.8155,
+        "truth_words": 305,
+        "word_error_rate": 0.5246,
+        "words_extra": 16,
+        "words_missing": 99
+      }
+    },
+    "provenance": "Scanned infographic with no text layer. Cards and panels have no single reading order, so score this page on words and numbers, not order. Packet page 110. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Not yet checked by a person. Signatures and handwriting are left out. The three request counts (294 + 74 + 122) add up to the 490 shown. Cannot be checked against a text layer."
+  },
+  "page_count": 2,
+  "pages": {
+    "1": {
+      "figures": 0,
+      "headings": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "c3c855c5c1",
+      "words": 222,
+      "words_added_to_source": 222,
+      "words_missing_from_source": 0
+    },
+    "2": {
+      "figures": 1,
+      "headings": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "e4b5d61cb1",
+      "words": 154,
+      "words_added_to_source": 154,
+      "words_missing_from_source": 0
+    }
+  },
+  "stages": {
+    "font_repair": {
+      "seconds": 0.0,
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/8": 1,
+        "7.2/22": 1,
+        "7.2/34": 74
+      }
+    },
+    "link_tag": {
+      "seconds": 0.0,
+      "verapdf": {}
+    },
+    "metadata": {
+      "seconds": 0.0,
+      "verapdf": {}
+    },
+    "ocr": {
+      "seconds": 94.9,
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/8": 1,
+        "7.2/22": 1,
+        "7.2/34": 74
+      }
+    },
+    "source": {
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/11": 1,
+        "7.1/3": 4,
+        "7.1/8": 1
+      }
+    }
+  },
+  "tag_counts": {
+    "/Figure": 1,
+    "/H1": 11,
+    "/P": 63
+  },
+  "totals": {
+    "empty_pages": 0,
+    "figures": 1,
+    "figures_with_placeholder_alt": 1,
+    "figures_without_alt": 0,
+    "heading_level_skips": 0,
+    "headings": 11,
+    "links": 0,
+    "list_items": 0,
+    "lists": 0,
+    "repeated_phrases": 0,
+    "tables": 0,
+    "tables_without_headers": 0,
+    "words": 376,
+    "words_added_to_source": 376,
+    "words_missing_from_source": 0
+  },
+  "verapdf": {}
+}

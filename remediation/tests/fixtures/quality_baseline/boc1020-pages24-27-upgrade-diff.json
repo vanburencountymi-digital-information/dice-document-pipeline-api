@@ -8,7 +8,37 @@
     "outline_entries": 0,
     "title": "boc1020-pages24-27-upgrade-diff"
   },
+  "failed_steps": [],
   "file": "boc1020-pages24-27-upgrade-diff.pdf",
+  "ocr_truth": {
+    "pages": {
+      "1": {
+        "char_error_rate": 1.0,
+        "example_extra": [],
+        "example_missing": [
+          "16,",
+          "2026",
+          "20914",
+          "269-467-4433",
+          "269-467-6393",
+          "31,",
+          "49032-9622",
+          "Bippus",
+          "Bippus,",
+          "Board"
+        ],
+        "numbers_extra": 0,
+        "numbers_missing": 9,
+        "output_words": 0,
+        "reading_order": 0.0,
+        "truth_words": 230,
+        "word_error_rate": 1.0,
+        "words_extra": 0,
+        "words_missing": 230
+      }
+    },
+    "provenance": "Scanned letter with no text layer in the original. Left column of the letterhead, then the right. Packet page 24. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Not yet checked by a person. Signatures and handwriting are left out. Cannot be checked against a text layer."
+  },
   "page_count": 4,
   "pages": {
     "1": {
@@ -87,13 +117,13 @@
       }
     },
     "metadata": {
-      "seconds": 0.0,
+      "seconds": 0.1,
       "verapdf": {
         "7.21.4.1/1": 2
       }
     },
     "ocr": {
-      "seconds": 16.1,
+      "seconds": 25.7,
       "verapdf": {
         "6.2/1": 1,
         "7.1/10": 1,

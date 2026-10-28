@@ -8,7 +8,37 @@
     "outline_entries": 0,
     "title": "boc1020-pages45-50-upgrade-diff"
   },
+  "failed_steps": [],
   "file": "boc1020-pages45-50-upgrade-diff.pdf",
+  "ocr_truth": {
+    "pages": {
+      "2": {
+        "char_error_rate": 0.441,
+        "example_extra": [
+          "0",
+          "1",
+          "2",
+          "2016",
+          "3",
+          "4",
+          "5",
+          "7",
+          "9",
+          "Asphyxia/Suffocation"
+        ],
+        "example_missing": [],
+        "numbers_extra": 28,
+        "numbers_missing": 0,
+        "output_words": 183,
+        "reading_order": 0.9507,
+        "truth_words": 142,
+        "word_error_rate": 0.3873,
+        "words_extra": 41,
+        "words_missing": 0
+      }
+    },
+    "provenance": "Numeric table, read row by row. Packet page 46. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Not yet checked by a person. Signatures and handwriting are left out. Every column total was checked to equal the sum of its rows. Checked against the original's text layer: the same 142 words and the same numbers, but the text layer lists the cells in a different order from reading row by row. So score this page on numbers and words, not on order or error rate."
+  },
   "page_count": 6,
   "pages": {
     "1": {
@@ -122,14 +152,14 @@
       }
     },
     "metadata": {
-      "seconds": 0.2,
+      "seconds": 0.3,
       "verapdf": {
         "7.1/3": 11,
         "7.21.4.1/1": 2
       }
     },
     "ocr": {
-      "seconds": 183.5,
+      "seconds": 207.9,
       "verapdf": {
         "6.2/1": 1,
         "7.1/10": 1,
