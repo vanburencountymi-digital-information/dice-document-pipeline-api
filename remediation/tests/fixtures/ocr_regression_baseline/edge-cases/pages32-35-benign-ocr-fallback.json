@@ -221,12 +221,12 @@
       "261-325-995.445 TRANSFER TO F445 CAPITAL 34,037",
       "445-001-699.261 TRANSFER IN FROM CENTRAL DISPATCH 34,037",
       "445-001-986.261 CAPITAL - CENTRAL DISPATCH 34,037",
-      "35(3$5(\u2019 %<",
-      "68%-(&7",
-      "\u2019(6&5,37,21 2) $&7,21 %$&.*5281\u2019  GROODU DPRXQW  SXUSRVH",
-      "63(&,),& $&7,21 5(48(67(\u2019",
-      "\u2019(3$570(17",
-      "FUNDING \u2019(7$,/6 ( )XQGLQJ 6RXUFH  %XGJHW $PRXQW  */    HWF ):"
+      "35(3$5(\u2019 %<?",
+      "68%-(&7?",
+      "\u2019(6&5,37,21 2) $&7,21?%$&.*5281\u2019 ?GROODU DPRXQW? SXUSRVH??",
+      "63(&,),& $&7,21 5(48(67(\u2019?",
+      "\u2019(3$570(17?",
+      "FUNDING \u2019(7$,/6 ()XQGLQJ 6RXUFH? %XGJHW $PRXQW? */ ?? HWF?):"
     ]
   ],
   "structure_tag_counts": {
@@ -237,7 +237,7 @@
     "/LBody": 13,
     "/LI": 13,
     "/Lbl": 13,
-    "/P": 74,
+    "/P": 73,
     "/TH": 2,
     "/TR": 1,
     "/Table": 1

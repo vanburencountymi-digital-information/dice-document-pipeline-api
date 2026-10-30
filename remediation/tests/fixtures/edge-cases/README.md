@@ -55,6 +55,9 @@ We don't yet know whether the two stacks differ on them.
   the production stack (v5.10.0: docling fork 2.118.0, opendataloader-pdf 2.5.0). Always record
   baselines from production, never from the candidate, so a comparison shows what the upgrade
   changes. Time-per-step values vary between runs; the compare ignores them.
+- **Text fingerprints.** All slices also have one in `../ocr_regression_baseline/` for
+  `make check-ocr-regression`. Add one for each new slice with `ARGS=--record`, once the OCR
+  server is fully started.
 - **Page readings.** Four slices also have a transcription of a page, made by reading the page
   image and checked by a person, in `../ocr_truth/`. Page numbers count inside the slice.
 

@@ -54,9 +54,10 @@ test:
 # Not part of `make test`/CI — needs the real opendataloader-hybrid container and is meant
 # to be run by hand before/after bumping torch, the Docling fork, or opendataloader-pdf.
 # See README.md's "Dependency Upgrades" section. Pass ARGS=--record to (re)generate the
-# committed baseline instead of comparing against it.
+# committed baseline instead of comparing against it. The baseline folder is mounted so
+# --record writes to your checkout; without it the files vanish with the container.
 check-ocr-regression:
-	docker compose run --rm app python manage.py check_ocr_regression $(ARGS)
+	docker compose run --rm -v "$(CURDIR)/remediation/tests/fixtures/ocr_regression_baseline:/app/remediation/tests/fixtures/ocr_regression_baseline" app python manage.py check_ocr_regression $(ARGS)
 
 # Like check-ocr-regression, by hand around a dependency bump. Report: ARGS="--run-pipeline
 # --output-dir /tmp/reports/new path/to/original.pdf". Compare: ARGS="/tmp/reports/old /tmp/reports/new".
