@@ -202,28 +202,38 @@ By default, re-running the same document from the same service account returns t
 
 However, upgrading a major dependency might mean that jobs that previously ended `noncompliant` or `error` would now pass with the current pipeline. You can set the retry floor to any version of the pipeline that has previously run a remediation job via the admin panel. If a file from a previous `noncompliant` or `error` job that was run on a version of the pipeline older than the floor is sent by the same service account, it will automatically be retried to see if the version change has corrected whatever previously caused the file to fail.
 
-### OpenDataloader and Docling
+### Upgrading the Document Pipeline
 
-This repo is currently pinned to forked versions of OpenDataLoader and Docling due to the need for bug-fixes not present in the original files. We periodically check to see if the main images have been upgraded to include those bugfixes; once they have, we will pin to main branch.
+This repo is pinned to our own forks of OpenDataLoader and Docling, because they carry bug fixes the originals don't have yet. We check now and then whether the originals have caught up; once they have, we will pin back to them.
 
-**Whenever you bump a major dependency in `Dockerfile.opendataloader-hybrid`/`requirements-opendataloader-hybrid.txt`** (torch, the Docling fork, `opendataloader-pdf` itself), run the OCR regression check before and after to confirm real OCR/tagging output didn't silently change:
+Use this section before accepting a new version of anything that reads or tags PDFs: Docling, OpenDataLoader (the jar or the pip package), torch, or a fork pin in `Dockerfile.opendataloader-hybrid` or `requirements-opendataloader-hybrid.txt`. A passing veraPDF score alone is not enough. A new version can pass veraPDF and still lose headings, split lists or repeat text.
+
+**What the checks are.** Both need the real `opendataloader-hybrid` container running, so neither is part of `make test` or CI. They are manual checks around an upgrade.
+- `make check-pdf-quality` is the main one. It runs the real pipeline (no alt text) on every slice in `remediation/tests/fixtures/edge-cases/boc1020-*.pdf` and compares with the saved results in `remediation/tests/fixtures/quality_baseline/`. It counts headings, list items, tables (and whether they have header cells), figures (and placeholder alt text like "image 6"), blank pages, repeated or lost text, and veraPDF failures after each step. For the pages with a transcription (`remediation/tests/fixtures/ocr_truth/`), it also scores words, numbers and reading order. It fails if anything got worse.
+- `make check-ocr-regression` is thinner: it compares text and tag counts of the PDFs in `remediation/tests/fixtures/original/` and `edge-cases/` against `remediation/tests/fixtures/ocr_regression_baseline/`. Any fixture without a saved fingerprint stops it, so record one first with `make check-ocr-regression ARGS=--record` (from the production setup).
+
+**Steps**
+1. **Keep the old results.** The saved results come from the production setup. Never record them from the version you are testing.
+2. **Run the unit tests:** `make test`. This also checks the page transcriptions.
+3. **Start the hybrid container fresh.** It can run out of memory after about 25 documents, and then the reports measure untagged PDFs. The report records this as a failed step and the compare refuses to use it. If you see it, restart the container between slices.
+4. **Run `make check-pdf-quality`, then `make check-ocr-regression`.**
+5. **Read what changed, even when nothing failed.** Lists, tables, figures and word counts are shown but never fail the check on their own. Open the pages the compare lists.
+
+**Accept the new version only if:**
+- no step failed in any report,
+- headings, lists and tables are equal or better than the saved results (not only veraPDF and text),
+- veraPDF failures are equal or fewer for every rule,
+- the page transcriptions score equal or better,
+- you checked any difference you can't explain, such as a list that split into three.
+
+If a change is real and wanted (for example a bug fix), re-record the saved results from the production setup in the same pull request, and say why in the description. For the fingerprint check that is `make check-ocr-regression ARGS=--record`.
+
+Not covered: alt text quality (alt text is skipped), the wording of headings, and peak memory (use `docker stats`). Check those by hand.
+
+**Comparing two versions by hand.** To compare against something other than the saved results, write a report with each version and compare:
 
 ```bash
-make check-ocr-regression
-```
-
-This runs the real `opendataloader-hybrid` OCR/tagging step against a couple of committed fixture PDFs (`remediation/tests/fixtures/original/`) and compares a text/structure fingerprint against a committed baseline (`remediation/tests/fixtures/ocr_regression_baseline/`). It's deliberately **not** part of `make test`/CI — it needs the real container running and is meant to be a manual check around a dependency bump, not a per-PR gate.
-
-If a dependency bump causes a real, deliberately-verified output change (e.g. an upstream bug fix), regenerate the baseline instead of treating the mismatch as a failure:
-
-```bash
-make check-ocr-regression ARGS=--record
-```
-
-**Checking headings, lists, tables, alt text and text quality.** `check-ocr-regression` only compares text and tag counts. To see what a version change does to the things a screen reader user relies on, run the quality report on the same PDFs with the old and the new version, then compare:
-
-```bash
-# 1. With the current setup running: write one report per PDF (runs the real pipeline, no alt text)
+# 1. With the current setup running: write one report per PDF
 make pdf-quality-report ARGS="--run-pipeline --output-dir /tmp/reports/old remediation/tests/fixtures/edge-cases/boc1020-*.pdf"
 # 2. Switch to the new version, then do the same into another folder
 make pdf-quality-report ARGS="--run-pipeline --output-dir /tmp/reports/new remediation/tests/fixtures/edge-cases/boc1020-*.pdf"
@@ -231,7 +241,7 @@ make pdf-quality-report ARGS="--run-pipeline --output-dir /tmp/reports/new remed
 make pdf-quality-compare ARGS="/tmp/reports/old /tmp/reports/new"
 ```
 
-The report counts headings, list items, tables (and whether they have header cells), figures (and placeholder alt text like "image 6"), blank pages, repeated or lost text compared with the original, and veraPDF failures after each step. To also score the text against a transcription of the page (made by reading the page image), add `--truth-dir remediation/tests/fixtures/ocr_truth` to the report step. It adds word and number errors, and reading order, for the pages that have a transcription. Add `--fail-on-regression` to the compare step to make it exit with an error if anything got worse. Reports from the current production setup are saved in `remediation/tests/fixtures/quality_baseline/`, so you can compare a new version against them without re-running the old one.
+Add `--truth-dir remediation/tests/fixtures/ocr_truth` to the report step to score the transcribed pages, and `--fail-on-regression` to the compare step to make it exit with an error if anything got worse.
 
 ### VeraPDF
 
