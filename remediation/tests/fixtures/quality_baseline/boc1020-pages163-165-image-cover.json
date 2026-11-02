@@ -1,0 +1,133 @@
+{
+  "document": {
+    "all_pages_tab_by_structure": true,
+    "display_doc_title": true,
+    "language": "en-us",
+    "link_annotations": 0,
+    "marked": true,
+    "outline_entries": 0,
+    "title": "boc1020-pages163-165-image-cover"
+  },
+  "file": "boc1020-pages163-165-image-cover.pdf",
+  "page_count": 3,
+  "pages": {
+    "1": {
+      "figures": 1,
+      "headings": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "117a9d99a9",
+      "words": 251,
+      "words_added_to_source": 43,
+      "words_missing_from_source": 16
+    },
+    "2": {
+      "figures": 3,
+      "headings": [
+        1
+      ],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "6fa2cccbd7",
+      "words": 19,
+      "words_added_to_source": 3,
+      "words_missing_from_source": 0
+    },
+    "3": {
+      "figures": 4,
+      "headings": [
+        1
+      ],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "050819364d",
+      "words": 231,
+      "words_added_to_source": 0,
+      "words_missing_from_source": 0
+    }
+  },
+  "stages": {
+    "font_repair": {
+      "seconds": 0.1,
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/8": 1,
+        "7.2/22": 8,
+        "7.2/34": 88,
+        "7.21.4.1/1": 3
+      }
+    },
+    "link_tag": {
+      "seconds": 0.0,
+      "verapdf": {
+        "7.21.4.1/1": 3
+      }
+    },
+    "metadata": {
+      "seconds": 0.1,
+      "verapdf": {
+        "7.21.4.1/1": 3
+      }
+    },
+    "ocr": {
+      "seconds": 38.2,
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/8": 1,
+        "7.2/22": 8,
+        "7.2/34": 88,
+        "7.21.4.1/1": 3,
+        "7.21.4.2/2": 2,
+        "7.21.7/1": 44
+      }
+    },
+    "source": {
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/11": 1,
+        "7.1/3": 99,
+        "7.1/8": 1,
+        "7.2/34": 73,
+        "7.21.4.1/1": 3,
+        "7.21.4.2/2": 2,
+        "7.21.7/1": 44
+      }
+    }
+  },
+  "tag_counts": {
+    "/Figure": 8,
+    "/H1": 6,
+    "/P": 30
+  },
+  "totals": {
+    "empty_pages": 0,
+    "figures": 8,
+    "figures_with_placeholder_alt": 8,
+    "figures_without_alt": 0,
+    "heading_level_skips": 0,
+    "headings": 6,
+    "links": 0,
+    "list_items": 0,
+    "lists": 0,
+    "repeated_phrases": 0,
+    "tables": 0,
+    "tables_without_headers": 0,
+    "words": 501,
+    "words_added_to_source": 46,
+    "words_missing_from_source": 16
+  },
+  "verapdf": {
+    "7.21.4.1/1": 3
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "document": {
+    "all_pages_tab_by_structure": true,
+    "display_doc_title": true,
+    "language": "en-us",
+    "link_annotations": 0,
+    "marked": true,
+    "outline_entries": 0,
+    "title": "boc1020-pages245-247-scanned-dividers"
+  },
+  "file": "boc1020-pages245-247-scanned-dividers.pdf",
+  "page_count": 3,
+  "pages": {
+    "1": {
+      "figures": 1,
+      "headings": [
+        1
+      ],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "e85744257a",
+      "words": 6,
+      "words_added_to_source": 3,
+      "words_missing_from_source": 0
+    },
+    "2": {
+      "figures": 1,
+      "headings": [
+        1
+      ],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "be3a8bff23",
+      "words": 177,
+      "words_added_to_source": 0,
+      "words_missing_from_source": 0
+    },
+    "3": {
+      "figures": 1,
+      "headings": [],
+      "lists": [],
+      "repeated_phrases": 0,
+      "tables": 0,
+      "tag_signature": "690272684b",
+      "words": 5,
+      "words_added_to_source": 3,
+      "words_missing_from_source": 0
+    }
+  },
+  "stages": {
+    "font_repair": {
+      "seconds": 0.0,
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/8": 1,
+        "7.2/22": 3,
+        "7.2/34": 32
+      }
+    },
+    "link_tag": {
+      "seconds": 0.0,
+      "verapdf": {}
+    },
+    "metadata": {
+      "seconds": 0.0,
+      "verapdf": {}
+    },
+    "ocr": {
+      "seconds": 55.0,
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/8": 1,
+        "7.2/22": 3,
+        "7.2/34": 32
+      }
+    },
+    "source": {
+      "verapdf": {
+        "6.2/1": 1,
+        "7.1/10": 1,
+        "7.1/11": 1,
+        "7.1/3": 53,
+        "7.1/8": 1,
+        "7.2/34": 26
+      }
+    }
+  },
+  "tag_counts": {
+    "/Figure": 3,
+    "/H1": 2,
+    "/P": 9
+  },
+  "totals": {
+    "empty_pages": 0,
+    "figures": 3,
+    "figures_with_placeholder_alt": 3,
+    "figures_without_alt": 0,
+    "heading_level_skips": 0,
+    "headings": 2,
+    "links": 0,
+    "list_items": 0,
+    "lists": 0,
+    "repeated_phrases": 0,
+    "tables": 0,
+    "tables_without_headers": 0,
+    "words": 188,
+    "words_added_to_source": 6,
+    "words_missing_from_source": 0
+  },
+  "verapdf": {}
+}
