@@ -50,3 +50,7 @@ Thumbs.db
 *.tfstate.*
 terraform.tfvars
 backend.hcl
+
+#Graphify
+graphify-out/
+.claude/
