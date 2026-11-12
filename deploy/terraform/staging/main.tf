@@ -21,10 +21,10 @@ module "dice" {
   # Paused on purpose: someone runs the worker by hand (ADR 0029).
   worker_schedule_paused = true
 
-  # Staging's real sizes, as set by hand. The module's defaults match neither environment.
   worker_cpu    = "2"
   worker_memory = "4Gi"
-  ocr_memory    = "16Gi"
+  ocr_cpu       = "6"
+  ocr_memory    = "24Gi"
 
   # Staging is public through Cloud Run's invoker setting: the organization policy blocks the
   # `allUsers` grant that prod uses. Old images are cleaned up (OCR images are ~12 GB).
