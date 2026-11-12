@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v5.11.0 (2026-11-12)
+
+### Documentation
+
+- Add graphify skill
+  ([#49](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/49),
+  [`7297105`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/729710583589f1d07564f766fb2945d65911c1fc))
+
+### Features
+
+- Raise OCR to 6 vCPU / 24Gi and match prod worker to staging (DIC-2480)
+  ([#50](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/50),
+  [`34bd5f3`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/34bd5f332c26c6fc04dfdf75830dad9cb20c178e))
+
+### Testing
+
+- Add PDF quality and OCR-reading regression checks (DIC-2629)
+  ([#48](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/48),
+  [`227e10a`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/227e10acd8eab86b7eacd1a175be94c5c3f38c9c))
+
+- Add PDF quality report and compare commands with tests
+  ([#48](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/48),
+  [`227e10a`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/227e10acd8eab86b7eacd1a175be94c5c3f38c9c))
+
+
 ## v5.10.0 (2026-10-27)
 
 ### Features
