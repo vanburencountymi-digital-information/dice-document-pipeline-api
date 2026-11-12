@@ -29,10 +29,10 @@ module "dice" {
   delete_images_older_than_days = 30
   keep_recent_image_versions    = 2
 
-  # Prod's own worker and OCR sizes, set here so a change to the module's defaults can't
-  # change prod. Raise them here, after a long document has been timed with more.
-  worker_cpu    = "1"
-  worker_memory = "2Gi"
-  ocr_cpu       = "4"
-  ocr_memory    = "12Gi"
+  # Cloud Run allows 8 vCPU / 32Gi across all containers in a
+  # job, so worker + OCR must stay within that (2+6 vCPU, 4+24 Gi here). A 6 vCPU container can have at most 24Gi.
+  worker_cpu    = "2"
+  worker_memory = "4Gi"
+  ocr_cpu       = "6"
+  ocr_memory    = "24Gi"
 }
