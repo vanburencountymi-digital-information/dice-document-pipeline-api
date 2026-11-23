@@ -1,4 +1,5 @@
 from common.db_backup_adapter import DbBackupAdapter
+from common.error_logging.constants import ErrorLoggingTag
 from common.error_logging_client import ErrorLoggingClient
 
 # The `job` tag on error reports, so Sentry alerts can pick out a failed backup.
@@ -31,5 +32,7 @@ class DatabaseBackupService:
         try:
             self.adapter.backup()
         except Exception as exc:
-            self.error_logging.report_exception(exc, tags={"job": JOB_DATABASE_BACKUP})
+            self.error_logging.report_exception(
+                exc, tags={ErrorLoggingTag.JOB: JOB_DATABASE_BACKUP}
+            )
             raise DatabaseBackupError(f"Database backup failed: {exc}") from exc

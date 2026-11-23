@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
+from common.error_logging.constants import DETAILS_CONTEXT_KEY
 from common.error_logging_client import ErrorLoggingClient
 
 
@@ -21,7 +22,26 @@ class ErrorLoggingClientTests(SimpleTestCase):
     def test_report_warning_forwards_to_sentry_at_warning_level(self, mock_capture) -> None:
         self.client.report_warning("something is off")
 
-        mock_capture.assert_called_once_with("something is off", level="warning")
+        mock_capture.assert_called_once_with(
+            "something is off", level="warning", tags=None, fingerprint=None, contexts=None
+        )
+
+    @patch("common.error_logging_client.sentry_sdk.capture_message", autospec=True)
+    def test_report_warning_passes_tags_fingerprint_and_context(self, mock_capture) -> None:
+        self.client.report_warning(
+            "not compliant",
+            tags={"remediation_id": "abc"},
+            fingerprint=["noncompliant", "7.1:11"],
+            context={"content_hash": "deadbeef"},
+        )
+
+        mock_capture.assert_called_once_with(
+            "not compliant",
+            level="warning",
+            tags={"remediation_id": "abc"},
+            fingerprint=["noncompliant", "7.1:11"],
+            contexts={DETAILS_CONTEXT_KEY: {"content_hash": "deadbeef"}},
+        )
 
     # Not autospec'd: config.test_settings already replaces `sentry_sdk.init` with a MagicMock.
     @patch("common.error_logging_client.sentry_sdk.init")

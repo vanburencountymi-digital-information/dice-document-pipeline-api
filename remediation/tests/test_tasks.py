@@ -123,8 +123,11 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
+    @patch("remediation.tasks.NoncompliantReportService", autospec=True)
     @patch("remediation.services.VeraPDFAdapter", autospec=True)
-    def test_marks_noncompliant_when_postcheck_still_noncompliant(self, mock_adapter_cls) -> None:
+    def test_marks_noncompliant_when_postcheck_still_noncompliant(
+        self, mock_adapter_cls, mock_report
+    ) -> None:
         failed_rule = FailedRule(
             clause="7.1",
             test_number="11",
@@ -148,6 +151,10 @@ class ProcessRemediationTaskTests(TestCase):
             "  - CRITICAL     7.1 StructTreeRoot missing (1 checks)",
         )
         self.assertEqual(remediation.final_output_uri, remediation.source_pdf_uri)
+        mock_report.return_value.report.assert_called_once()
+        reported_remediation, reported_rules = mock_report.return_value.report.call_args.args
+        self.assertEqual(reported_remediation.id, remediation.id)
+        self.assertEqual(reported_rules, [failed_rule])
         self.assertTrue(
             remediation.artifacts.filter(
                 step=RemediationArtifact.Step.PRECHECK,

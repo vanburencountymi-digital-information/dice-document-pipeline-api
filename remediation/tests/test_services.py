@@ -9,12 +9,13 @@ from unittest.mock import create_autospec, patch
 import boto3
 from django.core.files.storage import default_storage
 from django.db import OperationalError
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from moto import mock_aws
 from parameterized import parameterized
 
 from accounts.tests.factories import ServiceAccountFactory
+from common.error_logging_client import ErrorLoggingClient
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import (
     PikePdfAdapter as AltTextPikePdfAdapter,
@@ -143,13 +144,39 @@ class RemediationServiceTests(TestCase):
 
         self.assertIsNone(found)
 
-    def test_mark_running_sets_status_and_started_at(self) -> None:
+    def test_claim_for_running_sets_status_and_started_at(self) -> None:
         remediation = RemediationFactory()
 
-        RemediationService().mark_running(remediation)
+        claimed = RemediationService().claim_for_running(remediation)
 
+        self.assertTrue(claimed)
         self.assertEqual(remediation.status, Remediation.JobStatus.RUNNING)
         self.assertIsNotNone(remediation.started_at)
+        remediation.refresh_from_db()
+        self.assertEqual(remediation.status, Remediation.JobStatus.RUNNING)
+
+    @parameterized.expand([(status.value, status) for status in Remediation.FINISHED_STATUSES])
+    def test_claim_for_running_refuses_a_finished_attempt_even_if_the_object_is_stale(
+        self, _name, finished_status
+    ) -> None:
+        remediation = RemediationFactory(status=Remediation.JobStatus.QUEUED)
+        # Another worker finishes the row after this copy was loaded.
+        Remediation.objects.filter(pk=remediation.pk).update(status=finished_status)
+
+        claimed = RemediationService().claim_for_running(remediation)
+
+        self.assertFalse(claimed)
+        self.assertEqual(remediation.status, Remediation.JobStatus.QUEUED)
+        remediation.refresh_from_db()
+        self.assertEqual(remediation.status, finished_status)
+        self.assertIsNone(remediation.started_at)
+
+    def test_claim_for_running_reclaims_a_running_attempt_left_by_a_crashed_worker(self) -> None:
+        remediation = RemediationFactory(status=Remediation.JobStatus.RUNNING)
+
+        claimed = RemediationService().claim_for_running(remediation)
+
+        self.assertTrue(claimed)
 
     @parameterized.expand(
         [
@@ -1353,6 +1380,22 @@ class StepContinuesOnAdapterErrorTests(TestCase):
             step=step,
             remediation=self.remediation,
             pdf_uri="remediations/test.pdf",
+        )
+
+
+class StepReportsToInjectedErrorLoggingTests(SimpleTestCase):
+    @parameterized.expand(SINGLE_ADAPTER_STEPS)
+    def test_report_exception_uses_the_injected_client(
+        self, _name, service_cls, _adapter_cls, _mock_method_name, step
+    ) -> None:
+        error_logging = create_autospec(ErrorLoggingClient, instance=True, spec_set=True)
+        remediation = RemediationFactory.build()
+        exc = ValueError("boom")
+
+        service_cls(error_logging=error_logging).report_exception(exc, remediation)
+
+        error_logging.report_exception.assert_called_once_with(
+            exc, tags={"step": step.value, "remediation_id": str(remediation.id)}
         )
 
 

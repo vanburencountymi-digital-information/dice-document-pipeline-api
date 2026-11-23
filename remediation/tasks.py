@@ -10,6 +10,7 @@ from django.utils import timezone
 from common.db import drop_connection_if_safe
 from remediation.models import Remediation, RemediationCallback
 from remediation.serializers import VerificationResultSerializer
+from remediation.service.noncompliant_report_service import NoncompliantReportService
 from remediation.services import (
     AlreadyCompliant,
     AltTextService,
@@ -118,15 +119,12 @@ def process_remediation(remediation_id: str) -> None:
     remediation = service.get(remediation_id)
     # A redelivered task for an already-finished attempt (ADR 0019) — returning before the
     # try/finally below keeps timestamps intact and doesn't re-send every webhook. Retries
-    # are unaffected: they always create a new `Remediation` row (ADR 0014).
-    if remediation.status in Remediation.FINISHED_STATUSES:
-        LOGGER.info(
-            "remediation %s: already %s, skipping redelivered task",
-            remediation_id,
-            remediation.status,
-        )
+    # are unaffected: they always create a new `Remediation` row (ADR 0014). `claim_for_running`
+    # does the check and the write in one statement, so a task that finishes in between
+    # can't be overwritten.
+    if not service.claim_for_running(remediation):
+        LOGGER.info("remediation %s: already finished, skipping redelivered task", remediation_id)
         return
-    service.mark_running(remediation)
     pdf_uri = remediation.source_pdf_uri
     LOGGER.info(
         "remediation %s: starting pipeline (%s)", remediation_id, remediation.original_filename
@@ -165,6 +163,7 @@ def process_remediation(remediation_id: str) -> None:
     except NotCompliant as exc:
         LOGGER.info("remediation %s: postcheck did not pass", remediation_id)
         service.mark_noncompliant(remediation, f"postcheck: {exc}", final_output_uri=pdf_uri)
+        NoncompliantReportService().report(remediation, exc.failed_rules)
 
     except PostCheckUnavailable as exc:
         LOGGER.info("remediation %s: postcheck could not run", remediation_id)
