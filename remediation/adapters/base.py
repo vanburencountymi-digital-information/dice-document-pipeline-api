@@ -44,6 +44,16 @@ class FailedRule:
     failed_checks: int
     severity: Severity
 
+    @property
+    def rule_id(self) -> str:
+        """The rule's short ID, e.g. `7.1:11` (`clause:test_number`). Used wherever rules are
+        grouped or compared, such as Sentry's grouping of noncompliant remediations (ADR 0044).
+
+        Note: `pdf_quality_report` still writes the same ID as `7.1/11` (its saved baselines
+        may depend on that), and `severity.py` keys rules as `7.1-11`.
+        """
+        return f"{self.clause}:{self.test_number}"
+
 
 class FailedRuleDict(TypedDict):
     """The JSON shape one `FailedRule` becomes in `VerificationResult.failed_rules`

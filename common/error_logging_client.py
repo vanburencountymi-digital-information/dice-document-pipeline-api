@@ -1,8 +1,11 @@
 from collections.abc import Iterable
+from typing import Any
 
 import sentry_sdk
 from sentry_sdk.integrations.django import DjangoIntegration
 from sentry_sdk.integrations.logging import ignore_logger
+
+from common.error_logging.constants import DETAILS_CONTEXT_KEY, WARNING_LEVEL
 
 
 class ErrorLoggingClient:
@@ -37,8 +40,23 @@ class ErrorLoggingClient:
     def report_exception(self, exc: Exception, *, tags: dict[str, str]) -> None:
         sentry_sdk.capture_exception(exc, tags=tags)
 
-    def report_warning(self, message: str) -> None:
-        """Reports something worth noticing that isn't an exception, e.g. a config problem
-        found at startup (ADR 0035).
+    def report_warning(
+        self,
+        message: str,
+        *,
+        tags: dict[str, str] | None = None,
+        fingerprint: list[str] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> None:
+        """Takes: the `message`, and optionally `tags` (searchable), a `fingerprint` (events
+        with the same one become a single Sentry issue with a count, instead of grouping by
+        message), and `context` (extra detail shown on the event, not searchable).
+        Returns: nothing.
         """
-        sentry_sdk.capture_message(message, level="warning")
+        sentry_sdk.capture_message(
+            message,
+            level=WARNING_LEVEL,
+            tags=tags,
+            fingerprint=fingerprint,
+            contexts={DETAILS_CONTEXT_KEY: context} if context is not None else None,
+        )
