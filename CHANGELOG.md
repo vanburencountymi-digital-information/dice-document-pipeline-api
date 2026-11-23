@@ -2,6 +2,27 @@
 
 <!-- version list -->
 
+## v5.12.0 (2026-11-23)
+
+### Documentation
+
+- Add ADR 0044 for noncompliant remediation warnings (DIC-2230)
+  ([#51](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/51),
+  [`36a9924`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/36a9924fa8f171839296483f537481865ecca28b))
+
+### Features
+
+- Sentry warning for noncompliant remediations (DIC-2230)
+  ([#51](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/51),
+  [`36a9924`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/36a9924fa8f171839296483f537481865ecca28b))
+
+### Refactoring
+
+- Add FailedRule.rule_id and structured Sentry warnings (DIC-2230)
+  ([#51](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/51),
+  [`36a9924`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/36a9924fa8f171839296483f537481865ecca28b))
+
+
 ## v5.11.0 (2026-11-12)
 
 ### Documentation
