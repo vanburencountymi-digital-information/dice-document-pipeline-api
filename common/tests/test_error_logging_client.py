@@ -2,15 +2,15 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
+from common.error_logging.client import ErrorLoggingClient
 from common.error_logging.constants import DETAILS_CONTEXT_KEY
-from common.error_logging_client import ErrorLoggingClient
 
 
 class ErrorLoggingClientTests(SimpleTestCase):
     def setUp(self) -> None:
         self.client = ErrorLoggingClient()
 
-    @patch("common.error_logging_client.sentry_sdk.capture_exception", autospec=True)
+    @patch("common.error_logging.client.sentry_sdk.capture_exception", autospec=True)
     def test_report_exception_forwards_to_sentry(self, mock_capture) -> None:
         exc = ValueError("boom")
 
@@ -18,7 +18,7 @@ class ErrorLoggingClientTests(SimpleTestCase):
 
         mock_capture.assert_called_once_with(exc, tags={"step": "ocr", "remediation_id": "abc"})
 
-    @patch("common.error_logging_client.sentry_sdk.capture_message", autospec=True)
+    @patch("common.error_logging.client.sentry_sdk.capture_message", autospec=True)
     def test_report_warning_forwards_to_sentry_at_warning_level(self, mock_capture) -> None:
         self.client.report_warning("something is off")
 
@@ -26,7 +26,7 @@ class ErrorLoggingClientTests(SimpleTestCase):
             "something is off", level="warning", tags=None, fingerprint=None, contexts=None
         )
 
-    @patch("common.error_logging_client.sentry_sdk.capture_message", autospec=True)
+    @patch("common.error_logging.client.sentry_sdk.capture_message", autospec=True)
     def test_report_warning_passes_tags_fingerprint_and_context(self, mock_capture) -> None:
         self.client.report_warning(
             "not compliant",
@@ -44,7 +44,7 @@ class ErrorLoggingClientTests(SimpleTestCase):
         )
 
     # Not autospec'd: config.test_settings already replaces `sentry_sdk.init` with a MagicMock.
-    @patch("common.error_logging_client.sentry_sdk.init")
+    @patch("common.error_logging.client.sentry_sdk.init")
     def test_configure_starts_sentry_without_personal_data(self, mock_init) -> None:
         self.client.configure(
             dsn="https://key@sentry.example/1", environment="staging", release="1.2.3"
@@ -56,8 +56,8 @@ class ErrorLoggingClientTests(SimpleTestCase):
         self.assertEqual(kwargs["release"], "1.2.3")
         self.assertFalse(kwargs["send_default_pii"])
 
-    @patch("common.error_logging_client.ignore_logger", autospec=True)
-    @patch("common.error_logging_client.sentry_sdk.init")
+    @patch("common.error_logging.client.ignore_logger", autospec=True)
+    @patch("common.error_logging.client.sentry_sdk.init")
     def test_configure_ignores_the_given_loggers(self, _mock_init, mock_ignore) -> None:
         self.client.configure(
             dsn="", environment="staging", release="1.2.3", ignored_loggers=["lib.a", "lib.b"]
@@ -67,8 +67,8 @@ class ErrorLoggingClientTests(SimpleTestCase):
             [call.args for call in mock_ignore.call_args_list], [("lib.a",), ("lib.b",)]
         )
 
-    @patch("common.error_logging_client.ignore_logger", autospec=True)
-    @patch("common.error_logging_client.sentry_sdk.init")
+    @patch("common.error_logging.client.ignore_logger", autospec=True)
+    @patch("common.error_logging.client.sentry_sdk.init")
     def test_configure_ignores_no_loggers_by_default(self, _mock_init, mock_ignore) -> None:
         self.client.configure(dsn="", environment="staging", release="1.2.3")
 

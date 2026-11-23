@@ -7,7 +7,10 @@ from parameterized import parameterized
 
 from remediation.adapters.verification.severity import Severity
 from remediation.models import RemediationArtifact
-from remediation.serializers import RemediationSerializer, RemediationUploadSerializer
+from remediation.serializers.remediation_serializers import (
+    RemediationSerializer,
+    RemediationUploadSerializer,
+)
 from remediation.tests.factories import (
     FailedRuleFactory,
     PdfUploadFactory,

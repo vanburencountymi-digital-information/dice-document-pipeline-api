@@ -12,10 +12,10 @@ from django.utils import timezone
 from django_tasks_db.models import DBTaskResult
 from parameterized import parameterized
 
-from remediation.adapters.base import AdapterError, FailedRule, VerificationOutcome
+from remediation.adapters.base import AdapterError, VerificationOutcome
 from remediation.adapters.verification.severity import Severity
 from remediation.models import Remediation, RemediationArtifact
-from remediation.serializers import RemediationSerializer
+from remediation.serializers.remediation_serializers import RemediationSerializer
 from remediation.tasks import (
     process_remediation,
     send_webhook_notification,
@@ -28,6 +28,7 @@ from remediation.tests.factories import (
     VerificationResultFactory,
 )
 from remediation.tests.helpers import fake_adapter_output, write_fake_pdf
+from remediation.verification_types import FailedRule
 from remediation.webhook_client import WebhookDeliveryError
 
 
@@ -90,7 +91,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_completes_immediately_when_already_compliant(self, mock_adapter_cls) -> None:
         mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
             is_compliant=True, failed_rules=[], verapdf_version="1.30.2"
@@ -124,7 +125,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_POSTCHECK=True,
     )
     @patch("remediation.tasks.NoncompliantReportService", autospec=True)
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_marks_noncompliant_when_postcheck_still_noncompliant(
         self, mock_adapter_cls, mock_report
     ) -> None:
@@ -178,8 +179,8 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
-    @patch("remediation.services.OpenDataLoaderAdapter", autospec=True)
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.artifact_service.OpenDataLoaderAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_runs_ocr_between_precheck_and_postcheck_when_enabled(
         self, mock_vera_cls, mock_ocr_cls
     ) -> None:
@@ -212,8 +213,8 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
-    @patch("remediation.services.OpenDataLoaderAdapter", autospec=True)
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.artifact_service.OpenDataLoaderAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_redelivered_task_resumes_without_rerunning_completed_steps(
         self, mock_vera_cls, mock_ocr_cls
     ) -> None:
@@ -275,8 +276,8 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=True,
         RUN_POSTCHECK=True,
     )
-    @patch("remediation.services.ScoringPikePdfAdapter", autospec=True)
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.artifact_service.ScoringPikePdfAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_scoring_failure_does_not_block_postcheck(
         self, mock_vera_cls, mock_scoring_cls
     ) -> None:
@@ -315,8 +316,8 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
-    @patch("remediation.services.OpenDataLoaderAdapter", autospec=True)
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.artifact_service.OpenDataLoaderAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_ocr_failure_does_not_abort_the_pipeline(self, mock_vera_cls, mock_ocr_cls) -> None:
         """ADR 0013 — unlike ScoringService (always non-blocking), OCRService used to abort
         the whole task on any AdapterError. This confirms it no longer does.
@@ -356,7 +357,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_precheck_adapter_crash_continues_to_postcheck(self, mock_adapter_cls) -> None:
         """precheck's own adapter crashing (not just a real non-compliant verdict) still
         doesn't stop the pipeline — ADR 0013's handle_verification_error default.
@@ -390,7 +391,7 @@ class ProcessRemediationTaskTests(TestCase):
         RUN_SCORING=False,
         RUN_POSTCHECK=True,
     )
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     def test_postcheck_adapter_crash_fails_the_job_without_failing_the_task(
         self, mock_adapter_cls
     ) -> None:
@@ -483,7 +484,7 @@ class ProcessRemediationWebhookTests(TestCase):
         mock_send.enqueue.assert_not_called()
 
     @override_settings(RUN_PRECHECK=True, RUN_POSTCHECK=True)
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
     def test_enqueues_callback_when_already_compliant(self, mock_send, mock_adapter_cls) -> None:
         mock_adapter_cls.return_value.validate.return_value = VerificationOutcome(
@@ -497,7 +498,7 @@ class ProcessRemediationWebhookTests(TestCase):
         mock_send.enqueue.assert_called_once_with(str(callback.id))
 
     @override_settings(RUN_PRECHECK=True, RUN_POSTCHECK=True)
-    @patch("remediation.services.VeraPDFAdapter", autospec=True)
+    @patch("remediation.services.verification_service.VeraPDFAdapter", autospec=True)
     @patch("remediation.tasks.send_webhook_notification", autospec=True, spec_set=True)
     def test_enqueues_callback_when_not_compliant(self, mock_send, mock_adapter_cls) -> None:
         mock_adapter_cls.return_value.validate.side_effect = [

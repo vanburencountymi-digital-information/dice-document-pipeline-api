@@ -2,15 +2,15 @@ from unittest.mock import create_autospec
 
 from django.test import TestCase
 
-from common.error_logging_client import ErrorLoggingClient
-from remediation.adapters.base import FailedRule
+from common.error_logging.client import ErrorLoggingClient
 from remediation.adapters.verification.severity import Severity
-from remediation.monitoring_serializers import FailedRuleMonitoringSerializer
-from remediation.service.noncompliant_report_service import (
+from remediation.serializers.monitoring_serializers import FailedRuleMonitoringSerializer
+from remediation.services.noncompliant_report_service import (
     NONCOMPLIANT_FINGERPRINT,
     NoncompliantReportService,
 )
 from remediation.tests.factories import RemediationFactory
+from remediation.verification_types import FailedRule
 
 
 class NoncompliantReportServiceTests(TestCase):

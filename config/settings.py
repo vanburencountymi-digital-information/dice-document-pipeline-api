@@ -16,7 +16,7 @@ from pathlib import Path
 import environ
 
 from common.db_backup_adapter import BACKUP_STORAGE_ALIAS, DBBACKUP_LOGGER
-from common.error_logging_client import ErrorLoggingClient
+from common.error_logging.client import ErrorLoggingClient
 from common.throttle_scopes import ThrottleScope
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.

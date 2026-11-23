@@ -1,9 +1,9 @@
 from django.test import SimpleTestCase
 from parameterized import parameterized
 
-from remediation.adapters.base import FailedRule
 from remediation.adapters.verification.severity import Severity
-from remediation.monitoring_serializers import FailedRuleMonitoringSerializer
+from remediation.serializers.monitoring_serializers import FailedRuleMonitoringSerializer
+from remediation.verification_types import FailedRule
 
 
 class FailedRuleMonitoringSerializerTests(SimpleTestCase):

@@ -4,7 +4,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
 
 from common.db_backup_adapter import DbBackupAdapter
-from common.error_logging_client import ErrorLoggingClient
+from common.error_logging.client import ErrorLoggingClient
 from common.services import (
     JOB_DATABASE_BACKUP,
     DatabaseBackupError,

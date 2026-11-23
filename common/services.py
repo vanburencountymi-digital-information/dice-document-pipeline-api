@@ -1,6 +1,6 @@
 from common.db_backup_adapter import DbBackupAdapter
+from common.error_logging.client import ErrorLoggingClient
 from common.error_logging.constants import ErrorLoggingTag
-from common.error_logging_client import ErrorLoggingClient
 
 # The `job` tag on error reports, so Sentry alerts can pick out a failed backup.
 JOB_DATABASE_BACKUP = "database_backup"

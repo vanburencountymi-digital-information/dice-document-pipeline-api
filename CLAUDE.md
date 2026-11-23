@@ -23,6 +23,15 @@ If asked to create a test, observe the following guidelines:
 - Use `SimpleTestCase` for tests that don't require the DB if possible, `setUpTestData` (over `setUp`) when possible.
 - Tests should work the same on both local + production environments; for tasks, use `override_settings` and mock the task backend with `django.tasks.backends.immediate.ImmediateBackend`
 
+## Upstream PRs: opendataloader-pdf reviewer notes
+Learned from the maintainer's four review rounds on PR #669. Check these before pushing to upstream.
+
+- Reviews are a `main` vs PR table. Each requested behavior is a row with a named test that must fail on `main` and pass on the PR. Rows already passing must keep passing.
+- What fails us: undoing a fix already on `main`; a title/description that claims more than the code does; any unintended change to json/markdown/pdf output on his recorded real documents and opendataloader-bench pages; tests built on documents with an unclear licence (use synthetic samples).
+- Each round turns up the next case in the same area from real bench pages (bordered table cells, then uneven table columns). Before pushing, try the change on bench pages with tables and mixed native + OCR text.
+- Scope: he turns down extras ("goes beyond this pull request", "a different case"). Answer exactly the rows asked; put follow-ups in a separate PR. If the design changes, update the test and the PR description to match.
+- Practical: rebase onto current `upstream/main` when asked (history was rewritten once); issue tests live in `.../pdf/issues/`; reply with a factual row-by-row result.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

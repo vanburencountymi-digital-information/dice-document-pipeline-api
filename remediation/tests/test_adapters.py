@@ -18,7 +18,7 @@ from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import (
     PikePdfAdapter as AltTextPikePdfAdapter,
 )
-from remediation.adapters.base import Adapter, AdapterError, FailedRule
+from remediation.adapters.base import Adapter, AdapterError
 from remediation.adapters.font_repair.pike_pdf import (
     PikePdfAdapter as FontRepairPikePdfAdapter,
 )
@@ -31,6 +31,7 @@ from remediation.adapters.scoring.pike_pdf import (
 )
 from remediation.adapters.verification.severity import Severity
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
+from remediation.verification_types import FailedRule
 
 COMPLIANT_REPORT = """<?xml version="1.0" encoding="utf-8"?>
 <report>

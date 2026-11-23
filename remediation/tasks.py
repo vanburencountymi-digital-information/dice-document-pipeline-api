@@ -9,22 +9,23 @@ from django.utils import timezone
 
 from common.db import drop_connection_if_safe
 from remediation.models import Remediation, RemediationCallback
-from remediation.serializers import VerificationResultSerializer
-from remediation.service.noncompliant_report_service import NoncompliantReportService
-from remediation.services import (
-    AlreadyCompliant,
+from remediation.serializers.remediation_serializers import VerificationResultSerializer
+from remediation.services.artifact_service import (
     AltTextService,
     FontRepairService,
     LinkService,
     MetadataService,
-    NotCompliant,
     OCRService,
+    ScoringService,
+)
+from remediation.services.noncompliant_report_service import NoncompliantReportService
+from remediation.services.remediation_service import RemediationService, build_download_url
+from remediation.services.verification_service import (
+    AlreadyCompliant,
+    NotCompliant,
     PostCheckService,
     PostCheckUnavailable,
     PrecheckService,
-    RemediationService,
-    ScoringService,
-    build_download_url,
 )
 from remediation.webhook_client import WebhookClient, WebhookDeliveryError
 
