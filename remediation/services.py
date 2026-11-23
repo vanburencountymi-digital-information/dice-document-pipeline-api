@@ -21,6 +21,7 @@ from packaging.version import InvalidVersion, Version
 
 from accounts.models import ServiceAccount
 from common.db import retry_on_lost_connection
+from common.error_logging.constants import ErrorLoggingTag
 from common.error_logging_client import ErrorLoggingClient
 from remediation.adapters.alt_text.claude_vision import ClaudeVisionClient
 from remediation.adapters.alt_text.pike_pdf import (
@@ -324,11 +325,26 @@ class RemediationService:
             pipeline_version=settings.PIPELINE_VERSION,
         )
 
-    def mark_running(self, remediation: Remediation) -> None:
-        """Takes: an attempt. Marks it running and records when it started."""
+    def claim_for_running(self, remediation: Remediation) -> bool:
+        """Takes: an attempt. Marks it running and records when it started.
+        Returns: False (changing nothing) if the attempt is already finished.
+
+        The "not finished" check and the write are one database statement, so a redelivered
+        task can't flip an attempt back to running after another worker finishes it. A
+        RUNNING attempt is still claimable, because a worker that crashed mid-run leaves
+        that status behind and its redelivery has to be able to pick the job up (ADR 0019).
+        """
+        started_at = timezone.now()
+        claimed = (
+            Remediation.objects.filter(pk=remediation.pk)
+            .exclude(status__in=Remediation.FINISHED_STATUSES)
+            .update(status=JobStatus.RUNNING, started_at=started_at)
+        )
+        if not claimed:
+            return False
         remediation.status = JobStatus.RUNNING
-        remediation.started_at = timezone.now()
-        remediation.save(update_fields=["status", "started_at"])
+        remediation.started_at = started_at
+        return True
 
     def mark_compliant(self, remediation: Remediation, final_output_uri: str) -> None:
         self._mark_finished(remediation, JobStatus.COMPLIANT, final_output_uri)
@@ -399,6 +415,9 @@ class ArtifactService:
 
     step: RemediationArtifact.Step
 
+    def __init__(self, error_logging: ErrorLoggingClient | None = None) -> None:
+        self.error_logging = error_logging or ErrorLoggingClient()
+
     @property
     def setting_name(self) -> str:
         return f"RUN_{self.step.name}"
@@ -410,8 +429,12 @@ class ArtifactService:
         return self.mark_skipped(remediation, f"{self.setting_name} is disabled")
 
     def report_exception(self, exc: Exception, remediation: Remediation) -> None:
-        ErrorLoggingClient().report_exception(
-            exc, tags={"step": self.step.value, "remediation_id": str(remediation.id)}
+        self.error_logging.report_exception(
+            exc,
+            tags={
+                ErrorLoggingTag.STEP: self.step.value,
+                ErrorLoggingTag.REMEDIATION_ID: str(remediation.id),
+            },
         )
 
     def construct_output_dir(self, remediation: Remediation) -> str:
@@ -565,7 +588,12 @@ class VerificationService(ArtifactService):
     `PostCheckService`, which each fix `step` and `handle_result`.
     """
 
-    def __init__(self, adapter: VerificationAdapter | None = None) -> None:
+    def __init__(
+        self,
+        adapter: VerificationAdapter | None = None,
+        error_logging: ErrorLoggingClient | None = None,
+    ) -> None:
+        super().__init__(error_logging)
         self.adapter = adapter or VeraPDFAdapter()
 
     def resume_completed(self, remediation: Remediation, output_uri: str) -> str:
@@ -660,7 +688,12 @@ class OCRService(ArtifactService):
 
     step = RemediationArtifact.Step.OCR
 
-    def __init__(self, adapter: OCRAdapter | None = None) -> None:
+    def __init__(
+        self,
+        adapter: OCRAdapter | None = None,
+        error_logging: ErrorLoggingClient | None = None,
+    ) -> None:
+        super().__init__(error_logging)
         self.adapter = adapter or OpenDataLoaderAdapter(
             hybrid_url=settings.OPENDATALOADER_HYBRID_URL
         )
@@ -695,7 +728,12 @@ class FontRepairService(ArtifactService):
 
     step = RemediationArtifact.Step.FONT_REPAIR
 
-    def __init__(self, adapter: FontRepairAdapter | None = None) -> None:
+    def __init__(
+        self,
+        adapter: FontRepairAdapter | None = None,
+        error_logging: ErrorLoggingClient | None = None,
+    ) -> None:
+        super().__init__(error_logging)
         self.adapter = adapter or FontRepairPikePdfAdapter()
 
     def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
@@ -740,7 +778,12 @@ class MetadataService(ArtifactService):
 
     step = RemediationArtifact.Step.FINALIZE_METADATA
 
-    def __init__(self, adapter: MetadataAdapter | None = None) -> None:
+    def __init__(
+        self,
+        adapter: MetadataAdapter | None = None,
+        error_logging: ErrorLoggingClient | None = None,
+    ) -> None:
+        super().__init__(error_logging)
         self.adapter = adapter or PikePdfAdapter()
 
     def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
@@ -777,7 +820,12 @@ class LinkService(ArtifactService):
 
     step = RemediationArtifact.Step.LINK_TAG
 
-    def __init__(self, adapter: LinkAdapter | None = None) -> None:
+    def __init__(
+        self,
+        adapter: LinkAdapter | None = None,
+        error_logging: ErrorLoggingClient | None = None,
+    ) -> None:
+        super().__init__(error_logging)
         self.adapter = adapter or LinkPikePdfAdapter()
 
     def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
@@ -812,8 +860,12 @@ class AltTextService(ArtifactService):
     step = RemediationArtifact.Step.ALT_TEXT
 
     def __init__(
-        self, adapter: AltTextAdapter | None = None, client: AltTextClient | None = None
+        self,
+        adapter: AltTextAdapter | None = None,
+        client: AltTextClient | None = None,
+        error_logging: ErrorLoggingClient | None = None,
     ) -> None:
+        super().__init__(error_logging)
         self.adapter = adapter or AltTextPikePdfAdapter()
         self.client = client or ClaudeVisionClient(
             api_key=settings.ANTHROPIC_API_KEY, model=settings.CLAUDE_VISION_MODEL
@@ -864,7 +916,12 @@ class ScoringService(ArtifactService):
 
     step = RemediationArtifact.Step.SCORING
 
-    def __init__(self, adapter: ScoringAdapter | None = None) -> None:
+    def __init__(
+        self,
+        adapter: ScoringAdapter | None = None,
+        error_logging: ErrorLoggingClient | None = None,
+    ) -> None:
+        super().__init__(error_logging)
         self.adapter = adapter or ScoringPikePdfAdapter()
 
     def _run(self, remediation: Remediation, *, pdf_uri: str) -> str:
