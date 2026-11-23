@@ -1,10 +1,10 @@
 from typing import Any
 
+from common.error_logging.client import ErrorLoggingClient
 from common.error_logging.constants import ErrorLoggingContextKey, ErrorLoggingTag
-from common.error_logging_client import ErrorLoggingClient
-from remediation.adapters.base import FailedRule
 from remediation.models import Remediation
-from remediation.monitoring_serializers import FailedRuleMonitoringSerializer
+from remediation.serializers.monitoring_serializers import FailedRuleMonitoringSerializer
+from remediation.verification_types import FailedRule
 
 # First part of the Sentry fingerprint for noncompliant remediations (ADR 0044); the failing
 # rule IDs follow it. Changing it splits existing Sentry issues into new ones.

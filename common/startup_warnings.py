@@ -1,6 +1,6 @@
 from django.conf import settings
 
-from common.error_logging_client import ErrorLoggingClient
+from common.error_logging.client import ErrorLoggingClient
 
 
 def config_warnings() -> list[str]:

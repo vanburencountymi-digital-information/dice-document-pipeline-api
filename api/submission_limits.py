@@ -18,7 +18,7 @@ from api.rates import parse_rate
 from api.serializers import SubmissionLimitSerializer
 from common.clock import seconds_until
 from common.throttle_scopes import LimitKind
-from remediation.services import RemediationService, SubmissionUsage
+from remediation.services.remediation_service import RemediationService, SubmissionUsage
 
 SUBMISSION_LIMIT_MESSAGE = "Submission limit reached."
 

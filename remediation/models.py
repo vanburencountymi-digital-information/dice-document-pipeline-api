@@ -30,7 +30,7 @@ UNFINISHED_STATUSES = (JobStatus.QUEUED, JobStatus.RUNNING)
 class Remediation(models.Model):
     # The module-level names above exist because `Meta` (below) can't see this class's own
     # attributes, and so type annotations can say `JobStatus` (an alias isn't a type).
-    # `remediation/services.py` imports them. Everything else uses these:
+    # `remediation/services/` imports them. Everything else uses these:
     # `Remediation.JobStatus`, `Remediation.FINISHED_STATUSES`, `Remediation.UNFINISHED_STATUSES`.
     JobStatus = JobStatus
     FINISHED_STATUSES = FINISHED_STATUSES
@@ -139,7 +139,7 @@ class VerificationResult(models.Model):
     # (`BUILT_AGAINST_VERAPDF_VERSION`); this is how an old row stays traceable to what
     # actually ran even after that table moves on to a newer version.
     verapdf_version = models.CharField(max_length=20, blank=True)
-    # List of `remediation.adapters.base.FailedRuleDict` dicts (simplify_vera_printouts) —
+    # List of `remediation.verification_types.FailedRuleDict` dicts (simplify_vera_printouts) —
     # replaces the raw veraPDF XML report that used to be dumped verbatim into
     # `Remediation.error`. `severity` inside each dict is a `Severity.value` string (JSON has
     # no enum type); every place that produces or reads it goes through `Severity`.

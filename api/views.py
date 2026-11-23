@@ -17,8 +17,11 @@ from api.renderers import PDFRenderer
 from api.serializers import ForbiddenSerializer, IPThrottledSerializer, SubmissionLimitSerializer
 from api.submission_limits import SubmissionLimitLike, limit_for
 from remediation.models import Remediation
-from remediation.serializers import RemediationSerializer, RemediationUploadSerializer
-from remediation.services import RemediationService
+from remediation.serializers.remediation_serializers import (
+    RemediationSerializer,
+    RemediationUploadSerializer,
+)
+from remediation.services.remediation_service import RemediationService
 from remediation.tasks import process_remediation, send_webhook_notification
 
 CONTENT_HASH_PARAM = OpenApiParameter(

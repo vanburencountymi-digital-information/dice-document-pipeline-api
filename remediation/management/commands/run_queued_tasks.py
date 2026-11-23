@@ -23,7 +23,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from common.startup_warnings import report_worker_config_warnings
 from remediation.hybrid_client import HybridServerNotReady, OpenDataLoaderHybridClient
-from remediation.services import TaskQueueService
+from remediation.services.task_queue_service import TaskQueueService
 
 
 class Command(BaseCommand):

@@ -1,12 +1,9 @@
 import subprocess
 from xml.etree import ElementTree
 
-from remediation.adapters.base import (
-    FailedRule,
-    VerificationAdapter,
-    VerificationOutcome,
-)
+from remediation.adapters.base import VerificationAdapter, VerificationOutcome
 from remediation.adapters.verification.severity import classify
+from remediation.verification_types import FailedRule
 
 
 class VeraPDFAdapter(VerificationAdapter):

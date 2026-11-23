@@ -2,7 +2,7 @@ from django.core.files.uploadedfile import UploadedFile
 from rest_framework import serializers
 
 from remediation.models import Remediation, VerificationResult
-from remediation.services import build_download_url
+from remediation.services.remediation_service import build_download_url
 from remediation.webhook_client import UnsafeWebhookURLError, check_webhook_url
 
 
