@@ -3,9 +3,11 @@ import os
 import re
 
 import pikepdf
+from django.conf import settings
 from fontTools.ttLib import TTFont
 
 from remediation.adapters.base import FontRepairAdapter
+from remediation.adapters.font_repair import outline_match
 
 # Small bundled wordlist for the offset-detection coherence check. No /usr/share/dict/words,
 # wordfreq, or nltk are available in this environment — this is a deliberately cheap, scoped
@@ -215,8 +217,14 @@ def _best_offset(code_sequence: list[int | None]) -> int | None:
 
 def _build_tounicode_cmap(codes: list[int], offset: int) -> bytes:
     """Builds a standard `/ToUnicode` CMap stream mapping each 2-byte code actually used by a
-    font to `code + offset`. Spec limits `beginbfchar`/`endbfchar` blocks to 100 entries, so
-    this chunks large code sets across multiple blocks.
+    font to `code + offset`.
+    """
+    return _build_tounicode_cmap_from_mapping({c: c + offset for c in codes})
+
+
+def _build_tounicode_cmap_from_mapping(mapping: dict[int, int]) -> bytes:
+    """Builds a `/ToUnicode` CMap stream from an explicit `{code: Unicode}` mapping. Spec limits
+    `beginbfchar`/`endbfchar` blocks to 100 entries, so this chunks large sets across blocks.
     """
     lines = [
         "/CIDInit /ProcSet findresource begin",
@@ -229,15 +237,15 @@ def _build_tounicode_cmap(codes: list[int], offset: int) -> bytes:
         "<0000> <FFFF>",
         "endcodespacerange",
     ]
-    sorted_codes = sorted(codes)
+    sorted_codes = sorted(mapping)
     for chunk_start in range(0, len(sorted_codes), 100):
         chunk = sorted_codes[chunk_start : chunk_start + 100]
-        valid = [c for c in chunk if 0 <= c + offset <= 0xFFFF]
+        valid = [c for c in chunk if 0 <= mapping[c] <= 0xFFFF]
         if not valid:
             continue
         lines.append(f"{len(valid)} beginbfchar")
         for code in valid:
-            lines.append(f"<{code:04X}> <{code + offset:04X}>")
+            lines.append(f"<{code:04X}> <{mapping[code]:04X}>")
         lines.append("endbfchar")
     lines += [
         "endcmap",
@@ -278,6 +286,8 @@ class PikePdfAdapter(FontRepairAdapter):
        the CIDSet if it doesn't already mark every glyph in that range — never touches an
        already-correct one.
     """
+
+    _reference_cache: dict[str, "outline_match.ReferenceFont"] | None = None
 
     @property
     def name(self) -> str:
@@ -349,8 +359,41 @@ class PikePdfAdapter(FontRepairAdapter):
                 continue
             offset = _best_offset(sequence)
             if offset is None:
+                self._repair_by_outline(pdf, candidates[name], used_codes)
                 continue
             self._attach_tounicode(pdf, candidates[name], used_codes, offset)
+
+    def _repair_by_outline(self, pdf: pikepdf.Pdf, font: pikepdf.Object, codes: set[int]) -> None:
+        """Fallback when no constant offset fits: for subsetted Calibri, match each glyph's
+        outline to Carlito (see `outline_match`). Skipped if the reference fonts are not
+        installed or the glyph ids are not the CIDs (`CIDToGIDMap` other than `/Identity`).
+        """
+        cid_font = font["/DescendantFonts"][0]
+        style = outline_match.style_of(str(cid_font.get("/BaseFont", "")))
+        descriptor = cid_font.get("/FontDescriptor")
+        font_file = descriptor.get("/FontFile2") if descriptor is not None else None
+        if style is None or font_file is None:
+            return
+        if str(cid_font.get("/CIDToGIDMap", "/Identity")) != "/Identity":
+            return
+        reference = self._reference_fonts().get(style)
+        if reference is None:
+            return
+        try:
+            mapping = outline_match.match_glyphs(bytes(font_file.read_bytes()), codes, reference)
+        except Exception:
+            return  # unreadable font program — leave it untouched, never guess
+        if not mapping:
+            return
+        stream = pikepdf.Stream(pdf, _build_tounicode_cmap_from_mapping(mapping))
+        font["/ToUnicode"] = pdf.make_indirect(stream)
+
+    def _reference_fonts(self) -> dict[str, "outline_match.ReferenceFont"]:
+        if self._reference_cache is None:
+            self._reference_cache = outline_match.load_reference_fonts(
+                settings.FONT_REPAIR_REFERENCE_DIR
+            )
+        return self._reference_cache
 
     def _is_candidate(self, font: pikepdf.Object) -> bool:
         if str(font.get("/Subtype", "")) != "/Type0":
@@ -366,7 +409,10 @@ class PikePdfAdapter(FontRepairAdapter):
         # carry the same Identity-encoding defect — confirmed on real examples of each: page 9's
         # font is CIDFontType2, page 29's (CANKNL+HelveticaNeueLTStd-Lt, the exact font veraPDF
         # flagged in the full document) is CIDFontType0.
-        return str(descendants[0].get("/Subtype", "")) in ("/CIDFontType0", "/CIDFontType2")
+        return str(descendants[0].get("/Subtype", "")) in (
+            "/CIDFontType0",
+            "/CIDFontType2",
+        )
 
     def _collect_codes(self, string_obj: pikepdf.Object, out: list[int | None]) -> None:
         raw = bytes(string_obj)

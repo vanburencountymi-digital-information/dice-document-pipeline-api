@@ -99,9 +99,11 @@
       "\ue145New\ue5c5",
       "\ue887Help",
       "Professional Licensing",
-      "Announcements Login Register for an Account",
       "Login  ",
-      "Register for an Account",
+      "Register for an Account ",
+      " ",
+      " ",
+      " ",
       "Announcements",
       "Once you are logged into your MiPLUS account, you can apply for a license, submit a request, or view existing records, by clicking on the word",
       "\u201cLicenses\u201d.",
@@ -258,6 +260,6 @@
     "/LI": 2,
     "/Lbl": 2,
     "/Link": 23,
-    "/P": 74
+    "/P": 75
   }
 }

@@ -13,7 +13,7 @@
   "ocr_truth": {
     "pages": {
       "1": {
-        "char_error_rate": 0.4306,
+        "char_error_rate": 0.4326,
         "example_extra": [
           "649",
           "Aging;",
@@ -43,12 +43,12 @@
         "output_words": 222,
         "reading_order": 0.8155,
         "truth_words": 305,
-        "word_error_rate": 0.5246,
+        "word_error_rate": 0.5279,
         "words_extra": 16,
         "words_missing": 99
       }
     },
-    "provenance": "Scanned infographic with no text layer. Cards and panels have no single reading order, so score this page on words and numbers, not order. Packet page 110. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Not yet checked by a person. Signatures and handwriting are left out. The three request counts (294 + 74 + 122) add up to the 490 shown. Cannot be checked against a text layer."
+    "provenance": "Scanned infographic with no text layer. Cards and panels have no single reading order, so score this page on words and numbers, not order. Packet page 110. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Checked against the page by Maria Violante on 2026-10-30. Signatures and handwriting are left out. The three request counts (294 + 74 + 122) add up to the 490 shown. Cannot be checked against a text layer."
   },
   "page_count": 2,
   "pages": {
@@ -92,7 +92,6 @@
     "font_repair": {
       "seconds": 0.0,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 1,
@@ -104,13 +103,12 @@
       "verapdf": {}
     },
     "metadata": {
-      "seconds": 0.0,
+      "seconds": 0.1,
       "verapdf": {}
     },
     "ocr": {
-      "seconds": 94.9,
+      "seconds": 78.7,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 1,

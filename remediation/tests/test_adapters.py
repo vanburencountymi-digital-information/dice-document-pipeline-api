@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pikepdf
 import pymupdf as fitz
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from parameterized import parameterized
 from PIL import Image
 
@@ -31,6 +31,7 @@ from remediation.adapters.scoring.pike_pdf import (
 )
 from remediation.adapters.verification.severity import Severity
 from remediation.adapters.verification.vera_pdf import VeraPDFAdapter
+from remediation.tests.helpers import build_shape_font
 from remediation.verification_types import FailedRule
 
 COMPLIANT_REPORT = """<?xml version="1.0" encoding="utf-8"?>
@@ -1339,6 +1340,97 @@ def _png_bytes(size: tuple[int, int], color: tuple[int, int, int]) -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", size, color=color).save(buf, format="PNG")
     return buf.getvalue()
+
+
+class FontRepairOutlineFallbackTests(SimpleTestCase):
+    """Calibri-style fonts with no `cmap` and glyph ids that are not a fixed offset from Unicode:
+    the adapter matches outlines against Carlito. Uses tiny synthetic fonts and a stand-in
+    reference folder, so it needs neither Carlito nor a real document.
+    """
+
+    def setUp(self) -> None:
+        self.input_dir = tempfile.mkdtemp()
+        self.output_dir = tempfile.mkdtemp()
+        self.reference_dir = tempfile.mkdtemp()
+        for directory in (self.input_dir, self.output_dir, self.reference_dir):
+            self.addCleanup(shutil.rmtree, directory, ignore_errors=True)
+        with open(os.path.join(self.reference_dir, "Carlito-Regular.ttf"), "wb") as handle:
+            handle.write(
+                build_shape_font(
+                    ["triangle", "square", "bar"],
+                    characters={
+                        "triangle": ord("A"),
+                        "square": ord("B"),
+                        "bar": ord("C"),
+                    },
+                )
+            )
+
+    def _write_pdf(self, *, base_font: str = "/ABCDEF+Calibri", **font_entries) -> str:
+        pdf = pikepdf.new()
+        page = pdf.add_blank_page(page_size=(400, 200))
+        program = pdf.make_indirect(
+            pikepdf.Stream(pdf, build_shape_font(["bar", "triangle", "square"]))
+        )
+        descriptor = pdf.make_indirect(
+            pikepdf.Dictionary(
+                Type=pikepdf.Name("/FontDescriptor"),
+                FontName=pikepdf.Name(base_font),
+                FontFile2=program,
+            )
+        )
+        descendant = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/CIDFontType2"),
+            BaseFont=pikepdf.Name(base_font),
+            CIDSystemInfo=pikepdf.Dictionary(Registry="Adobe", Ordering="Identity", Supplement=0),
+            CIDToGIDMap=pikepdf.Name(font_entries.get("cid_to_gid", "/Identity")),
+            FontDescriptor=descriptor,
+        )
+        font = pikepdf.Dictionary(
+            Type=pikepdf.Name("/Font"),
+            Subtype=pikepdf.Name("/Type0"),
+            BaseFont=pikepdf.Name(base_font),
+            Encoding=pikepdf.Name("/Identity-H"),
+            DescendantFonts=pikepdf.Array([pdf.make_indirect(descendant)]),
+        )
+        page["/Resources"] = pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=pdf.make_indirect(font)))
+        # Glyph ids 1-3 shown over and over: no constant offset turns these into English words.
+        codes = "".join(f"{code:04X}" for code in [1, 2, 3, 1, 2, 3, 3, 2, 1, 2])
+        content = f"BT /F1 12 Tf <{codes}> Tj ET".encode("ascii")
+        page["/Contents"] = pdf.make_indirect(pikepdf.Stream(pdf, content))
+        path = os.path.join(self.input_dir, "document.pdf")
+        pdf.save(path)
+        return path
+
+    def _repair(self, path: str, reference_dir: str | None = None) -> pikepdf.Object:
+        with override_settings(FONT_REPAIR_REFERENCE_DIR=reference_dir or self.reference_dir):
+            result = FontRepairPikePdfAdapter().repair(path, output_dir=self.output_dir)
+        pdf = pikepdf.open(result)
+        self.addCleanup(pdf.close)
+        return pdf.pages[0].obj["/Resources"]["/Font"]["/F1"]
+
+    def test_attaches_tounicode_matched_by_outline(self) -> None:
+        font = self._repair(self._write_pdf())
+
+        cmap = bytes(font["/ToUnicode"].read_bytes()).decode()
+        for code, char in ((1, "C"), (2, "A"), (3, "B")):
+            self.assertIn(f"<{code:04X}> <{ord(char):04X}>", cmap)
+
+    def test_leaves_font_untouched_when_reference_fonts_are_missing(self) -> None:
+        font = self._repair(self._write_pdf(), reference_dir=self.input_dir)
+
+        self.assertNotIn("/ToUnicode", font)
+
+    def test_leaves_font_untouched_when_not_calibri(self) -> None:
+        font = self._repair(self._write_pdf(base_font="/ABCDEF+Arial"))
+
+        self.assertNotIn("/ToUnicode", font)
+
+    def test_leaves_font_untouched_when_cid_to_gid_map_is_not_identity(self) -> None:
+        font = self._repair(self._write_pdf(cid_to_gid="/Other"))
+
+        self.assertNotIn("/ToUnicode", font)
 
 
 class AltTextAdapterTests(SimpleTestCase):

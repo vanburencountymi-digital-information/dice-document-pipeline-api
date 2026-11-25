@@ -46,23 +46,14 @@ RUN "$JAVA_HOME/bin/jlink" \
 FROM eclipse-temurin:21-jdk-alpine AS opendataloader-pdf-builder
 WORKDIR /build
 RUN apk add --no-cache git maven
-RUN git clone --branch fix/ocr-fallback-font-cache-npe \
+RUN git clone --branch fix/hybrid-tagged-pdf-text-drop \
         https://github.com/ViolanteCodes/opendataloader-pdf.git . \
-    && git checkout 1ad2814e2601c3c70dde3f2431e2be05607245b5
-# Pinned to 1ad2814 (branch fix/ocr-fallback-font-cache-npe, tip as of 2026-08-17), not
-# d633c2f on fix/hybrid-tagged-pdf-text-drop (the previous pin) — 1ad2814 branches
-# directly off d633c2f (fix/hybrid-tagged-pdf-text-drop only, not yet on origin/main or
-# upstream/main) and adds one fix on top: ensureOcrFallbackFont's presence-check used to
-# query PDResources#getFont(OCR_FALLBACK_FONT_NAME) before the font was added, which
-# poisoned PDResources's font-resolution cache and left the font unresolvable at tagging
-# time even after it was genuinely added to the underlying COS dictionary — crashing
-# ChunksWriter with an NPE on any document whose OCR-fallback synthesis path hit that
-# font. Fixed by checking the raw COS /Font dictionary directly instead. Confirmed via
-# targeted diagnostic logging against a real reproducing document (see
-# docs/tests/example-files/edge-cases/, fixture pages11-14-crash-ocr-fallback.pdf) and
-# by re-running the full 47-page document that originally hit this crash end to end with
-# zero errors. Pinned to a specific commit rather than floating on the branch HEAD so a
-# future push can't silently change what this build pulls in.
+    && git checkout 2ce17feada7b466e19d639c1fca6dc069bcadc78
+# Pinned to 2ce17fea (branch fix/hybrid-tagged-pdf-text-drop, upstream PR #669 as of
+# 2026-11-24): carries OCR-recovered text into hybrid-mode tagged-pdf output, adds it only
+# where the page draws no text, and includes the ensureOcrFallbackFont font-cache NPE fix
+# (the old pin 1ad2814 on fix/ocr-fallback-font-cache-npe). Pinned to a commit, not the
+# branch HEAD, so a push can't silently change what this build pulls in.
 # The Maven aggregator POM lives at java/pom.xml, not the repo root — module names in
 # -pl are relative to it (plain opendataloader-pdf-core/-cli, no java/ prefix).
 WORKDIR /build/java
@@ -101,17 +92,20 @@ RUN apk add --no-cache libstdc++
 # least as new as the server's Postgres version (docker-compose.yml's `db` image).
 RUN apk add --no-cache postgresql18-client
 
+# Carlito (open font, same letter widths as Calibri): lets font_repair recover text for
+# Calibri fonts that lost their character table (DIC-2484). Without it that repair is skipped.
+RUN apk add --no-cache font-carlito
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Overwrite opendataloader_pdf's bundled CLI jar with our patched build (ADR 0010) — the
 # package always installs to this exact site-packages path regardless of pip's resolution,
-# and our from-source build always produces this filename (the repo's pom.xml version is an
-# unset "0.0.0" placeholder; real version numbers are only assigned by upstream's own release
-# pipeline, which we're not using). Remove this override once our fix is merged upstream and
+# and our from-source build always produces this filename (the filename follows the
+# pom.xml version of the pinned commit, so update it when the pin moves). Remove this override once our fix is merged upstream and
 # released, and go back to a plain `pip install opendataloader-pdf==<version>`.
 COPY --from=opendataloader-pdf-builder \
-     /build/java/opendataloader-pdf-cli/target/opendataloader-pdf-cli-0.0.0.jar \
+     /build/java/opendataloader-pdf-cli/target/opendataloader-pdf-cli-2.5.21-SNAPSHOT.jar \
      /usr/local/lib/python3.12/site-packages/opendataloader_pdf/jar/opendataloader-pdf-cli.jar
 
 # Created before the COPY block below (not after) so --chown can reference it: the app

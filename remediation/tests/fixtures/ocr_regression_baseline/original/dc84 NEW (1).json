@@ -35,7 +35,6 @@
       "Information About the Parties",
       "A",
       "The plaintiff is the party starting the case.",
-      "A",
       "Plaintiff Name",
       "Plaintiff Address",
       "Plaintiff Phone",
@@ -74,7 +73,6 @@
       "FORM REDESIGN"
     ],
     [
-      "B Claim",
       "Page 2 of 3",
       "Small Claims Affidavit (DC 84)",
       "Case Number",
@@ -177,6 +175,6 @@
     "/LI": 16,
     "/Lbl": 16,
     "/Link": 2,
-    "/P": 67
+    "/P": 66
   }
 }

@@ -70,8 +70,10 @@ pdf-quality-compare:
 # The whole battery in one go: runs the real pipeline on the committed slices, scores the
 # text against the page readings, and compares with the recorded baselines. Fails if
 # anything got worse. Needs the opendataloader-hybrid container; not part of `make test`.
+# The baseline folder is mounted so the check reads the baselines in your checkout, not the
+# copy baked into the image (which goes stale as soon as you re-record without rebuilding).
 check-pdf-quality:
-	docker compose run --rm app sh -c 'python manage.py pdf_quality_report remediation/tests/fixtures/edge-cases/boc1020-*.pdf --run-pipeline --truth-dir remediation/tests/fixtures/ocr_truth --output-dir /tmp/quality && python manage.py pdf_quality_compare remediation/tests/fixtures/quality_baseline /tmp/quality --fail-on-regression'
+	docker compose run --rm -v "$(CURDIR)/remediation/tests/fixtures/quality_baseline:/app/remediation/tests/fixtures/quality_baseline:ro" app sh -c 'python manage.py pdf_quality_report remediation/tests/fixtures/edge-cases/boc1020-*.pdf --run-pipeline --truth-dir remediation/tests/fixtures/ocr_truth --output-dir /tmp/quality && python manage.py pdf_quality_compare remediation/tests/fixtures/quality_baseline /tmp/quality --fail-on-regression'
 
 verapdf-version:
 	docker compose run --rm app verapdf --version

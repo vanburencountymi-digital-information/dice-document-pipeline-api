@@ -216,7 +216,7 @@ Use this section before accepting a new version of anything that reads or tags P
 1. **Keep the old results.** The saved results come from the production setup. Never record them from the version you are testing.
 2. **Run the unit tests:** `make test`. This also checks the page transcriptions.
 3. **Start the hybrid container fresh.** It can run out of memory after about 25 documents, and then the reports measure untagged PDFs. The report records this as a failed step and the compare refuses to use it. If you see it, restart the container between slices.
-4. **Run `make check-pdf-quality`, then `make check-ocr-regression`.**
+4. **Run `make check-pdf-quality`, then `make check-ocr-regression`.** Both read the saved results from your checkout, so a re-recorded set is used straight away.
 5. **Read what changed, even when nothing failed.** Lists, tables, figures and word counts are shown but never fail the check on their own. Open the pages the compare lists.
 
 **Accept the new version only if:**

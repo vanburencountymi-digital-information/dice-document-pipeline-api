@@ -8,40 +8,42 @@
     "outline_entries": 0,
     "title": "boc1020-pages119-121-tables-no-tounicode"
   },
+  "failed_steps": [],
   "file": "boc1020-pages119-121-tables-no-tounicode.pdf",
+  "ocr_truth": null,
   "page_count": 3,
   "pages": {
     "1": {
       "figures": 0,
       "headings": [],
       "lists": [],
-      "repeated_phrases": 27,
+      "repeated_phrases": 0,
       "tables": 1,
-      "tag_signature": "984b57f42a",
-      "words": 1660,
-      "words_added_to_source": 767,
-      "words_missing_from_source": 103
+      "tag_signature": "cb24b4bc9d",
+      "words": 996,
+      "words_added_to_source": 0,
+      "words_missing_from_source": 0
     },
     "2": {
       "figures": 0,
       "headings": [],
       "lists": [],
-      "repeated_phrases": 46,
+      "repeated_phrases": 0,
       "tables": 1,
-      "tag_signature": "591fe6c474",
-      "words": 1906,
-      "words_added_to_source": 836,
+      "tag_signature": "446302baa9",
+      "words": 1070,
+      "words_added_to_source": 0,
       "words_missing_from_source": 0
     },
     "3": {
       "figures": 0,
       "headings": [],
       "lists": [],
-      "repeated_phrases": 54,
+      "repeated_phrases": 0,
       "tables": 1,
-      "tag_signature": "684ac2c5be",
-      "words": 1630,
-      "words_added_to_source": 719,
+      "tag_signature": "d1bf1f6bf0",
+      "words": 911,
+      "words_added_to_source": 0,
       "words_missing_from_source": 0
     }
   },
@@ -49,50 +51,34 @@
     "font_repair": {
       "seconds": 0.2,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
-        "7.2/34": 1839,
-        "7.21.4.1/1": 1,
-        "7.21.4.1/2": 27,
-        "7.21.5/1": 27,
-        "7.21.7/1": 89,
-        "7.21.8/1": 27
+        "7.2/21": 5,
+        "7.2/34": 2775,
+        "7.21.4.1/1": 1
       }
     },
     "link_tag": {
       "seconds": 0.2,
       "verapdf": {
-        "7.21.4.1/1": 1,
-        "7.21.4.1/2": 27,
-        "7.21.5/1": 27,
-        "7.21.7/1": 89,
-        "7.21.8/1": 27
+        "7.21.4.1/1": 1
       }
     },
     "metadata": {
       "seconds": 0.2,
       "verapdf": {
-        "7.21.4.1/1": 1,
-        "7.21.4.1/2": 27,
-        "7.21.5/1": 27,
-        "7.21.7/1": 89,
-        "7.21.8/1": 27
+        "7.21.4.1/1": 1
       }
     },
     "ocr": {
-      "seconds": 444.9,
+      "seconds": 435.9,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
-        "7.2/34": 1839,
+        "7.2/21": 5,
+        "7.2/34": 2775,
         "7.21.4.1/1": 1,
-        "7.21.4.1/2": 27,
-        "7.21.4.2/2": 1,
-        "7.21.5/1": 27,
-        "7.21.7/1": 89,
-        "7.21.8/1": 27
+        "7.21.4.2/2": 1
       }
     },
     "source": {
@@ -109,7 +95,7 @@
     }
   },
   "tag_counts": {
-    "/P": 638,
+    "/P": 562,
     "/TD": 1563,
     "/TH": 59,
     "/TR": 75,
@@ -125,18 +111,14 @@
     "links": 0,
     "list_items": 0,
     "lists": 0,
-    "repeated_phrases": 127,
+    "repeated_phrases": 0,
     "tables": 3,
     "tables_without_headers": 0,
-    "words": 5196,
-    "words_added_to_source": 2322,
-    "words_missing_from_source": 103
+    "words": 2977,
+    "words_added_to_source": 0,
+    "words_missing_from_source": 0
   },
   "verapdf": {
-    "7.21.4.1/1": 1,
-    "7.21.4.1/2": 27,
-    "7.21.5/1": 27,
-    "7.21.7/1": 89,
-    "7.21.8/1": 27
+    "7.21.4.1/1": 1
   }
 }

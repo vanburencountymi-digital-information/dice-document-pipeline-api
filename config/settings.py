@@ -417,6 +417,11 @@ RUN_POSTCHECK = env.bool("RUN_POSTCHECK", default=False)
 # is reported at startup (common/startup_warnings.py) instead of quietly aiming at localhost.
 OPENDATALOADER_HYBRID_URL = env.str("OPENDATALOADER_HYBRID_URL", default="")
 
+# Where the font_repair step finds the Carlito font files (Alpine package
+# `font-carlito`). Used to recover text for Calibri fonts that lost their
+# character table; if the files are missing, that repair is skipped.
+FONT_REPAIR_REFERENCE_DIR = env.str("FONT_REPAIR_REFERENCE_DIR", default="/usr/share/fonts/carlito")
+
 # ADR 0005's alt-text engine — Claude Vision. Empty default (rather than a required env
 # var) so Django can still start/test without a key; ClaudeVisionClient only fails on an
 # actual describe() call, not at construction (see its docstring for why).

@@ -8,7 +8,9 @@
     "outline_entries": 0,
     "title": "boc1020-pages245-247-scanned-dividers"
   },
+  "failed_steps": [],
   "file": "boc1020-pages245-247-scanned-dividers.pdf",
+  "ocr_truth": null,
   "page_count": 3,
   "pages": {
     "1": {
@@ -53,7 +55,6 @@
     "font_repair": {
       "seconds": 0.0,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 3,
@@ -69,9 +70,8 @@
       "verapdf": {}
     },
     "ocr": {
-      "seconds": 55.0,
+      "seconds": 53.3,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 3,
