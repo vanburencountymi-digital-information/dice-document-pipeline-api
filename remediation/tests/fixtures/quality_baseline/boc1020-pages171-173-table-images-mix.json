@@ -8,7 +8,9 @@
     "outline_entries": 0,
     "title": "boc1020-pages171-173-table-images-mix"
   },
+  "failed_steps": [],
   "file": "boc1020-pages171-173-table-images-mix.pdf",
+  "ocr_truth": null,
   "page_count": 3,
   "pages": {
     "1": {
@@ -20,10 +22,10 @@
       "lists": [],
       "repeated_phrases": 0,
       "tables": 0,
-      "tag_signature": "ca503c6b76",
-      "words": 1142,
-      "words_added_to_source": 493,
-      "words_missing_from_source": 0
+      "tag_signature": "c5d5efdaf9",
+      "words": 645,
+      "words_added_to_source": 523,
+      "words_missing_from_source": 527
     },
     "2": {
       "figures": 2,
@@ -35,7 +37,7 @@
       "lists": [],
       "repeated_phrases": 0,
       "tables": 0,
-      "tag_signature": "9acdef187f",
+      "tag_signature": "2099ce945c",
       "words": 57,
       "words_added_to_source": 0,
       "words_missing_from_source": 0
@@ -58,38 +60,36 @@
   },
   "stages": {
     "font_repair": {
-      "seconds": 0.2,
+      "seconds": 2.8,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 6,
-        "7.2/34": 502,
-        "7.21.7/1": 147
+        "7.2/34": 339,
+        "7.21.7/1": 9
       }
     },
     "link_tag": {
-      "seconds": 0.0,
+      "seconds": 0.1,
       "verapdf": {
-        "7.21.7/1": 147
+        "7.21.7/1": 9
       }
     },
     "metadata": {
       "seconds": 0.0,
       "verapdf": {
-        "7.21.7/1": 147
+        "7.21.7/1": 9
       }
     },
     "ocr": {
-      "seconds": 50.9,
+      "seconds": 50.3,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 6,
-        "7.2/34": 502,
+        "7.2/34": 339,
         "7.21.4.2/2": 4,
-        "7.21.7/1": 147
+        "7.21.7/1": 1506
       }
     },
     "source": {
@@ -111,7 +111,8 @@
     "/H1": 4,
     "/H2": 2,
     "/H3": 2,
-    "/P": 188
+    "/P": 163,
+    "/Sect": 1
   },
   "totals": {
     "empty_pages": 0,
@@ -126,11 +127,11 @@
     "repeated_phrases": 0,
     "tables": 0,
     "tables_without_headers": 0,
-    "words": 1660,
-    "words_added_to_source": 493,
-    "words_missing_from_source": 0
+    "words": 1163,
+    "words_added_to_source": 523,
+    "words_missing_from_source": 527
   },
   "verapdf": {
-    "7.21.7/1": 147
+    "7.21.7/1": 9
   }
 }

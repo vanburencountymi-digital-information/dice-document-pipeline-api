@@ -8,7 +8,9 @@
     "outline_entries": 0,
     "title": "boc1020-pages86-88-stat-tables"
   },
+  "failed_steps": [],
   "file": "boc1020-pages86-88-stat-tables.pdf",
+  "ocr_truth": null,
   "page_count": 3,
   "pages": {
     "1": {
@@ -32,11 +34,11 @@
         1
       ],
       "lists": [],
-      "repeated_phrases": 31,
+      "repeated_phrases": 0,
       "tables": 2,
-      "tag_signature": "baa3fd3e07",
-      "words": 367,
-      "words_added_to_source": 110,
+      "tag_signature": "38d4aad3d0",
+      "words": 257,
+      "words_added_to_source": 0,
       "words_missing_from_source": 0
     },
     "3": {
@@ -48,9 +50,9 @@
       "lists": [],
       "repeated_phrases": 0,
       "tables": 2,
-      "tag_signature": "83e03beaed",
-      "words": 259,
-      "words_added_to_source": 2,
+      "tag_signature": "41270e9b3f",
+      "words": 257,
+      "words_added_to_source": 0,
       "words_missing_from_source": 0
     }
   },
@@ -58,12 +60,11 @@
     "font_repair": {
       "seconds": 0.1,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 3,
         "7.2/24": 3,
-        "7.2/34": 842,
+        "7.2/34": 791,
         "7.21.4.1/1": 2
       }
     },
@@ -80,14 +81,13 @@
       }
     },
     "ocr": {
-      "seconds": 77.4,
+      "seconds": 73.9,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 3,
         "7.2/24": 3,
-        "7.2/34": 842,
+        "7.2/34": 791,
         "7.21.4.1/1": 2
       }
     },
@@ -109,7 +109,7 @@
   "tag_counts": {
     "/H1": 6,
     "/Link": 3,
-    "/P": 377,
+    "/P": 375,
     "/TD": 311,
     "/TH": 38,
     "/TR": 45,
@@ -125,11 +125,11 @@
     "links": 3,
     "list_items": 0,
     "lists": 0,
-    "repeated_phrases": 31,
+    "repeated_phrases": 0,
     "tables": 5,
     "tables_without_headers": 0,
-    "words": 659,
-    "words_added_to_source": 112,
+    "words": 547,
+    "words_added_to_source": 0,
     "words_missing_from_source": 0
   },
   "verapdf": {

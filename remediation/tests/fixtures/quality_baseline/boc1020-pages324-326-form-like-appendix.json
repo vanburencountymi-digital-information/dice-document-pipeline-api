@@ -8,7 +8,9 @@
     "outline_entries": 0,
     "title": "boc1020-pages324-326-form-like-appendix"
   },
+  "failed_steps": [],
   "file": "boc1020-pages324-326-form-like-appendix.pdf",
+  "ocr_truth": null,
   "page_count": 3,
   "pages": {
     "1": {
@@ -24,8 +26,8 @@
       "repeated_phrases": 0,
       "tables": 1,
       "tag_signature": "24ce862602",
-      "words": 256,
-      "words_added_to_source": 8,
+      "words": 249,
+      "words_added_to_source": 1,
       "words_missing_from_source": 0
     },
     "2": {
@@ -37,8 +39,8 @@
       "repeated_phrases": 0,
       "tables": 0,
       "tag_signature": "e5aedf717f",
-      "words": 51,
-      "words_added_to_source": 8,
+      "words": 43,
+      "words_added_to_source": 0,
       "words_missing_from_source": 0
     },
     "3": {
@@ -53,8 +55,8 @@
       "repeated_phrases": 0,
       "tables": 0,
       "tag_signature": "036389018b",
-      "words": 166,
-      "words_added_to_source": 8,
+      "words": 158,
+      "words_added_to_source": 0,
       "words_missing_from_source": 0
     }
   },
@@ -62,15 +64,14 @@
     "font_repair": {
       "seconds": 0.0,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
-        "7.2/34": 301,
+        "7.2/34": 295,
         "7.21.4.1/1": 1
       }
     },
     "link_tag": {
-      "seconds": 0.1,
+      "seconds": 0.0,
       "verapdf": {
         "7.21.4.1/1": 1
       }
@@ -82,12 +83,11 @@
       }
     },
     "ocr": {
-      "seconds": 65.3,
+      "seconds": 64.9,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
-        "7.2/34": 301,
+        "7.2/34": 295,
         "7.21.4.1/1": 1,
         "7.21.4.2/2": 1
       }
@@ -126,8 +126,8 @@
     "repeated_phrases": 0,
     "tables": 1,
     "tables_without_headers": 0,
-    "words": 473,
-    "words_added_to_source": 24,
+    "words": 450,
+    "words_added_to_source": 1,
     "words_missing_from_source": 0
   },
   "verapdf": {

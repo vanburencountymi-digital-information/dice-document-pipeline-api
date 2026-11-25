@@ -53,8 +53,8 @@
       "repeated_phrases": 0,
       "tables": 0,
       "tag_signature": "aec3b99a89",
-      "words": 207,
-      "words_added_to_source": 16,
+      "words": 191,
+      "words_added_to_source": 0,
       "words_missing_from_source": 0
     },
     "3": {
@@ -77,14 +77,13 @@
   },
   "stages": {
     "font_repair": {
-      "seconds": 0.1,
+      "seconds": 0.0,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 9,
         "7.2/24": 9,
-        "7.2/34": 573,
+        "7.2/34": 570,
         "7.21.4.1/1": 2
       }
     },
@@ -95,20 +94,19 @@
       }
     },
     "metadata": {
-      "seconds": 0.2,
+      "seconds": 0.0,
       "verapdf": {
         "7.21.4.1/1": 2
       }
     },
     "ocr": {
-      "seconds": 110.4,
+      "seconds": 90.4,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
         "7.2/22": 9,
         "7.2/24": 9,
-        "7.2/34": 573,
+        "7.2/34": 570,
         "7.21.4.1/1": 2,
         "7.21.4.2/2": 1
       }
@@ -155,8 +153,8 @@
     "repeated_phrases": 0,
     "tables": 1,
     "tables_without_headers": 0,
-    "words": 721,
-    "words_added_to_source": 16,
+    "words": 705,
+    "words_added_to_source": 0,
     "words_missing_from_source": 0
   },
   "verapdf": {

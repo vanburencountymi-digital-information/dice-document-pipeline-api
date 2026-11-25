@@ -13,8 +13,19 @@
   "ocr_truth": {
     "pages": {
       "1": {
-        "char_error_rate": 1.0,
-        "example_extra": [],
+        "char_error_rate": 0.5401,
+        "example_extra": [
+          "16,2026",
+          "31",
+          "8*m",
+          "Bippus;",
+          "Brown;",
+          "Centreville;",
+          "Chupp;",
+          "Hoffmaster;",
+          "Miars;",
+          "RodnefD."
+        ],
         "example_missing": [
           "16,",
           "2026",
@@ -23,33 +34,33 @@
           "269-467-6393",
           "31,",
           "49032-9622",
-          "Bippus",
           "Bippus,",
-          "Board"
+          "Board",
+          "Brown,"
         ],
-        "numbers_extra": 0,
-        "numbers_missing": 9,
-        "output_words": 0,
-        "reading_order": 0.0,
+        "numbers_extra": 3,
+        "numbers_missing": 7,
+        "output_words": 109,
+        "reading_order": 1.0,
         "truth_words": 230,
-        "word_error_rate": 1.0,
-        "words_extra": 0,
-        "words_missing": 230
+        "word_error_rate": 0.5913,
+        "words_extra": 13,
+        "words_missing": 134
       }
     },
-    "provenance": "Scanned letter with no text layer in the original. Left column of the letterhead, then the right. Packet page 24. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Not yet checked by a person. Signatures and handwriting are left out. Cannot be checked against a text layer."
+    "provenance": "Scanned letter with no text layer in the original. Left column of the letterhead, then the right. Packet page 24. Transcribed by Claude reading a 110 dpi rendering of the page on 2026-10-28. Checked against the page by Maria Violante on 2026-10-30. Signatures and handwriting are left out. Cannot be checked against a text layer."
   },
   "page_count": 4,
   "pages": {
     "1": {
-      "figures": 12,
+      "figures": 1,
       "headings": [],
       "lists": [],
       "repeated_phrases": 0,
       "tables": 0,
-      "tag_signature": "60ca025931",
-      "words": 0,
-      "words_added_to_source": 0,
+      "tag_signature": "f8df4cca0a",
+      "words": 109,
+      "words_added_to_source": 109,
       "words_missing_from_source": 0
     },
     "2": {
@@ -101,12 +112,11 @@
     "font_repair": {
       "seconds": 0.0,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
-        "7.2/22": 55,
+        "7.2/22": 44,
         "7.2/24": 39,
-        "7.2/34": 358,
+        "7.2/34": 375,
         "7.21.4.1/1": 2
       }
     },
@@ -117,20 +127,19 @@
       }
     },
     "metadata": {
-      "seconds": 0.1,
+      "seconds": 0.0,
       "verapdf": {
         "7.21.4.1/1": 2
       }
     },
     "ocr": {
-      "seconds": 25.7,
+      "seconds": 58.6,
       "verapdf": {
-        "6.2/1": 1,
         "7.1/10": 1,
         "7.1/8": 1,
-        "7.2/22": 55,
+        "7.2/22": 44,
         "7.2/24": 39,
-        "7.2/34": 358,
+        "7.2/34": 375,
         "7.21.4.1/1": 2
       }
     },
@@ -150,16 +159,16 @@
     }
   },
   "tag_counts": {
-    "/Figure": 16,
+    "/Figure": 5,
     "/H1": 6,
     "/H2": 2,
     "/Link": 39,
-    "/P": 20
+    "/P": 37
   },
   "totals": {
-    "empty_pages": 1,
-    "figures": 16,
-    "figures_with_placeholder_alt": 16,
+    "empty_pages": 0,
+    "figures": 5,
+    "figures_with_placeholder_alt": 5,
     "figures_without_alt": 0,
     "heading_level_skips": 0,
     "headings": 8,
@@ -169,8 +178,8 @@
     "repeated_phrases": 0,
     "tables": 0,
     "tables_without_headers": 0,
-    "words": 387,
-    "words_added_to_source": 0,
+    "words": 496,
+    "words_added_to_source": 109,
     "words_missing_from_source": 0
   },
   "verapdf": {
