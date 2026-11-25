@@ -3,6 +3,7 @@ import os
 import re
 
 import pikepdf
+from django.conf import settings
 from fontTools.ttLib import TTFont
 
 from remediation.adapters.base import FontRepairAdapter
@@ -389,7 +390,9 @@ class PikePdfAdapter(FontRepairAdapter):
 
     def _reference_fonts(self) -> dict[str, "outline_match.ReferenceFont"]:
         if self._reference_cache is None:
-            self._reference_cache = outline_match.load_reference_fonts()
+            self._reference_cache = outline_match.load_reference_fonts(
+                settings.FONT_REPAIR_REFERENCE_DIR
+            )
         return self._reference_cache
 
     def _is_candidate(self, font: pikepdf.Object) -> bool:

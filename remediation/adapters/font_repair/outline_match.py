@@ -14,7 +14,6 @@ import io
 import os
 from typing import Any
 
-from django.conf import settings
 from fontTools.pens.basePen import BasePen
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageChops, ImageDraw
@@ -123,8 +122,10 @@ class ReferenceFont:
         ]
 
 
-def load_reference_fonts(directory: str | None = None) -> dict[str, ReferenceFont]:
-    directory = directory or settings.FONT_REPAIR_REFERENCE_DIR
+def load_reference_fonts(directory: str) -> dict[str, ReferenceFont]:
+    """Loads whichever Carlito files exist in `directory` (e.g. `/usr/share/fonts/carlito`),
+    keyed by style. Returns an empty dict if the folder or files are missing.
+    """
     loaded = {}
     for style, filename in REFERENCE_FILES.items():
         path = os.path.join(directory, filename)
