@@ -2,6 +2,31 @@
 
 <!-- version list -->
 
+## v5.13.0 (2026-11-25)
+
+### Chores
+
+- Pin opendataloader-pdf to PR #669 (2.5.21) and re-record quality baselines (DIC-2484)
+  ([#53](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/53),
+  [`a28e221`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/a28e221f3d75359b0434dacd4fcec012341d9964))
+
+### Features
+
+- Recover ToUnicode for subsetted Calibri by matching outlines to Carlito (DIC-2484)
+  ([#53](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/53),
+  [`a28e221`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/a28e221f3d75359b0434dacd4fcec012341d9964))
+
+### Refactoring
+
+- Pass the Carlito font folder into outline_match instead of reading Django settings (DIC-2484)
+  ([#53](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/53),
+  [`a28e221`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/a28e221f3d75359b0434dacd4fcec012341d9964))
+
+- Split remediation/services.py into a services/ package
+  ([#52](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/pull/52),
+  [`beaad50`](https://github.com/vanburencountymi-digital-information/dice-document-pipeline-api/commit/beaad50f9f4f60f5dabe43555b1e38b769ee6fa3))
+
+
 ## v5.12.0 (2026-11-23)
 
 ### Documentation
