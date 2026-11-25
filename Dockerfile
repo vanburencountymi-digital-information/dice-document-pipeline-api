@@ -101,6 +101,10 @@ RUN apk add --no-cache libstdc++
 # least as new as the server's Postgres version (docker-compose.yml's `db` image).
 RUN apk add --no-cache postgresql18-client
 
+# Carlito (open font, same letter widths as Calibri): lets font_repair recover text for
+# Calibri fonts that lost their character table (DIC-2484). Without it that repair is skipped.
+RUN apk add --no-cache font-carlito
+
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 

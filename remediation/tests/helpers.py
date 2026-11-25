@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 from pathlib import Path
 from typing import Any
@@ -133,3 +134,56 @@ def make_tagged_pdf(path: Path, pages: list[dict[str, Any]]) -> Path:
         pdf.Root.MarkInfo = pikepdf.Dictionary(Marked=True)
         pdf.save(path)
     return path
+
+
+# Simple, clearly different outlines (1000-unit em) for the outline-matching tests.
+SHAPES: dict[str, list[tuple[int, int]]] = {
+    "triangle": [(100, 0), (500, 0), (300, 700)],
+    "square": [(100, 0), (500, 0), (500, 700), (100, 700)],
+    "bar": [(50, 0), (550, 0), (550, 200), (50, 200)],
+    "sliver": [(100, 0), (140, 0), (520, 700), (480, 700)],
+}
+
+
+def build_shape_font(
+    glyphs: list[str | None],
+    *,
+    characters: dict[str, int] | None = None,
+    advance: int = 600,
+) -> bytes:
+    """Builds a small TrueType font. `glyphs[i]` names a `SHAPES` outline for glyph id `i + 1`
+    (`None` = blank glyph); glyph 0 is `.notdef`. `characters` maps a shape name to the Unicode
+    character it should draw in the font's `cmap` (a reference font) — leave it out to build a
+    stripped font with no `cmap`, like the subsetted fonts we repair.
+    """
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+
+    def outline(points: list[tuple[int, int]] | None):
+        pen = TTGlyphPen(None)
+        if points:
+            pen.moveTo(points[0])
+            for point in points[1:]:
+                pen.lineTo(point)
+            pen.closePath()
+        return pen.glyph()
+
+    names = [".notdef"] + [f"g{i}" for i in range(1, len(glyphs) + 1)]
+    outlines = {".notdef": outline(None)}
+    cmap = {}
+    for name, shape in zip(names[1:], glyphs, strict=True):
+        outlines[name] = outline(SHAPES[shape] if shape else None)
+        if shape and characters and shape in characters:
+            cmap[characters[shape]] = name
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder(names)
+    fb.setupCharacterMap(cmap)
+    fb.setupGlyf(outlines)
+    fb.setupHorizontalMetrics({name: (advance, 0) for name in names})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({"familyName": "Test", "styleName": "Regular"})
+    fb.setupOS2()
+    fb.setupPost()
+    buf = io.BytesIO()
+    fb.save(buf)
+    return buf.getvalue()
